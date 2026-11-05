@@ -1,0 +1,117 @@
+/**
+ * JuriVision Design System & Accessibility Tokens
+ * Normas de Referência:
+ * - W3C WCAG 2.2 Nível AA (ISO/IEC 40500): Contraste >= 4.5:1 (texto normal) e >= 3:1 (UI), Foco Visível (2.4.7), Alvos >= 44x44px (2.5.8 / Lei de Fitts)
+ * - ISO 9241-112: Apresentação da Informação, Hierarquia Visual e Legibilidade Tipográfica
+ */
+
+:root {
+    /* Paleta Semântica de Superfícies */
+    --surface-app: #f8fafc;          /* slate-50 */
+    --surface-card: #ffffff;         /* white */
+    --surface-sidebar: #0f172a;      /* slate-900 */
+    --surface-muted: #f1f5f9;        /* slate-100 */
+    --border-subtle: #e2e8f0;        /* slate-200 */
+    --border-strong: #cbd5e1;        /* slate-300 */
+
+    /* Tipografia com Contraste Certificado WCAG 1.4.3 AA sobre #ffffff e #f8fafc */
+    --text-primary: #0f172a;         /* slate-900 -> Contraste 17.4:1 */
+    --text-secondary: #334155;       /* slate-700 -> Contraste 10.9:1 */
+    --text-muted: #475569;           /* slate-600 -> Contraste 7.52:1 (Substitui slate-400 reprovado) */
+
+    /* Cores de Ação e Status (Contraste AA verificado) */
+    --brand-primary: #1d4ed8;        /* blue-700 -> Contraste 6.7:1 com texto branco */
+    --brand-primary-hover: #1e40af;  /* blue-800 */
+    --focus-ring-color: #2563eb;     /* blue-600 */
+
+    --status-success-bg: #ecfdf5;    /* emerald-50 */
+    --status-success-border: #a7f3d0;/* emerald-200 */
+    --status-success-text: #065f46;  /* emerald-800 -> Contraste 7.2:1 */
+
+    --status-warning-bg: #fffbeb;    /* amber-50 */
+    --status-warning-border: #fde68a;/* amber-200 */
+    --status-warning-text: #92400e;  /* amber-800 -> Contraste 6.8:1 */
+
+    --status-danger-bg: #fef2f2;     /* red-50 */
+    --status-danger-border: #fecaca; /* red-200 */
+    --status-danger-text: #991b1b;   /* red-800 -> Contraste 7.6:1 */
+
+    /* Escala Espacial Base 4px / 8px */
+    --space-1: 0.25rem;  /* 4px */
+    --space-2: 0.5rem;   /* 8px */
+    --space-3: 0.75rem;  /* 12px */
+    --space-4: 1rem;     /* 16px */
+    --space-6: 1.5rem;   /* 24px */
+    --space-8: 2rem;     /* 32px */
+
+    /* Ergonomia Motora (Lei de Fitts & WCAG 2.5.8) */
+    --touch-target-min: 44px;
+}
+
+body {
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: var(--surface-app);
+    color: var(--text-primary);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* WCAG 2.4.7 — Indicador de Foco Visível Universal de Alto Contraste */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible {
+    outline: 3px solid var(--focus-ring-color) !important;
+    outline-offset: 2px !important;
+}
+
+/* Lei de Fitts & WCAG 2.5.8 — Área mínima de interação */
+.interactive-target {
+    min-height: var(--touch-target-min);
+    min-width: var(--touch-target-min);
+}
+
+/* Controle de Visibilidade de Painéis de Abas (WAI-ARIA Tabpanel) */
+.tab-panel {
+    display: none;
+}
+
+.tab-panel.active {
+    display: block;
+    animation: fadeIn 160ms ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(2px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Respeito à preferência de movimento reduzido (WCAG 2.3.3) */
+@media (prefers-reduced-motion: reduce) {
+    *, ::before, ::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* ISO 9241-112 — Legibilidade tipográfica para blocos de texto jurídico */
+.legal-prose {
+    text-align: left;
+    line-height: 1.65;
+    max-width: 75ch;
+}
+
+/* Spinner de Carregamento Assíncrono */
+.loader-spinner {
+    border-top-color: var(--brand-primary);
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}

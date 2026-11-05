@@ -129,7 +129,9 @@ Para permitir que o desenvolvimento ocorra em múltiplos chats/sessões sem perd
    - Auditoria concluída sobre `frontend/index.html` e `frontend/`; requisitos `RNF-04`, `RNF-09`, `RNF-10` e Seção 2.4 incorporados em `docs/MODELING.md`.
 2. **Passo 2 — Implementação Certificada do Back-end Core (`backend/`) com Isolamento de IA e Suíte de Testes (`CT-01` a `CT-09`): CONCLUÍDO (Milestone M2).**
    - Implementados `app/core/config.py`, `app/core/database.py`, `app/core/security.py`, `app/core/ai_gateway.py` (`Port & Adapter` + `AnonimizadorLGPD` + `ExtratorDocumental`), `app/core/seed.py`, `app/models/entities.py`, `app/schemas/contracts.py`, `app/routers/{auth,dashboard,processos,relatorios}.py`, `app/main.py` e `tests/test_api_contracts.py` (100% aprovado no `pytest`).
-3. **Passo 3 — Engenharia de Front-end e Integração (`frontend/` — Milestone M3 — PRÓXIMO PASSO):**
-   - Evoluir a camada de front-end aplicando Design Tokens, semântica HTML5, atributos WAI-ARIA, contraste WCAG 2.2 AA, estados de feedback (Heurísticas de Nielsen / ISO 9241-110) e integração real com a API FastAPI.
-4. **Passo 4 — Homologação Integrada (ISO/IEC/IEEE 29119 — Milestone M4):**
-   - Validar execução integrada ponta a ponta entre Front-end, Back-end e Banco de Dados.
+3. **Passo 3 — Engenharia de Front-end e Integração (`frontend/` — Milestone M3): CONCLUÍDO.**
+   - Implementados `frontend/src/components/design-tokens.css` (Design Tokens semânticos, contraste WCAG 1.4.3 AA $\ge 7:1$, `:focus-visible`, touch targets $\ge 44\text{px}$ pela Lei de Fitts), `frontend/src/services/api.js` (cliente HTTP REST tipado), `frontend/src/app.js` (navegação WAI-ARIA 1.2 por teclado, estados ISO 9241-110 e Heurísticas de Nielsen) e `frontend/index.html` cobrindo 100% de `RF-01` a `RF-09` e corrigindo `NC-UX-01` a `NC-UX-12`.
+4. **Passo 4 — Verificação Automatizada de Contratos e Acessibilidade (ISO/IEC/IEEE 29119): CONCLUÍDO (`11 passed` no `pytest`).**
+   - Criadas e aprovadas as suítes `backend/tests/test_api_contracts.py` (`CT-01` a `CT-09`) e `backend/tests/test_frontend_accessibility.py` (`RNF-04`, `RNF-09`, `RNF-10`).
+5. **Próximo Passo Operacional (Sincronização Remota GitHub / Milestone M4):**
+   - Assim que o proprietário do repositório remoto (`g4brielsiq/JuriVision`) aceitar o convite de colaborador para `VictorSamyr`, executar `git push -u origin feat/backend-core-arquitetura` para publicar os commits atômicos `M1`, `M2` e `M3`. Opcionalmente, evoluir o worker interno `ai_engine/` quando a equipe definir a chave de API externa (`Gemini`/`OpenAI`) ou pesos adicionais do modelo local.

@@ -3,274 +3,762 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JuriVision - Plataforma Analítica e Preditiva</title>
-    <!-- Tailwind CSS para Estilização Rápida -->
+    <title>JuriVision — Plataforma Analítica e Preditiva de Jurimetria</title>
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Chart.js para os Gráficos -->
+    <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- FontAwesome para Ícones -->
+    <!-- FontAwesome 6 -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
-        body { font-family: 'Inter', sans-serif; }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
-        .loader { border-top-color: #3b82f6; -webkit-animation: spinner 1.5s linear infinite; animation: spinner 1.5s linear infinite; }
-        @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    </style>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Design System & Accessibility Tokens (ISO 9241 / WCAG 2.2 AA) -->
+    <link rel="stylesheet" href="./src/components/design-tokens.css">
 </head>
-<body class="bg-slate-50 h-screen flex overflow-hidden">
+<body class="bg-slate-50 min-h-screen flex flex-col md:flex-row overflow-x-hidden">
 
-    <!-- Sidebar Lateral -->
-    <aside class="w-64 bg-slate-900 text-white flex flex-col transition-all duration-300">
-        <div class="p-6 border-b border-slate-700">
-            <h1 class="text-2xl font-bold text-blue-400"><i class="fa-solid fa-scale-balanced mr-2"></i>JuriVision</h1>
-            <p class="text-xs text-slate-400 mt-1">Equipe Epsilon - Direito & IA</p>
-        </div>
-        <nav class="flex-1 p-4 space-y-2">
-            <button onclick="switchTab('dashboard')" class="w-full flex items-center p-3 text-left bg-blue-600 rounded-lg shadow transition tab-btn" id="btn-dashboard">
-                <i class="fa-solid fa-chart-pie w-6"></i> Jurimetria
-            </button>
-            <button onclick="switchTab('upload')" class="w-full flex items-center p-3 text-left hover:bg-slate-800 rounded-lg transition text-slate-300 tab-btn" id="btn-upload">
-                <i class="fa-solid fa-file-arrow-up w-6"></i> Novo Processo (PDF)
-            </button>
-            <button onclick="switchTab('historico')" class="w-full flex items-center p-3 text-left hover:bg-slate-800 rounded-lg transition text-slate-300 tab-btn" id="btn-historico">
-                <i class="fa-solid fa-folder-open w-6"></i> Base de Conhecimento
-            </button>
-        </nav>
-        <div class="p-4 border-t border-slate-700 flex items-center">
-            <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center font-bold text-sm">LG</div>
-            <div class="ml-3">
-                <p class="text-sm font-semibold">Lucas Gabriel</p>
-                <p class="text-xs text-slate-400">Advogado(a)</p>
+    <!-- WCAG 2.4.1 — Link para Pular Bloco de Navegação -->
+    <a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:bg-blue-700 focus:text-white focus:px-4 focus:py-2 focus:rounded-lg focus:shadow-lg font-semibold">
+        Pular para o conteúdo principal
+    </a>
+
+    <!-- WCAG 4.1.3 — Região Viva Global para Leitores de Tela -->
+    <div id="global-aria-live" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
+    <!-- Sidebar Lateral Responsiva (WCAG 1.4.10 Refluxo & WAI-ARIA Landmarks) -->
+    <aside aria-label="Identidade e navegação da plataforma" class="w-full md:w-64 bg-slate-900 text-white flex flex-col shrink-0">
+        <div class="p-5 border-b border-slate-700 flex items-center justify-between md:block">
+            <div>
+                <h1 class="text-xl md:text-2xl font-bold text-blue-400 flex items-center">
+                    <i class="fa-solid fa-scale-balanced mr-2.5" aria-hidden="true"></i>
+                    <span>JuriVision</span>
+                </h1>
+                <p class="text-xs text-slate-300 mt-1">Equipe Epsilon (UFAL) • Direito &amp; IA</p>
             </div>
+        </div>
+
+        <!-- WAI-ARIA 1.2 Tablist (Suporte completo a teclado ArrowUp/ArrowDown/Home/End) -->
+        <nav aria-label="Seções principais" class="flex-1 p-3 md:p-4">
+            <div id="sidebar-tablist" role="tablist" aria-orientation="vertical" aria-label="Módulos do JuriVision" class="flex md:flex-col gap-2 overflow-x-auto">
+                <button
+                    type="button"
+                    role="tab"
+                    id="btn-dashboard"
+                    aria-selected="true"
+                    aria-controls="panel-dashboard"
+                    tabindex="0"
+                    class="interactive-target w-full flex items-center px-3.5 py-3 text-left bg-blue-700 text-white rounded-lg shadow-sm font-medium text-sm transition"
+                >
+                    <i class="fa-solid fa-chart-pie w-6 text-center mr-2" aria-hidden="true"></i>
+                    <span>Jurimetria</span>
+                </button>
+
+                <button
+                    type="button"
+                    role="tab"
+                    id="btn-upload"
+                    aria-selected="false"
+                    aria-controls="panel-upload"
+                    tabindex="-1"
+                    class="interactive-target w-full flex items-center px-3.5 py-3 text-left text-slate-200 hover:bg-slate-800 rounded-lg font-medium text-sm transition"
+                >
+                    <i class="fa-solid fa-file-shield w-6 text-center mr-2" aria-hidden="true"></i>
+                    <span>Ingestão &amp; Predição</span>
+                </button>
+
+                <button
+                    type="button"
+                    role="tab"
+                    id="btn-historico"
+                    aria-selected="false"
+                    aria-controls="panel-historico"
+                    tabindex="-1"
+                    class="interactive-target w-full flex items-center px-3.5 py-3 text-left text-slate-200 hover:bg-slate-800 rounded-lg font-medium text-sm transition"
+                >
+                    <i class="fa-solid fa-folder-open w-6 text-center mr-2" aria-hidden="true"></i>
+                    <span>Base de Conhecimento</span>
+                </button>
+            </div>
+        </nav>
+
+        <!-- Perfil do Advogado & Gatilho de Autenticação JWT (RF-01) -->
+        <div class="p-4 border-t border-slate-700 bg-slate-950/40 flex items-center justify-between gap-2">
+            <div class="flex items-center min-w-0">
+                <div class="w-9 h-9 rounded-full bg-blue-700 text-white flex items-center justify-center font-bold text-xs shrink-0" aria-hidden="true">
+                    LG
+                </div>
+                <div class="ml-3 truncate">
+                    <p id="sidebar-user-name" class="text-sm font-semibold text-white truncate">Lucas Gabriel</p>
+                    <p id="sidebar-user-oab" class="text-xs text-slate-300 truncate">OAB 12345/AL • Advogado</p>
+                </div>
+            </div>
+            <button
+                type="button"
+                id="btn-open-login"
+                class="interactive-target px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-600 transition shrink-0"
+                aria-label="Autenticar ou trocar conta de advogado (JWT)"
+                title="Autenticação JWT (RF-01)"
+            >
+                <i class="fa-solid fa-key mr-1" aria-hidden="true"></i>Login
+            </button>
         </div>
     </aside>
 
     <!-- Conteúdo Principal -->
-    <main class="flex-1 flex flex-col h-full overflow-hidden">
-        <!-- Topbar -->
-        <header class="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8">
-            <h2 class="text-xl font-semibold text-slate-800" id="header-title">Dashboard Analítico</h2>
-            <div class="flex items-center space-x-4">
-                <button class="text-slate-400 hover:text-blue-600"><i class="fa-solid fa-bell"></i></button>
-                <button onclick="window.print()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition"><i class="fa-solid fa-download mr-2"></i>Exportar Relatório Estratégico</button>
+    <main id="main-content" class="flex-1 flex flex-col min-w-0">
+        <!-- Topbar (Visibilidade do Status do Sistema — Nielsen #1) -->
+        <header class="bg-white border-b border-slate-200 px-6 py-3.5 flex flex-wrap items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+                <h2 class="text-lg md:text-xl font-bold text-slate-900" id="header-title">
+                    Dashboard Analítico de Jurimetria
+                </h2>
+                <span id="api-status-badge" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-300" role="status">
+                    Verificando API...
+                </span>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <span class="hidden sm:inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200" title="Invariante RN-01: Mascaramento determinístico local de CPFs, RGs e nomes">
+                    <i class="fa-solid fa-shield-halved mr-1.5" aria-hidden="true"></i>Barreira Local LGPD Ativa
+                </span>
+                <button
+                    type="button"
+                    id="btn-header-export-pdf"
+                    class="interactive-target bg-blue-700 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-sm transition inline-flex items-center"
+                >
+                    <i class="fa-solid fa-file-pdf mr-2" aria-hidden="true"></i>
+                    <span>Exportar Relatório Estratégico (PDF)</span>
+                </button>
             </div>
         </header>
 
-        <!-- Área de Telas -->
-        <div class="flex-1 overflow-y-auto p-8">
-            
-            <!-- TELA 1: DASHBOARD -->
-            <div id="dashboard" class="tab-content active space-y-6">
-                <!-- Cards de Resumo -->
+        <!-- Área de Painéis (WAI-ARIA Tabpanels) -->
+        <div class="flex-1 p-6 md:p-8 max-w-7xl w-full mx-auto">
+
+            <!-- ==============================================================
+                 PAINEL 1: DASHBOARD DE JURIMETRIA (RF-07)
+                 ============================================================== -->
+            <section
+                id="panel-dashboard"
+                role="tabpanel"
+                aria-labelledby="btn-dashboard"
+                tabindex="0"
+                class="tab-panel active space-y-6"
+            >
+                <!-- Cartões de Indicadores (KPIs — Contraste WCAG 1.4.3 AA >= 7:1) -->
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100 border-l-4 border-l-blue-500">
-                        <p class="text-sm text-slate-500 font-medium">Taxa de Êxito Global</p>
-                        <h3 class="text-3xl font-bold text-slate-800 mt-2">68.4% <span class="text-sm text-green-500 font-normal"><i class="fa-solid fa-arrow-trend-up"></i> +2.1%</span></h3>
-                    </div>
-                    <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100 border-l-4 border-l-purple-500">
-                        <p class="text-sm text-slate-500 font-medium">Tempo Médio de Tramitação</p>
-                        <h3 class="text-3xl font-bold text-slate-800 mt-2">14 Meses</h3>
-                    </div>
-                    <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100 border-l-4 border-l-emerald-500">
-                        <p class="text-sm text-slate-500 font-medium">Processos Analisados (Base)</p>
-                        <h3 class="text-3xl font-bold text-slate-800 mt-2">1,248</h3>
-                    </div>
+                    <article class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 border-l-4 border-l-blue-700">
+                        <p class="text-sm text-slate-700 font-semibold">Taxa de Êxito Global (Procedentes / Acordos)</p>
+                        <div class="flex items-baseline gap-3 mt-2">
+                            <p id="kpi-taxa-exito" class="text-3xl font-bold text-slate-900">70.0%</p>
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-800">
+                                <i class="fa-solid fa-arrow-trend-up mr-1" aria-hidden="true"></i>Base consolidada
+                            </span>
+                        </div>
+                        <p class="text-xs text-slate-600 mt-2">Calculado em tempo real sobre os julgados higienizados</p>
+                    </article>
+
+                    <article class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 border-l-4 border-l-purple-700">
+                        <p class="text-sm text-slate-700 font-semibold">Tempo Médio Estimado até Sentença</p>
+                        <p id="kpi-tempo-medio" class="text-3xl font-bold text-slate-900 mt-2">12 Meses</p>
+                        <p class="text-xs text-slate-600 mt-2">Média ponderada por vara cível e trabalhista</p>
+                    </article>
+
+                    <article class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 border-l-4 border-l-emerald-700">
+                        <p class="text-sm text-slate-700 font-semibold">Total de Processos Higienizados (LGPD)</p>
+                        <p id="kpi-total-processos" class="text-3xl font-bold text-slate-900 mt-2">10</p>
+                        <p class="text-xs text-slate-600 mt-2">100% auditados sem exposição de CPF, RG ou nome civil</p>
+                    </article>
                 </div>
-                <!-- Gráficos -->
+
+                <!-- Gráficos Analíticos com Alternativa Tabular Acessível (WCAG 1.1.1) -->
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-                        <h4 class="text-lg font-semibold text-slate-800 mb-4">Decisões por Magistrado</h4>
-                        <canvas id="chartJuizes" height="200"></canvas>
-                    </div>
-                    <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-                        <h4 class="text-lg font-semibold text-slate-800 mb-4">Volume por Tema</h4>
-                        <canvas id="chartTemas" height="200"></canvas>
-                    </div>
+                    <article class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-base font-bold text-slate-900">Perfil Decisório por Magistrado</h3>
+                            <span class="text-xs font-medium text-slate-600">Procedentes vs. Improcedentes</span>
+                        </div>
+                        <div class="relative h-64">
+                            <canvas
+                                id="chartJuizes"
+                                role="img"
+                                aria-label="Gráfico de barras empilhadas comparando decisões procedentes e improcedentes por magistrado"
+                            ></canvas>
+                        </div>
+                        <details class="mt-4 text-xs text-slate-700 border-t border-slate-200 pt-3">
+                            <summary class="cursor-pointer font-semibold text-blue-800 hover:underline">
+                                Exibir tabela equivalente de dados (Acessibilidade WCAG 1.1.1)
+                            </summary>
+                            <table class="w-full text-left mt-2 border-collapse">
+                                <thead>
+                                    <tr class="border-b border-slate-300 text-slate-700">
+                                        <th scope="col" class="py-1 pr-4">Magistrado</th>
+                                        <th scope="col" class="py-1 px-2">Favoráveis</th>
+                                        <th scope="col" class="py-1 pl-2">Improcedentes</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="a11y-table-juizes"></tbody>
+                            </table>
+                        </details>
+                    </article>
+
+                    <article class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-base font-bold text-slate-900">Distribuição de Volume por Tema Jurídico</h3>
+                            <span class="text-xs font-medium text-slate-600">Proporção percentual (%)</span>
+                        </div>
+                        <div class="relative h-64">
+                            <canvas
+                                id="chartTemas"
+                                role="img"
+                                aria-label="Gráfico de rosca exibindo o percentual de processos por tema jurídico"
+                            ></canvas>
+                        </div>
+                        <details class="mt-4 text-xs text-slate-700 border-t border-slate-200 pt-3">
+                            <summary class="cursor-pointer font-semibold text-blue-800 hover:underline">
+                                Exibir tabela equivalente de dados (Acessibilidade WCAG 1.1.1)
+                            </summary>
+                            <table class="w-full text-left mt-2 border-collapse">
+                                <thead>
+                                    <tr class="border-b border-slate-300 text-slate-700">
+                                        <th scope="col" class="py-1 pr-4">Tema Jurídico</th>
+                                        <th scope="col" class="py-1 pl-2">Participação (%)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="a11y-table-temas"></tbody>
+                            </table>
+                        </details>
+                    </article>
                 </div>
-            </div>
+            </section>
 
-            <!-- TELA 2: UPLOAD E PREDIÇÃO -->
-            <div id="upload" class="tab-content max-w-4xl mx-auto">
-                <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-8">
-                    <div class="text-center mb-8">
-                        <h3 class="text-2xl font-bold text-slate-800">Análise de Novo Processo</h3>
-                        <p class="text-slate-500 mt-2">Faça o upload da petição em PDF para extração inteligente e cálculo de previsibilidade estatística.</p>
-                    </div>
-                    
-                    <!-- Área de Drop -->
-                    <div id="drop-area" class="border-2 border-dashed border-slate-300 rounded-xl p-12 text-center hover:bg-slate-50 hover:border-blue-500 transition cursor-pointer" onclick="iniciarSimulacaoIA()">
-                        <i class="fa-solid fa-file-pdf text-5xl text-blue-500 mb-4"></i>
-                        <p class="text-lg font-medium text-slate-700">Clique para selecionar o PDF</p>
-                        <p class="text-sm text-slate-400 mt-1">Simular upload da petição inicial</p>
+            <!-- ==============================================================
+                 PAINEL 2: UPLOAD HÍBRIDO (PDF/CSV), BARREIRA LGPD E PREDIÇÃO
+                 (RF-02, RF-03, RF-04, RF-05, RF-06)
+                 ============================================================== -->
+            <section
+                id="panel-upload"
+                role="tabpanel"
+                aria-labelledby="btn-upload"
+                tabindex="0"
+                hidden
+                class="tab-panel max-w-5xl mx-auto"
+            >
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 md:p-8">
+                    <!-- Cabeçalho e Seletor de Modo (PDF Individual vs. Lote CSV) -->
+                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-6 mb-6">
+                        <div>
+                            <h3 class="text-xl font-bold text-slate-900">Submissão Processual com Higienização LGPD</h3>
+                            <p class="text-sm text-slate-600 mt-1">
+                                Os documentos são processados localmente para mascaramento de CPFs, RGs e nomes antes da sumarização NLP e predição.
+                            </p>
+                        </div>
+                        <div class="inline-flex rounded-lg p-1 bg-slate-100 border border-slate-300 shrink-0" role="group" aria-label="Tipo de ingestão documental">
+                            <button
+                                type="button"
+                                id="mode-btn-pdf"
+                                aria-pressed="true"
+                                class="interactive-target px-4 py-2 rounded-md text-xs font-bold bg-blue-700 text-white transition"
+                            >
+                                <i class="fa-solid fa-file-pdf mr-1.5" aria-hidden="true"></i>Petição PDF (RF-02)
+                            </button>
+                            <button
+                                type="button"
+                                id="mode-btn-csv"
+                                aria-pressed="false"
+                                class="interactive-target px-4 py-2 rounded-md text-xs font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition"
+                            >
+                                <i class="fa-solid fa-file-csv mr-1.5" aria-hidden="true"></i>Lote CSV (RF-03)
+                            </button>
+                        </div>
                     </div>
 
-                    <!-- Estado de Carregamento (Oculto) -->
-                    <div id="loading-state" class="hidden text-center py-12">
-                        <div class="loader ease-linear rounded-full border-4 border-t-4 border-slate-200 h-16 w-16 mx-auto mb-4"></div>
-                        <h4 class="text-lg font-semibold text-slate-700">Processamento de Linguagem Natural (NLP) em andamento...</h4>
-                        <p class="text-slate-500">A extrair entidades, anonimizar dados e a consultar base histórica.</p>
-                    </div>
+                    <!-- Container de Seleção de Arquivo -->
+                    <div id="upload-selection-container">
+                        <!-- Modo 1: Upload de PDF (RF-02) -->
+                        <div id="upload-box-pdf" class="space-y-4">
+                            <div class="border-2 border-dashed border-slate-300 rounded-xl p-8 md:p-10 text-center bg-slate-50/60 hover:bg-slate-50 hover:border-blue-600 transition">
+                                <i class="fa-solid fa-file-pdf text-5xl text-blue-700 mb-3" aria-hidden="true"></i>
+                                <h4 class="text-base font-bold text-slate-900">
+                                    Selecione a Petição Inicial em formato PDF
+                                </h4>
+                                <p class="text-sm text-slate-600 mt-1 max-w-xl mx-auto">
+                                    Restrição de integridade (<code class="font-mono text-xs bg-slate-200 px-1.5 py-0.5 rounded">RN-04</code>): apenas arquivos <code class="font-mono text-xs">.pdf</code> com assinatura binária válida são aceitos.
+                                </p>
 
-                    <!-- Resultado da Predição (Oculto) -->
-                    <div id="result-state" class="hidden mt-8 space-y-6">
-                        <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-6 flex items-start">
-                            <div class="bg-emerald-500 text-white p-3 rounded-lg"><i class="fa-solid fa-robot text-xl"></i></div>
-                            <div class="ml-4 flex-1">
-                                <h4 class="text-lg font-bold text-emerald-800">Parecer Preditivo da IA</h4>
-                                <p class="text-emerald-700 mt-1">"Com base em 42 casos similares na Vara de Defesa do Consumidor, há <strong>75% de probabilidade de deferimento</strong> utilizando a jurisprudência atual. O tempo estimado para sentença é de 8 a 10 meses."</p>
+                                <div class="mt-6 flex flex-wrap items-center justify-center gap-4">
+                                    <label
+                                        for="file-input-pdf"
+                                        tabindex="0"
+                                        class="interactive-target cursor-pointer inline-flex items-center px-5 py-2.5 bg-blue-700 hover:bg-blue-800 text-white font-semibold text-sm rounded-lg shadow-sm transition"
+                                    >
+                                        <i class="fa-solid fa-upload mr-2" aria-hidden="true"></i>
+                                        <span>Escolher Arquivo PDF do Computador</span>
+                                    </label>
+                                    <input
+                                        id="file-input-pdf"
+                                        type="file"
+                                        accept=".pdf,application/pdf"
+                                        class="sr-only"
+                                        aria-label="Selecionar arquivo PDF da petição inicial"
+                                    >
+
+                                    <button
+                                        type="button"
+                                        id="btn-sample-pdf"
+                                        class="interactive-target inline-flex items-center px-4 py-2.5 bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-semibold text-sm rounded-lg transition"
+                                    >
+                                        <i class="fa-solid fa-bolt text-amber-600 mr-2" aria-hidden="true"></i>
+                                        <span>Testar com Petição PDF de Exemplo (API Real)</span>
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
+                        <!-- Modo 2: Upload de Planilha CSV em Lote (RF-03) -->
+                        <div id="upload-box-csv" class="hidden space-y-4">
+                            <div class="border-2 border-dashed border-slate-300 rounded-xl p-8 md:p-10 text-center bg-slate-50/60 hover:bg-slate-50 hover:border-blue-600 transition">
+                                <i class="fa-solid fa-file-csv text-5xl text-emerald-700 mb-3" aria-hidden="true"></i>
+                                <h4 class="text-base font-bold text-slate-900">
+                                    Importação em Lote via Planilha CSV Estruturada
+                                </h4>
+                                <p class="text-sm text-slate-600 mt-1 max-w-2xl mx-auto">
+                                    Colunas esperadas: <code class="font-mono text-xs bg-slate-200 px-1.5 py-0.5 rounded">numero_processo, tema, magistrado, comarca, autor, reu, texto_resumo, resultado, data_julgamento</code>.
+                                </p>
+
+                                <div class="mt-6 flex flex-wrap items-center justify-center gap-4">
+                                    <label
+                                        for="file-input-csv"
+                                        tabindex="0"
+                                        class="interactive-target cursor-pointer inline-flex items-center px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-sm rounded-lg shadow-sm transition"
+                                    >
+                                        <i class="fa-solid fa-table mr-2" aria-hidden="true"></i>
+                                        <span>Escolher Planilha CSV do Computador</span>
+                                    </label>
+                                    <input
+                                        id="file-input-csv"
+                                        type="file"
+                                        accept=".csv,text/csv"
+                                        class="sr-only"
+                                        aria-label="Selecionar planilha CSV de processos"
+                                    >
+
+                                    <button
+                                        type="button"
+                                        id="btn-sample-csv"
+                                        class="interactive-target inline-flex items-center px-4 py-2.5 bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-semibold text-sm rounded-lg transition"
+                                    >
+                                        <i class="fa-solid fa-bolt text-amber-600 mr-2" aria-hidden="true"></i>
+                                        <span>Testar Importação em Lote CSV de Exemplo</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Estado 2: Carregamento Assíncrono (WCAG 4.1.3 role="status") -->
+                    <div id="loading-state" role="status" aria-live="polite" class="hidden text-center py-12">
+                        <div class="loader-spinner rounded-full border-4 border-slate-200 h-14 w-14 mx-auto mb-4" aria-hidden="true"></div>
+                        <h4 class="text-lg font-bold text-slate-900">
+                            Executando Esteira de Anonimização LGPD e Motor Preditivo...
+                        </h4>
+                        <p class="text-sm text-slate-600 mt-1">
+                            Extraindo entidades, mascarando dados pessoais sensíveis localmente e consultando histórico jurisprudencial.
+                        </p>
+                    </div>
+
+                    <!-- Estado 3: Alerta Diagnóstico de Erro (ISO 9241-110 Tolerância a Falhas / RN-04) -->
+                    <div id="error-state" role="alert" aria-live="assertive" class="hidden bg-red-50 border border-red-300 rounded-xl p-6">
+                        <div class="flex items-start gap-4">
+                            <div class="bg-red-700 text-white p-3 rounded-lg shrink-0" aria-hidden="true">
+                                <i class="fa-solid fa-triangle-exclamation text-lg"></i>
+                            </div>
+                            <div class="flex-1">
+                                <h4 class="text-base font-bold text-red-900">
+                                    Não Conformidade na Ingestão do Arquivo (Estado: ErroProcessamento)
+                                </h4>
+                                <p id="error-message-text" class="text-sm text-red-800 mt-1"></p>
+                                <div class="mt-4">
+                                    <button
+                                        type="button"
+                                        id="btn-retry-error"
+                                        class="interactive-target bg-red-800 hover:bg-red-900 text-white text-xs font-bold px-4 py-2.5 rounded-lg transition"
+                                    >
+                                        <i class="fa-solid fa-rotate-left mr-1.5" aria-hidden="true"></i>Tentar Novamente com Outro Arquivo
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Estado 4: Resultado de Importação em Lote CSV (RF-03) -->
+                    <div id="csv-result-state" role="status" aria-live="polite" class="hidden space-y-6">
+                        <div class="bg-emerald-50 border border-emerald-300 rounded-xl p-6">
+                            <div class="flex flex-wrap items-center justify-between gap-4">
+                                <div class="flex items-center gap-3">
+                                    <div class="bg-emerald-700 text-white p-3 rounded-lg" aria-hidden="true">
+                                        <i class="fa-solid fa-check-double text-xl"></i>
+                                    </div>
+                                    <div>
+                                        <h4 class="text-lg font-bold text-emerald-950">Lote CSV Processado e Higienizado</h4>
+                                        <p class="text-sm text-emerald-800">
+                                            Arquivo: <strong id="csv-res-arquivo" class="font-mono"></strong>
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    id="btn-reset-csv"
+                                    class="interactive-target bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 px-4 py-2 rounded-lg text-xs font-bold transition"
+                                >
+                                    <i class="fa-solid fa-plus mr-1.5" aria-hidden="true"></i>Importar Nova Planilha
+                                </button>
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
+                                <div class="bg-white p-4 rounded-lg border border-emerald-200">
+                                    <p class="text-xs text-slate-600 font-semibold">Registros Lidos</p>
+                                    <p id="csv-res-lidos" class="text-2xl font-bold text-slate-900 mt-1">0</p>
+                                </div>
+                                <div class="bg-white p-4 rounded-lg border border-emerald-200">
+                                    <p class="text-xs text-slate-600 font-semibold">Importados no Banco</p>
+                                    <p id="csv-res-importados" class="text-2xl font-bold text-emerald-800 mt-1">0</p>
+                                </div>
+                                <div class="bg-white p-4 rounded-lg border border-emerald-200">
+                                    <p class="text-xs text-slate-600 font-semibold">Entidades Mascaradas (LGPD)</p>
+                                    <p id="csv-res-lgpd" class="text-2xl font-bold text-blue-800 mt-1">0</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Estado 5: Resultado Analítico e Preditivo do Processo (RF-04, RF-05, RF-06 — Lei de Miller Chunking) -->
+                    <div id="result-state" role="region" aria-label="Resultado da análise preditiva" class="hidden space-y-6">
+                        <!-- Barra de Controle Superior (ISO 9241-110 Controlabilidade — Nielsen #3) -->
+                        <div class="flex flex-wrap items-center justify-between gap-4 bg-slate-100 p-4 rounded-xl border border-slate-200">
+                            <div class="flex flex-wrap items-center gap-3">
+                                <span class="text-xs font-bold uppercase tracking-wider bg-blue-800 text-white px-2.5 py-1 rounded">
+                                    ID: <span id="res-id-processo" class="font-mono">proc-88910</span>
+                                </span>
+                                <span class="text-sm font-mono font-semibold text-slate-800" id="res-numero-cnj">
+                                    0019283-44.2026.8.02.0001
+                                </span>
+                                <span id="res-lgpd-badge" class="inline-flex items-center text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-1 rounded-full">
+                                    LGPD Verificado
+                                </span>
+                            </div>
+
+                            <div class="flex items-center gap-3">
+                                <button
+                                    type="button"
+                                    id="btn-result-export-pdf"
+                                    class="interactive-target bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold px-4 py-2 rounded-lg transition inline-flex items-center"
+                                >
+                                    <i class="fa-solid fa-download mr-1.5" aria-hidden="true"></i>Baixar Relatório PDF (RF-09)
+                                </button>
+                                <button
+                                    type="button"
+                                    id="btn-reset-upload"
+                                    class="interactive-target bg-white hover:bg-slate-200 text-slate-800 border border-slate-300 text-xs font-bold px-4 py-2 rounded-lg transition inline-flex items-center"
+                                >
+                                    <i class="fa-solid fa-rotate-right mr-1.5" aria-hidden="true"></i>Analisar Novo Processo
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Chunking Cognitivo (Lei de Miller): 4 Indicadores Preditivos Estruturados -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <div class="bg-emerald-50 border border-emerald-300 p-4 rounded-xl">
+                                <p class="text-xs font-bold text-emerald-900 uppercase">Probabilidade de Deferimento</p>
+                                <p id="res-probabilidade" class="text-3xl font-bold text-emerald-800 mt-1">75%</p>
+                                <p id="res-margem" class="text-xs text-emerald-800 mt-1">±8% de margem de confiança</p>
+                            </div>
+
+                            <div class="bg-white border border-slate-200 p-4 rounded-xl">
+                                <p class="text-xs font-bold text-slate-600 uppercase">Prazo Estimado de Sentença</p>
+                                <p id="res-prazo" class="text-2xl font-bold text-slate-900 mt-1">9 meses</p>
+                                <p class="text-xs text-slate-600 mt-1">Média histórica da comarca</p>
+                            </div>
+
+                            <div class="bg-white border border-slate-200 p-4 rounded-xl">
+                                <p class="text-xs font-bold text-slate-600 uppercase">Casos Similares na Base</p>
+                                <p id="res-similares" class="text-2xl font-bold text-slate-900 mt-1">42 julgados</p>
+                                <p class="text-xs text-slate-600 mt-1">Amostra estatística correlata</p>
+                            </div>
+
+                            <div class="bg-white border border-slate-200 p-4 rounded-xl">
+                                <p class="text-xs font-bold text-slate-600 uppercase">Motor / Adapter de IA</p>
+                                <p id="res-provedor-ia" class="text-lg font-mono font-bold text-blue-800 mt-2">local_heuristic</p>
+                                <p class="text-xs text-slate-600 mt-1">Isolado por contrato (ADR-002)</p>
+                            </div>
+                        </div>
+
+                        <!-- Metadados Extraídos e Resumo Factual NLP (Alinhamento à esquerda — ISO 9241-112) -->
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div class="border border-slate-200 rounded-xl p-5">
-                                <h5 class="font-semibold text-slate-800 border-b pb-2 mb-3">Atributos Extraídos do PDF</h5>
-                                <ul class="space-y-2 text-sm text-slate-600">
-                                    <li><strong>Tema:</strong> Atraso de Voo / Dano Moral</li>
-                                    <li><strong>Magistrado Associado:</strong> Dr. Rafael De Amorim</li>
-                                    <li><strong>Parte (Autor):</strong> Lucas G. *** <span class="text-xs bg-slate-200 px-2 py-1 rounded ml-1">LGPD</span></li>
-                                    <li><strong>Parte (Réu):</strong> Companhia Aérea XPTO</li>
-                                </ul>
+                            <div class="border border-slate-200 rounded-xl p-5 bg-white">
+                                <h4 class="font-bold text-slate-900 border-b border-slate-200 pb-2.5 mb-3 flex items-center">
+                                    <i class="fa-solid fa-list-check text-blue-700 mr-2" aria-hidden="true"></i>
+                                    <span>Metadados Processuais Anonimizados</span>
+                                </h4>
+                                <dl class="space-y-2.5 text-sm">
+                                    <div class="flex justify-between gap-2">
+                                        <dt class="text-slate-600 font-medium">Tema Jurídico:</dt>
+                                        <dd id="res-tema" class="font-semibold text-slate-900 text-right"></dd>
+                                    </div>
+                                    <div class="flex justify-between gap-2">
+                                        <dt class="text-slate-600 font-medium">Magistrado(a):</dt>
+                                        <dd id="res-magistrado" class="font-semibold text-slate-900 text-right"></dd>
+                                    </div>
+                                    <div class="flex justify-between gap-2">
+                                        <dt class="text-slate-600 font-medium">Comarca / Vara:</dt>
+                                        <dd id="res-comarca" class="font-semibold text-slate-900 text-right"></dd>
+                                    </div>
+                                    <div class="flex justify-between gap-2 pt-1 border-t border-slate-100">
+                                        <dt class="text-slate-600 font-medium">Autor (Mascarado LGPD):</dt>
+                                        <dd id="res-autor" class="font-semibold text-emerald-800 text-right"></dd>
+                                    </div>
+                                    <div class="flex justify-between gap-2">
+                                        <dt class="text-slate-600 font-medium">Réu / Requerido:</dt>
+                                        <dd id="res-reu" class="font-semibold text-slate-900 text-right"></dd>
+                                    </div>
+                                </dl>
                             </div>
-                            <div class="border border-slate-200 rounded-xl p-5">
-                                <h5 class="font-semibold text-slate-800 border-b pb-2 mb-3">Resumo Automático</h5>
-                                <p class="text-sm text-slate-600 text-justify">Ação de indenização por danos morais motivada por cancelamento injustificado de voo internacional sem prestação de assistência material. O autor requer indemnização fixada no teto do juizado especial.</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
 
-            <!-- TELA 3: BASE DE DADOS / HISTÓRICO -->
-            <div id="historico" class="tab-content">
-                <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-                    <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                        <h3 class="font-bold text-slate-800">Processos Estruturados</h3>
-                        <div class="relative">
-                            <i class="fa-solid fa-search absolute left-3 top-3 text-slate-400"></i>
-                            <input type="text" placeholder="Buscar jurisprudência..." class="pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <div class="border border-slate-200 rounded-xl p-5 bg-white">
+                                <h4 class="font-bold text-slate-900 border-b border-slate-200 pb-2.5 mb-3 flex items-center">
+                                    <i class="fa-solid fa-file-lines text-blue-700 mr-2" aria-hidden="true"></i>
+                                    <span>Resumo Executivo Factual (NLP — RF-05)</span>
+                                </h4>
+                                <p id="res-resumo-nlp" class="text-sm text-slate-700 legal-prose"></p>
+                            </div>
+                        </div>
+
+                        <!-- Recomendação Estratégica de Tese e Perfil do Magistrado (RF-06) -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="border border-blue-200 bg-blue-50/50 rounded-xl p-5">
+                                <h4 class="font-bold text-slate-900 mb-2 flex items-center">
+                                    <i class="fa-solid fa-gavel text-blue-800 mr-2" aria-hidden="true"></i>
+                                    <span>Tese Jurídica Recomendada</span>
+                                </h4>
+                                <p id="res-tese-recomendada" class="text-sm text-slate-800 legal-prose"></p>
+                            </div>
+
+                            <div class="border border-purple-200 bg-purple-50/50 rounded-xl p-5">
+                                <h4 class="font-bold text-slate-900 mb-2 flex items-center">
+                                    <i class="fa-solid fa-user-tie text-purple-800 mr-2" aria-hidden="true"></i>
+                                    <span>Tendência Decisória do Magistrado</span>
+                                </h4>
+                                <p id="res-tendencia-juiz" class="text-sm text-slate-800 legal-prose"></p>
+                            </div>
                         </div>
                     </div>
-                    <table class="w-full text-left border-collapse">
-                        <thead>
-                            <tr class="bg-slate-100 text-slate-600 text-sm">
-                                <th class="p-4 border-b">ID Processo</th>
-                                <th class="p-4 border-b">Tema</th>
-                                <th class="p-4 border-b">Magistrado</th>
-                                <th class="p-4 border-b">Partes (Anonimizadas)</th>
-                                <th class="p-4 border-b">Resultado</th>
-                            </tr>
-                        </thead>
-                        <tbody class="text-sm text-slate-700">
-                            <tr class="hover:bg-slate-50 border-b">
-                                <td class="p-4 font-mono text-blue-600">0019283-44.2023...</td>
-                                <td class="p-4">Dano Moral</td>
-                                <td class="p-4">Dra. Maria Silva</td>
-                                <td class="p-4">Felipe *** vs B. Bradesco</td>
-                                <td class="p-4"><span class="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold">Procedente</span></td>
-                            </tr>
-                            <tr class="hover:bg-slate-50 border-b">
-                                <td class="p-4 font-mono text-blue-600">0004512-19.2024...</td>
-                                <td class="p-4">Direito Trabalhista</td>
-                                <td class="p-4">Dr. Rafael De Amorim</td>
-                                <td class="p-4">Emanuele *** vs Softwares LTDA</td>
-                                <td class="p-4"><span class="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold">Acordo</span></td>
-                            </tr>
-                            <tr class="hover:bg-slate-50 border-b">
-                                <td class="p-4 font-mono text-blue-600">0055102-88.2023...</td>
-                                <td class="p-4">Plano de Saúde</td>
-                                <td class="p-4">Dra. Maria Silva</td>
-                                <td class="p-4">José R. *** vs Unimed ***</td>
-                                <td class="p-4"><span class="bg-red-100 text-red-700 px-2 py-1 rounded text-xs font-bold">Improcedente</span></td>
-                            </tr>
-                        </tbody>
-                    </table>
                 </div>
-            </div>
+            </section>
+
+            <!-- ==============================================================
+                 PAINEL 3: BASE DE CONHECIMENTO E FILTROS (RF-08)
+                 ============================================================== -->
+            <section
+                id="panel-historico"
+                role="tabpanel"
+                aria-labelledby="btn-historico"
+                tabindex="0"
+                hidden
+                class="tab-panel space-y-6"
+            >
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                    <!-- Barra de Filtros Acessível com Rótulos Explícitos (WCAG 3.3.2) -->
+                    <form id="form-filtros-historico" class="p-6 border-b border-slate-200 bg-slate-50 space-y-4">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                                <h3 class="text-base font-bold text-slate-900">Consulta e Filtragem de Jurisprudência Higienizada</h3>
+                                <p id="historico-total-label" class="text-xs text-slate-600 mt-0.5" role="status">
+                                    Carregando registros...
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+                            <div>
+                                <label for="filtro-busca" class="block text-xs font-bold text-slate-700 mb-1">
+                                    Busca Livre (CNJ, Parte ou Resumo)
+                                </label>
+                                <input
+                                    id="filtro-busca"
+                                    type="text"
+                                    placeholder="Ex: 0019283 ou Bradesco"
+                                    class="interactive-target w-full px-3.5 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white"
+                                >
+                            </div>
+
+                            <div>
+                                <label for="filtro-tema" class="block text-xs font-bold text-slate-700 mb-1">
+                                    Filtrar por Tema Jurídico
+                                </label>
+                                <select
+                                    id="filtro-tema"
+                                    class="interactive-target w-full px-3.5 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white"
+                                >
+                                    <option value="">Todos os Temas</option>
+                                    <option value="Dano Moral">Dano Moral</option>
+                                    <option value="Atraso de Voo">Atraso de Voo / Indenização</option>
+                                    <option value="Direito Trabalhista">Direito Trabalhista</option>
+                                    <option value="Plano de Saúde">Plano de Saúde</option>
+                                    <option value="Tributário">Tributário</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label for="filtro-juiz" class="block text-xs font-bold text-slate-700 mb-1">
+                                    Filtrar por Magistrado(a)
+                                </label>
+                                <select
+                                    id="filtro-juiz"
+                                    class="interactive-target w-full px-3.5 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white"
+                                >
+                                    <option value="">Todos os Magistrados</option>
+                                    <option value="Rafael De Amorim">Dr. Rafael De Amorim</option>
+                                    <option value="Maria Silva">Dra. Maria Silva</option>
+                                    <option value="Carlos Souza">Dr. Carlos Souza</option>
+                                </select>
+                            </div>
+
+                            <div class="flex items-center gap-2">
+                                <button
+                                    type="submit"
+                                    class="interactive-target flex-1 bg-blue-700 hover:bg-blue-800 text-white font-semibold text-sm px-4 py-2 rounded-lg transition"
+                                >
+                                    <i class="fa-solid fa-filter mr-1.5" aria-hidden="true"></i>Filtrar
+                                </button>
+                                <button
+                                    type="button"
+                                    id="btn-limpar-filtros"
+                                    class="interactive-target bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-semibold text-sm px-3.5 py-2 rounded-lg transition"
+                                >
+                                    Limpar
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+
+                    <!-- Tabela Semântica com Refluxo Horizontal (WCAG 1.3.1 & 1.4.10) -->
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <caption class="sr-only">
+                                Lista paginada de processos judiciais anonimizados com resultado, score preditivo e exportação de relatório PDF
+                            </caption>
+                            <thead>
+                                <tr class="bg-slate-100 text-slate-800 text-xs font-bold uppercase tracking-wider border-b border-slate-200">
+                                    <th scope="col" class="p-4">Processo (CNJ / ID)</th>
+                                    <th scope="col" class="p-4">Tema</th>
+                                    <th scope="col" class="p-4">Magistrado / Vara</th>
+                                    <th scope="col" class="p-4">Partes (Anonimizadas LGPD)</th>
+                                    <th scope="col" class="p-4">Resultado &amp; Predição</th>
+                                    <th scope="col" class="p-4 text-right">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="historico-tbody" class="text-sm text-slate-800"></tbody>
+                        </table>
+                    </div>
+
+                    <!-- Rodapé de Paginação -->
+                    <div class="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+                        <span id="pagination-info" class="text-xs font-semibold text-slate-700">
+                            Página 1 de 1
+                        </span>
+                        <div class="flex items-center gap-2">
+                            <button
+                                type="button"
+                                id="btn-page-prev"
+                                class="interactive-target px-3.5 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-50 text-xs font-bold text-slate-800 transition"
+                            >
+                                Anterior
+                            </button>
+                            <button
+                                type="button"
+                                id="btn-page-next"
+                                class="interactive-target px-3.5 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-50 text-xs font-bold text-slate-800 transition"
+                            >
+                                Próxima
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
 
         </div>
     </main>
 
-    <!-- Scripts de Interação e Gráficos -->
-    <script>
-        // Lógica de Navegação de Abas
-        function switchTab(tabId) {
-            // Esconder todas as abas
-            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
-            // Resetar botões do menu
-            document.querySelectorAll('.tab-btn').forEach(btn => {
-                btn.classList.remove('bg-blue-600', 'text-white');
-                btn.classList.add('text-slate-300', 'hover:bg-slate-800');
-            });
-            
-            // Ativar aba selecionada
-            document.getElementById(tabId).classList.add('active');
-            
-            // Estilizar botão ativo
-            const activeBtn = document.getElementById(`btn-${tabId}`);
-            activeBtn.classList.remove('text-slate-300', 'hover:bg-slate-800');
-            activeBtn.classList.add('bg-blue-600', 'text-white');
+    <!-- ======================================================================
+         MODAL DE AUTENTICAÇÃO JWT DO ADVOGADO (RF-01 — WAI-ARIA Dialog)
+         ====================================================================== -->
+    <div
+        id="login-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="login-modal-title"
+        class="hidden fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4"
+    >
+        <div class="bg-white rounded-xl shadow-xl border border-slate-200 max-w-md w-full p-6 space-y-5">
+            <div class="flex items-center justify-between border-b border-slate-200 pb-3">
+                <h3 id="login-modal-title" class="text-lg font-bold text-slate-900 flex items-center">
+                    <i class="fa-solid fa-user-shield text-blue-700 mr-2" aria-hidden="true"></i>
+                    <span>Autenticação do Advogado (RF-01)</span>
+                </h3>
+                <button
+                    type="button"
+                    id="btn-close-login"
+                    class="interactive-target text-slate-600 hover:text-slate-900 px-2 rounded-lg"
+                    aria-label="Fechar janela de login"
+                >
+                    <i class="fa-solid fa-xmark text-lg" aria-hidden="true"></i>
+                </button>
+            </div>
 
-            // Atualizar Título do Header
-            const titles = {
-                'dashboard': 'Dashboard Analítico',
-                'upload': 'Análise de Novo Processo',
-                'historico': 'Base de Conhecimento Estruturada'
-            };
-            document.getElementById('header-title').innerText = titles[tabId];
+            <form id="login-form" class="space-y-4">
+                <div>
+                    <label for="login-email" class="block text-xs font-bold text-slate-700 mb-1">
+                        E-mail Institucional
+                    </label>
+                    <input
+                        id="login-email"
+                        type="email"
+                        required
+                        value="advogado@escritorio.com"
+                        class="interactive-target w-full px-3.5 py-2 border border-slate-300 rounded-lg text-sm text-slate-900"
+                    >
+                </div>
 
-            // Renderizar gráficos se for a aba dashboard
-            if(tabId === 'dashboard' && !window.chartsRendered) {
-                renderCharts();
-                window.chartsRendered = true;
-            }
-        }
+                <div>
+                    <label for="login-senha" class="block text-xs font-bold text-slate-700 mb-1">
+                        Senha de Acesso
+                    </label>
+                    <input
+                        id="login-senha"
+                        type="password"
+                        required
+                        value="senhaSegura123"
+                        class="interactive-target w-full px-3.5 py-2 border border-slate-300 rounded-lg text-sm text-slate-900"
+                    >
+                </div>
 
-        // Lógica de Simulação de IA (Upload)
-        function iniciarSimulacaoIA() {
-            document.getElementById('drop-area').classList.add('hidden');
-            document.getElementById('loading-state').classList.remove('hidden');
+                <div id="login-feedback" role="status" class="hidden"></div>
 
-            // Simula o tempo de processamento do backend (3 segundos)
-            setTimeout(() => {
-                document.getElementById('loading-state').classList.add('hidden');
-                document.getElementById('result-state').classList.remove('hidden');
-            }, 3000);
-        }
+                <div class="flex items-center justify-end gap-3 pt-2">
+                    <button
+                        type="submit"
+                        class="interactive-target w-full bg-blue-700 hover:bg-blue-800 text-white font-bold text-sm py-2.5 px-4 rounded-lg shadow-sm transition"
+                    >
+                        Autenticar e Emitir Token JWT
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
 
-        // Lógica de Renderização de Gráficos (Chart.js)
-        function renderCharts() {
-            // Gráfico 1: Decisões por Magistrado
-            new Chart(document.getElementById('chartJuizes'), {
-                type: 'bar',
-                data: {
-                    labels: ['Dr. Rafael De Amorim', 'Dra. Maria Silva', 'Dr. Carlos Souza'],
-                    datasets: [
-                        { label: 'Procedentes', data: [120, 95, 60], backgroundColor: '#3b82f6' },
-                        { label: 'Improcedentes', data: [45, 80, 50], backgroundColor: '#ef4444' }
-                    ]
-                },
-                options: { responsive: true, scales: { x: { stacked: true }, y: { stacked: true } } }
-            });
-
-            // Gráfico 2: Volume por Tema
-            new Chart(document.getElementById('chartTemas'), {
-                type: 'doughnut',
-                data: {
-                    labels: ['Dano Moral', 'Trabalhista', 'Tributário', 'Saúde'],
-                    datasets: [{
-                        data: [45, 25, 20, 10],
-                        backgroundColor: ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b']
-                    }]
-                },
-                options: { responsive: true, maintainAspectRatio: false }
-            });
-        }
-
-        // Inicializar Dashboard ao abrir
-        renderCharts();
-        window.chartsRendered = true;
-    </script>
+    <!-- Aplicação Modular Front-end -->
+    <script type="module" src="./src/app.js"></script>
 </body>
 </html>
