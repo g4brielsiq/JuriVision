@@ -39,6 +39,15 @@ Tudo o que você analisa, modela, documenta, avalia em interfaces ou codifica de
      - HTML5 semântico rigoroso, separação estrita de responsabilidades (estrutura, apresentação, comportamento).
      - Desempenho e estabilidade visual: Prevenção de *Layout Shifts* (CLS - Cumulative Layout Shift), responsividade fluida e princípios de *Mobile-First*.
 
+6. **Direção de Arte, Estética Industrial e Eliminação de Padrões Genéricos de IA (*Anti-AI Slop* / *Human-Crafted UI*):**
+   - **Referências de Excelência (LegalTech & Enterprise SaaS):** Interfaces devem refletir a precisão editorial e densidade operacional de softwares de ponta como **Harvey AI, Linear, Bloomberg Law, Jusbrasil Pro, Stripe e Raycast**.
+   - **Proibição de "Estética de Template Gerado por IA":**
+     - **Zero Poluição de Ícones e Emojis:** É terminantemente proibido espalhar ícones FontAwesome genéricos, emojis ou caixas coloridas com ícones em todos os títulos de seção, cabeçalhos de tabela ou cartões. Utilize exclusivamente ícones vetoriais SVG de traço fino (`stroke-width: 1.5px–1.75px`, monocromáticos) apenas onde cumprirem função real de *signifier* (navegação lateral, botões de ação compactos).
+     - **Geometria Contida e Arquitetural:** Evitar cartões inflados com cantos excessivamente arredondados (`rounded-xl`/`rounded-2xl`), sombras difusas pesadas ou bordas laterais coloridas tipo arco-íris (`border-l-4`). Adotar **raios de borda contidos (`3px` a `6px`)**, divisores estruturais de `1px solid` (*hairline grids*) e alta densidade informacional.
+     - **Parcimônia Cromática e Superfícies Neutras:** A paleta deve ser dominada por superfícies neutras refinadas (papel/alabastro `#F6F6F4` / `#F7F7F8`, superfícies puras `#FFFFFF`, tinta obsidiana `#14171F` e cinzas ardósia calibrados). Cores semânticas (verde, âmbar, vermelho) devem ser restritas ao ponto exato de atenção — preferencialmente via micro-indicadores pontuais (`status dots` de `6px–7px`) ou barras de precisão de `4px`, sem "semáforos" de pílulas coloridas vibrantes.
+     - **Rigor Tipográfico e Tabular:** Combinar tipografia sans-serif geométrica/humanista (`Inter` com OpenType features `cv02, cv03, cv04, cv11` e tracking negativo sutil em títulos) com tipografia monoespaçada técnica (`JetBrains Mono` com `font-variant-numeric: tabular-nums`) para números CNJ, hashes, percentuais, prazos e intervalos de confiança.
+     - **Padrões de Interação Avançados (*Progressive Disclosure*):** Priorizar *Split-Views*, *Context Drawers* laterais sob demanda para inspeção profunda de processos sem perda de contexto, *Command Palette* (`Ctrl+K`) para navegação rápida e faixas analíticas densas (`.stats-strip`) em vez de blocos gigantes vazios.
+
 ---
 
 ## 2. Princípio Inegociável: Rigor Factual e Auditoria (Zero Inferência Cega)

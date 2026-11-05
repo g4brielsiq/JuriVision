@@ -52,10 +52,12 @@ def test_rnf09_wcag_inputs_labels_e_tabelas_semanticas():
 
 
 def test_rnf09_rnf10_contraste_wcag_e_design_tokens():
-    """Verifica que classes de baixo contraste reprovadas (text-slate-400 / text-green-500) foram eliminadas."""
+    """Verifica ausência de classes/CDNs de template IA (Tailwind/FontAwesome) e presença dos tokens."""
     html = INDEX_HTML.read_text(encoding="utf-8")
     css = TOKENS_CSS.read_text(encoding="utf-8")
 
+    assert "cdn.tailwindcss.com" not in html
+    assert "font-awesome" not in html
     assert "text-slate-400" not in html
     assert "text-green-500" not in html
     assert "text-justify" not in html
