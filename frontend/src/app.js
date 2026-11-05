@@ -1,6 +1,7 @@
 /**
- * Controlador de Interface, Dossiê Preditivo, Context Drawer e Acessibilidade (WAI-ARIA 1.2) — JuriVision.
- * Direção de Arte: Precisão Editorial & Alta Densidade Operacional (Harvey AI / Linear / SATIC).
+ * Controlador de Experiência Jurídica, Pesquisa Jurisprudencial, Leitura Documental e Jurimetria — JuriVision.
+ * Direção Estética e Funcional: Legal Editorial + Legal Intelligence
+ * Referência: Guia de UI/UX e Direção Visual — Plataforma de Jurimetria para Advocacia
  * Rastreabilidade:
  * - Requisitos Funcionais: RF-01 a RF-09
  * - Requisitos Não Funcionais: RNF-04 (ISO 9241-110 & Nielsen), RNF-09 (WCAG 2.2 AA), RNF-10 (Leis de UX & Gestalt)
@@ -47,6 +48,8 @@ const FALLBACK_PROCESSOS = [
         resultado: "Procedente",
         data_julgamento: "2026-10-05",
         probabilidade_deferimento: 0.75,
+        resumo_curto:
+            "Responsabilidade civil no transporte aéreo. Cancelamento de voo e atraso superior a quatro horas sem prestação de assistência material adequada ao passageiro.",
     },
     {
         id_processo: "proc-1001",
@@ -58,6 +61,8 @@ const FALLBACK_PROCESSOS = [
         resultado: "Procedente",
         data_julgamento: "2026-08-15",
         probabilidade_deferimento: 0.78,
+        resumo_curto:
+            "Inscrição indevida em cadastro de proteção ao crédito decorrente de cobrança de dívida já quitada. Dano moral configurado in re ipsa.",
     },
     {
         id_processo: "proc-1002",
@@ -69,24 +74,54 @@ const FALLBACK_PROCESSOS = [
         resultado: "Acordo",
         data_julgamento: "2026-09-02",
         probabilidade_deferimento: 0.74,
+        resumo_curto:
+            "Reclamação trabalhista referente a verbas rescisórias e horas extras. Composição amigável homologada em audiência.",
     },
 ];
 
+function loadSavedIds() {
+    try {
+        const raw = window.localStorage.getItem("jurivision_saved_decisions");
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) return new Set(parsed);
+        }
+    } catch {
+        // Ignorar erro de localStorage em ambientes restritos
+    }
+    return new Set(["proc-1004", "proc-1001"]);
+}
+
+function persistSavedIds(savedSet) {
+    try {
+        window.localStorage.setItem(
+            "jurivision_saved_decisions",
+            JSON.stringify(Array.from(savedSet))
+        );
+    } catch {
+        // Ignorar erro de localStorage
+    }
+}
+
 const state = {
-    activeTab: "dashboard",
+    activeTab: "historico", // Seção 4.1: Pesquisa antes de visualização
+    resultsViewMode: "cards", // "cards" (documental) | "table" (comparativa)
     uploadMode: "pdf",
     apiOnline: false,
     currentUser: {
         id: "usr-01",
-        nome: "Lucas Gabriel",
-        oab: "12345/AL",
+        nome: "Dr. Lucas Gabriel",
+        oab: "OAB/AL 12.345",
         authenticated: true,
     },
+    savedDecisions: loadSavedIds(),
     lastAnalyzedProcessId: "proc-1004",
     drawerProcessId: "proc-1004",
+    currentDrawerPayload: null,
     paginaAtual: 1,
     limitePorPagina: 8,
     totalProcessosLista: 0,
+    lastLoadedItems: [],
     chartJuizesInstance: null,
     chartTemasInstance: null,
     toastTimer: null,
@@ -109,15 +144,65 @@ export function showToast(message) {
     if (state.toastTimer) clearTimeout(state.toastTimer);
     state.toastTimer = setTimeout(() => {
         toast.classList.remove("is-visible");
-    }, 3200);
+    }, 3400);
+}
+
+function formatarDataJulgamento(isoStr) {
+    if (!isoStr) return "Data não informada na origem";
+    const parts = String(isoStr).split("-");
+    if (parts.length === 3) {
+        return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    return isoStr;
+}
+
+function updateSavedCounterUI() {
+    const badge = document.getElementById("sidebar-saved-count");
+    if (badge) {
+        badge.textContent = String(state.savedDecisions.size);
+    }
+}
+
+export function toggleSalvarDecisao(idProcesso) {
+    if (!idProcesso) return;
+    if (state.savedDecisions.has(idProcesso)) {
+        state.savedDecisions.delete(idProcesso);
+        showToast("Decisão removida da biblioteca do escritório.");
+    } else {
+        state.savedDecisions.add(idProcesso);
+        showToast("Decisão salva na biblioteca para consulta futura.");
+    }
+    persistSavedIds(state.savedDecisions);
+    updateSavedCounterUI();
+    renderizarListaDecisoes(state.lastLoadedItems);
+}
+
+export async function copiarReferenciaDecisao(item) {
+    if (!item) return;
+    const orgao = item.comarca || "Órgão julgador cadastrado";
+    const num = item.numero_processo || item.id_processo;
+    const rel = item.magistrado || "Magistrado(a) não especificado(a)";
+    const data = formatarDataJulgamento(item.data_julgamento);
+    const assunto = item.tema || "Assunto processual";
+
+    const refTexto = `TJAL. ${orgao}. Processo nº ${num}. Assunto: ${assunto}. Magistrado(a): ${rel}. Julgamento em: ${data}.`;
+
+    try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(refTexto);
+        }
+        showToast(`Referência copiada: Processo nº ${num}`);
+    } catch {
+        showToast(`Referência pronta: ${refTexto}`);
+    }
 }
 
 /* ==========================================================================
-   1. Navegação de Abas (WAI-ARIA 1.2 Tab Pattern + Teclado)
+   1. Navegação Principal entre Áreas (WAI-ARIA 1.2 Tab Pattern + Teclado)
    ========================================================================== */
 export function switchTab(tabId, moveFocus = false) {
     state.activeTab = tabId;
-    const tabs = ["dashboard", "upload", "historico"];
+    const tabs = ["historico", "dashboard", "upload"];
 
     tabs.forEach((id) => {
         const btn = document.getElementById(`btn-${id}`);
@@ -143,14 +228,14 @@ export function switchTab(tabId, moveFocus = false) {
     });
 
     const titles = {
-        dashboard: "Panorama Geral",
-        upload: "Triagem Documental & Dossiê Preditivo",
-        historico: "Acervo Processual Higienizado",
+        historico: "Pesquisa Jurisprudencial",
+        dashboard: "Análise Jurimétrica do Conjunto",
+        upload: "Análise Comparativa de Petição e Importação",
     };
     const headerTitle = document.getElementById("header-title");
     if (headerTitle) headerTitle.textContent = titles[tabId] || "JuriVision";
 
-    announceStatus(`Visão ativa: ${titles[tabId]}`);
+    announceStatus(`Área ativa: ${titles[tabId]}`);
 
     if (tabId === "dashboard") {
         carregarDashboard();
@@ -160,7 +245,7 @@ export function switchTab(tabId, moveFocus = false) {
 }
 
 function setupTabKeyboardNavigation() {
-    const tabOrder = ["dashboard", "upload", "historico"];
+    const tabOrder = ["historico", "dashboard", "upload"];
     const tablist = document.getElementById("sidebar-tablist");
     if (!tablist) return;
 
@@ -185,7 +270,7 @@ function setupTabKeyboardNavigation() {
 }
 
 /* ==========================================================================
-   2. Status de Conexão com a API Core (Heurística de Nielsen #1)
+   2. Disponibilidade da Base Jurisprudencial (Seção 18.6)
    ========================================================================== */
 async function verificarConectividadeApi() {
     const badge = document.getElementById("api-status-badge");
@@ -195,19 +280,22 @@ async function verificarConectividadeApi() {
         state.apiOnline = true;
         const provider = health.ai_provider_configured || "local";
         if (badge) {
-            badge.innerHTML = `<span class="dot dot-success" aria-hidden="true"></span><span>API Core Ativa (${provider})</span>`;
+            badge.innerHTML = `<span class="dot dot-success" aria-hidden="true"></span><span>Acervo TJAL sincronizado</span>`;
         }
-        if (motorEl) motorEl.textContent = provider === "local" ? "local_heuristic" : provider;
+        if (motorEl) {
+            motorEl.textContent =
+                provider === "local" ? "Classificação Estruturada" : `Classificação (${provider})`;
+        }
     } catch {
         state.apiOnline = false;
         if (badge) {
-            badge.innerHTML = `<span class="dot dot-warning" aria-hidden="true"></span><span>Modo Demonstração Offline</span>`;
+            badge.innerHTML = `<span class="dot dot-warning" aria-hidden="true"></span><span>Acervo local de demonstração</span>`;
         }
     }
 }
 
 /* ==========================================================================
-   3. Panorama de Jurimetria, Matrizes de Precisão e Gráficos (RF-07)
+   3. Jurimetria e Análise Estatística com Denominadores e Aprofundamento (RF-07)
    ========================================================================== */
 async function carregarDashboard() {
     let metricas = FALLBACK_METRICAS;
@@ -215,19 +303,26 @@ async function carregarDashboard() {
         metricas = await fetchDashboardMetricas();
         state.apiOnline = true;
     } catch {
-        // Fallback local resiliente
+        // Fallback demonstrativo resiliente
     }
 
+    const total = metricas.total_processos_analisados || 10;
     const pct = (metricas.taxa_exito_global * 100).toFixed(1);
+    const favCount = Math.round(metricas.taxa_exito_global * total);
+
     const elTaxa = document.getElementById("kpi-taxa-exito");
+    const elDenom = document.getElementById("kpi-taxa-denominador");
     const elPrazo = document.getElementById("kpi-tempo-medio");
     const elTotal = document.getElementById("kpi-total-processos");
     const elSidebarCount = document.getElementById("sidebar-total-count");
 
     if (elTaxa) elTaxa.textContent = `${pct}%`;
+    if (elDenom) {
+        elDenom.textContent = `${favCount} decisões favoráveis/acordos em ${total} julgados analisados`;
+    }
     if (elPrazo) elPrazo.textContent = `${metricas.tempo_medio_tramitacao_meses} Meses`;
-    if (elTotal) elTotal.textContent = String(metricas.total_processos_analisados);
-    if (elSidebarCount) elSidebarCount.textContent = String(metricas.total_processos_analisados);
+    if (elTotal) elTotal.textContent = String(total);
+    if (elSidebarCount) elSidebarCount.textContent = String(total);
 
     renderizarMatrizesPrecisao(metricas);
     renderizarGraficos(metricas);
@@ -243,40 +338,79 @@ function renderizarMatrizesPrecisao(metricas) {
                 const total = Math.max(d.procedentes + d.improcedentes, 1);
                 const favPct = Math.round((d.procedentes / total) * 100);
                 return `
-                <div class="compact-metric-row">
-                    <div>
-                        <strong style="font-weight: 500;">${d.juiz}</strong>
-                        <span style="display: block; font-size: 11px; color: var(--text-muted);">
-                            ${d.procedentes} favoráveis · ${d.improcedentes} improcedentes
-                        </span>
+                <div class="comparative-bar-row">
+                    <div class="comparative-row-top">
+                        <div>
+                            <strong style="color: var(--color-navy);">${d.juiz}</strong>
+                            <span style="display: block; font-size: var(--text-xs); color: var(--text-secondary);">
+                                Amostra: ${total} decisões (${d.procedentes} favoráveis · ${d.improcedentes} improcedentes)
+                            </span>
+                        </div>
+                        <div style="text-align: right;">
+                            <strong class="tabular-nums" style="color: var(--color-navy);">${favPct}% favoráveis</strong>
+                            <div>
+                                <button type="button" class="btn btn-ghost btn-sm btn-drill-judge" data-judge="${d.juiz}" style="padding: 0 4px; min-height: 24px;">
+                                    Ver as ${total} decisões →
+                                </button>
+                            </div>
+                        </div>
                     </div>
-                    <div class="mini-bar-track" aria-hidden="true">
-                        <div class="mini-bar-fill" style="width: ${favPct}%;"></div>
-                    </div>
-                    <div class="font-mono" style="text-align: right; font-size: var(--text-xs); font-weight: 600;">
-                        ${favPct}% êxito
+                    <div class="comparative-track" aria-hidden="true">
+                        <div class="comparative-fill-primary" style="width: ${favPct}%;"></div>
                     </div>
                 </div>`;
             })
             .join("");
+
+        judgeList.querySelectorAll(".btn-drill-judge").forEach((btn) => {
+            btn.addEventListener("click", () => {
+                const rawJudge = btn.getAttribute("data-judge") || "";
+                const selectJuiz = document.getElementById("filtro-juiz");
+                if (selectJuiz) {
+                    const cleaned = rawJudge.replace(/^Dra?\.\s*/i, "");
+                    selectJuiz.value = cleaned;
+                }
+                switchTab("historico");
+                showToast(`Exibindo decisões filtradas por: ${rawJudge}`);
+            });
+        });
     }
 
+    const totalGlobal = metricas.total_processos_analisados || 10;
     const themeList = document.getElementById("theme-matrix-list");
     if (themeList) {
         themeList.innerHTML = metricas.volume_por_tema
-            .map(
-                (t) => `
-                <div class="compact-metric-row">
-                    <span style="font-weight: 500;">${t.tema}</span>
-                    <div class="mini-bar-track" aria-hidden="true">
-                        <div class="mini-bar-fill" style="width: ${t.percentual}%;"></div>
+            .map((t) => {
+                const approxCount = Math.max(1, Math.round((t.percentual / 100) * totalGlobal));
+                return `
+                <div class="comparative-bar-row">
+                    <div class="comparative-row-top">
+                        <div>
+                            <strong style="color: var(--color-navy);">${t.tema}</strong>
+                            <span style="display: block; font-size: var(--text-xs); color: var(--text-secondary);">
+                                ${approxCount} julgado(s) no conjunto (${t.percentual}% do universo)
+                            </span>
+                        </div>
+                        <button type="button" class="btn btn-ghost btn-sm btn-drill-theme" data-theme="${t.tema}">
+                            Ver decisões (${approxCount}) →
+                        </button>
                     </div>
-                    <span class="font-mono" style="text-align: right; font-size: var(--text-xs); font-weight: 600;">
-                        ${t.percentual}%
-                    </span>
-                </div>`
-            )
+                    <div class="comparative-track" aria-hidden="true">
+                        <div class="comparative-fill-secondary" style="width: ${t.percentual}%;"></div>
+                    </div>
+                </div>`;
+            })
             .join("");
+
+        themeList.querySelectorAll(".btn-drill-theme").forEach((btn) => {
+            btn.addEventListener("click", () => {
+                const tema = btn.getAttribute("data-theme") || "";
+                const selectTema = document.getElementById("filtro-tema");
+                if (selectTema) selectTema.value = tema;
+                switchTab("historico");
+                showToast(`Exibindo decisões do assunto: ${tema}`);
+            });
+        });
     }
 }
 
@@ -294,16 +428,16 @@ function renderizarGraficos(metricas) {
                 labels: metricas.decisoes_por_juiz.map((d) => d.juiz),
                 datasets: [
                     {
-                        label: "Favoráveis",
+                        label: "Favoráveis (Procedentes / Acordos)",
                         data: metricas.decisoes_por_juiz.map((d) => d.procedentes),
-                        backgroundColor: "#1B365D",
-                        barThickness: 18,
+                        backgroundColor: "#20364A",
+                        barThickness: 22,
                     },
                     {
                         label: "Improcedentes",
                         data: metricas.decisoes_por_juiz.map((d) => d.improcedentes),
-                        backgroundColor: "#CBD5E1",
-                        barThickness: 18,
+                        backgroundColor: "#CBD2D8",
+                        barThickness: 22,
                     },
                 ],
             },
@@ -313,12 +447,17 @@ function renderizarGraficos(metricas) {
                 plugins: {
                     legend: {
                         position: "bottom",
-                        labels: { boxWidth: 10, font: { size: 11, family: "Inter" } },
+                        labels: { boxWidth: 12, font: { size: 12, family: "Inter" } },
                     },
                 },
                 scales: {
                     x: { stacked: true, grid: { display: false } },
-                    y: { stacked: true, beginAtZero: true, ticks: { stepSize: 1 } },
+                    y: {
+                        stacked: true,
+                        beginAtZero: true,
+                        ticks: { stepSize: 1 },
+                        title: { display: true, text: "Nº de decisões", font: { size: 11 } },
+                    },
                 },
             },
         });
@@ -332,10 +471,10 @@ function renderizarGraficos(metricas) {
                 labels: metricas.volume_por_tema.map((t) => t.tema),
                 datasets: [
                     {
-                        label: "Volume (%)",
+                        label: "Participação no conjunto (%)",
                         data: metricas.volume_por_tema.map((t) => t.percentual),
-                        backgroundColor: ["#1B365D", "#334E68", "#486581", "#627D98", "#829AB1"],
-                        barThickness: 14,
+                        backgroundColor: ["#20364A", "#58796D", "#6F889B", "#B29A74", "#95A5B2"],
+                        barThickness: 18,
                     },
                 ],
             },
@@ -347,7 +486,11 @@ function renderizarGraficos(metricas) {
                     legend: { display: false },
                 },
                 scales: {
-                    x: { beginAtZero: true, max: 100 },
+                    x: {
+                        beginAtZero: true,
+                        max: 100,
+                        title: { display: true, text: "Percentual do conjunto (%)", font: { size: 11 } },
+                    },
                     y: { grid: { display: false } },
                 },
             },
@@ -363,8 +506,8 @@ function preencherTabelasAcessiveisGraficos(metricas) {
                 (item) => `
             <tr>
                 <td>${item.juiz}</td>
-                <td class="font-mono">${item.procedentes}</td>
-                <td class="font-mono">${item.improcedentes}</td>
+                <td class="tabular-nums">${item.procedentes}</td>
+                <td class="tabular-nums">${item.improcedentes}</td>
             </tr>`
             )
             .join("");
@@ -377,7 +520,7 @@ function preencherTabelasAcessiveisGraficos(metricas) {
                 (item) => `
             <tr>
                 <td>${item.tema}</td>
-                <td class="font-mono">${item.percentual}%</td>
+                <td class="tabular-nums">${item.percentual}%</td>
             </tr>`
             )
             .join("");
@@ -398,28 +541,21 @@ async function carregarPrecedentesRecentesOverview() {
     tbody.innerHTML = (lista.itens || [])
         .map((item) => {
             const resLower = (item.resultado || "").toLowerCase();
-            const dotClass =
-                resLower === "improcedente"
-                    ? "dot-danger"
-                    : resLower.includes("analise")
-                    ? "dot-warning"
-                    : "dot-success";
+            const badgeClass =
+                resLower === "improcedente" ? "badge-unfavorable" : "badge-favorable";
 
             return `
             <tr>
-                <td class="font-mono" style="font-size: var(--text-xs); font-weight: 600;">${item.numero_processo}</td>
+                <td class="font-mono" style="font-weight: 600; color: var(--color-navy);">${item.numero_processo}</td>
                 <td style="font-weight: 500;">${item.tema}</td>
-                <td style="color: var(--text-secondary);">${item.magistrado}</td>
-                <td style="color: var(--text-secondary); font-size: var(--text-sm);">${item.partes_anonimizadas}</td>
+                <td>${item.magistrado}</td>
+                <td style="color: var(--text-secondary);">${item.partes_anonimizadas}</td>
                 <td>
-                    <span class="status-inline">
-                        <span class="dot ${dotClass}" aria-hidden="true"></span>
-                        <span>${item.resultado}</span>
-                    </span>
+                    <span class="badge-editorial ${badgeClass}">${item.resultado}</span>
                 </td>
                 <td style="text-align: right;">
-                    <button type="button" class="btn btn-ghost btn-xs btn-open-dossier-overview" data-proc-id="${item.id_processo}">
-                        Abrir dossiê →
+                    <button type="button" class="btn btn-secondary btn-sm btn-open-dossier-overview" data-proc-id="${item.id_processo}">
+                        Ler decisão
                     </button>
                 </td>
             </tr>`;
@@ -427,22 +563,376 @@ async function carregarPrecedentesRecentesOverview() {
         .join("");
 
     tbody.querySelectorAll(".btn-open-dossier-overview").forEach((btn) => {
-        btn.addEventListener("click", async () => {
+        btn.addEventListener("click", () => {
             const idProc = btn.getAttribute("data-proc-id");
-            if (!idProc) return;
-            try {
-                const det = await fetchProcessoDetalhes(idProc);
-                switchTab("upload");
-                renderizarResultadoPredicaoPdf(det);
-            } catch (err) {
-                showToast(err.message);
-            }
+            if (idProc) abrirDrawerProcesso(idProc);
         });
     });
 }
 
 /* ==========================================================================
-   4. Ingestão Híbrida PDF / CSV, Barreira LGPD e Dossiê Preditivo (RF-02 a RF-06)
+   4. Pesquisa Jurisprudencial, Cartões Documentais e Filtros (Seções 9, 10, 11)
+   ========================================================================== */
+function renderizarChipsFiltrosAtivos() {
+    const container = document.getElementById("dynamic-filter-chips");
+    if (!container) return;
+
+    const busca = document.getElementById("filtro-busca")?.value.trim() || "";
+    const tema = document.getElementById("filtro-tema")?.value || "";
+    const juiz = document.getElementById("filtro-juiz")?.value || "";
+    const colecao = document.getElementById("filtro-colecao")?.value || "todos";
+
+    const chips = [];
+    if (busca) {
+        chips.push(
+            `<button type="button" class="filter-chip" data-clear-field="filtro-busca">Termo: "${busca}" ×</button>`
+        );
+    }
+    if (tema) {
+        chips.push(
+            `<button type="button" class="filter-chip" data-clear-field="filtro-tema">Assunto: ${tema} ×</button>`
+        );
+    }
+    if (juiz) {
+        chips.push(
+            `<button type="button" class="filter-chip" data-clear-field="filtro-juiz">Magistrado(a): ${juiz} ×</button>`
+        );
+    }
+    if (colecao === "salvos") {
+        chips.push(
+            `<button type="button" class="filter-chip" data-clear-field="filtro-colecao">Apenas decisões salvas ×</button>`
+        );
+    }
+
+    container.innerHTML = chips.join("");
+    container.querySelectorAll("[data-clear-field]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+            const fieldId = btn.getAttribute("data-clear-field");
+            const el = document.getElementById(fieldId);
+            if (el) {
+                el.value = fieldId === "filtro-colecao" ? "todos" : "";
+                carregarBaseConhecimento(1);
+            }
+        });
+    });
+}
+
+export async function carregarBaseConhecimento(novaPagina = null) {
+    if (novaPagina !== null) {
+        state.paginaAtual = novaPagina;
+    }
+
+    const busca = document.getElementById("filtro-busca")?.value.trim() || "";
+    const tema = document.getElementById("filtro-tema")?.value || "";
+    const juiz = document.getElementById("filtro-juiz")?.value || "";
+    const ordenacao = document.getElementById("filtro-ordenacao")?.value || "recentes";
+    const colecao = document.getElementById("filtro-colecao")?.value || "todos";
+
+    renderizarChipsFiltrosAtivos();
+
+    let lista = {
+        total: FALLBACK_PROCESSOS.length,
+        pagina: 1,
+        itens: [...FALLBACK_PROCESSOS],
+    };
+
+    try {
+        lista = await fetchProcessos({
+            tema,
+            juiz,
+            busca,
+            pagina: state.paginaAtual,
+            limite: state.limitePorPagina,
+        });
+    } catch {
+        // Fallback local
+    }
+
+    let itens = Array.isArray(lista.itens) ? [...lista.itens] : [];
+
+    // Filtro de biblioteca pessoal ("Decisões salvas")
+    if (colecao === "salvos") {
+        itens = itens.filter((item) => state.savedDecisions.has(item.id_processo));
+    }
+
+    // Ordenação transparente conforme Seção 11.6
+    itens.sort((a, b) => {
+        if (ordenacao === "antigas") {
+            return String(a.data_julgamento || "").localeCompare(String(b.data_julgamento || ""));
+        }
+        if (ordenacao === "assunto") {
+            return String(a.tema || "").localeCompare(String(b.tema || ""));
+        }
+        return String(b.data_julgamento || "").localeCompare(String(a.data_julgamento || ""));
+    });
+
+    state.lastLoadedItems = itens;
+    state.totalProcessosLista = colecao === "salvos" ? itens.length : lista.total;
+
+    const countLabel = document.getElementById("historico-total-label");
+    if (countLabel) {
+        countLabel.textContent = `${state.totalProcessosLista} decisões encontradas para esta pesquisa.`;
+    }
+
+    renderizarListaDecisoes(itens);
+    atualizarControlesPaginacao();
+}
+
+function renderizarListaDecisoes(itens) {
+    const cardsContainer = document.getElementById("decisions-cards-container");
+    const tbody = document.getElementById("historico-tbody");
+
+    if (!itens || itens.length === 0) {
+        const emptyHtml = `
+            <div class="decision-card" style="text-align: center; align-items: center; padding: var(--space-8);">
+                <strong class="serif-heading" style="font-size: 20px; color: var(--color-navy);">
+                    Nenhuma decisão foi encontrada com esses critérios
+                </strong>
+                <p style="font-size: var(--text-sm); color: var(--text-secondary); max-width: 54ch;">
+                    Remova um dos filtros ativos ou experimente pesquisar por outro assunto, órgão julgador ou expressão jurídica.
+                </p>
+            </div>`;
+        if (cardsContainer) cardsContainer.innerHTML = emptyHtml;
+        if (tbody) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="6" style="padding: 32px; text-align: center; color: var(--text-secondary);">
+                        Nenhuma decisão foi encontrada com esses critérios. Remova um filtro ou tente uma expressão diferente.
+                    </td>
+                </tr>`;
+        }
+        return;
+    }
+
+    if (cardsContainer) {
+        cardsContainer.innerHTML = itens
+            .map((item) => {
+                const resLower = (item.resultado || "").toLowerCase();
+                const badgeClass =
+                    resLower === "improcedente" ? "badge-unfavorable" : "badge-favorable";
+                const isSaved = state.savedDecisions.has(item.id_processo);
+                const dataJulg = formatarDataJulgamento(item.data_julgamento);
+                const comarca = item.comarca || "1ª Vara Cível de Maceió";
+                const sintese =
+                    item.resumo_curto ||
+                    `Decisão judicial proferida nos autos do processo nº ${item.numero_processo} sob relatoria/juízo de ${item.magistrado} (${comarca}), envolvendo ${item.partes_anonimizadas}.`;
+
+                return `
+                <article class="decision-card" data-card-proc-id="${item.id_processo}">
+                    <div class="decision-card-header">
+                        <div>
+                            <div class="decision-court-line">
+                                <span>TJAL · ${comarca}</span>
+                                <span aria-hidden="true">·</span>
+                                <span class="font-mono">Processo nº ${item.numero_processo}</span>
+                            </div>
+                            <div class="decision-process-meta">
+                                <span><strong>Magistrado(a):</strong> ${item.magistrado}</span>
+                                <span aria-hidden="true">·</span>
+                                <span><strong>Data de julgamento:</strong> ${dataJulg}</span>
+                                <span aria-hidden="true">·</span>
+                                <span><strong>Partes (LGPD):</strong> ${item.partes_anonimizadas}</span>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                            ${
+                                isSaved
+                                    ? `<span class="badge-editorial badge-saved">Salva na biblioteca</span>`
+                                    : ""
+                            }
+                            <span class="badge-editorial ${badgeClass}">
+                                Resultado classificado: ${item.resultado}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="decision-subject-row">
+                        <h3 class="decision-subject-title">Assunto: ${item.tema}</h3>
+                    </div>
+
+                    <div class="decision-excerpt-box">
+                        <span class="excerpt-provenance-tag">
+                            Síntese factual estruturada · Dados pessoais protegidos (LGPD)
+                        </span>
+                        <p class="legal-prose" style="font-size: var(--text-base);">
+                            ${sintese}
+                        </p>
+                    </div>
+
+                    <div class="decision-card-footer">
+                        <div class="decision-actions-group">
+                            <button type="button" class="btn btn-primary btn-sm btn-inspecionar-proc" data-inspect-id="${item.id_processo}">
+                                Abrir decisão
+                            </button>
+                            <button type="button" class="btn btn-secondary btn-sm btn-salvar-proc" data-save-id="${item.id_processo}">
+                                ${isSaved ? "Remover da biblioteca" : "Salvar decisão"}
+                            </button>
+                            <button type="button" class="btn btn-secondary btn-sm btn-copiar-ref" data-ref-id="${item.id_processo}">
+                                Copiar referência
+                            </button>
+                        </div>
+
+                        <div class="decision-actions-group">
+                            <button type="button" class="btn btn-ghost btn-sm btn-exportar-pdf" data-pdf-id="${item.id_processo}">
+                                Exportar relatório (PDF)
+                            </button>
+                        </div>
+                    </div>
+                </article>`;
+            })
+            .join("");
+    }
+
+    if (tbody) {
+        tbody.innerHTML = itens
+            .map((item) => {
+                const resLower = (item.resultado || "").toLowerCase();
+                const badgeClass =
+                    resLower === "improcedente" ? "badge-unfavorable" : "badge-favorable";
+                const dataJulg = formatarDataJulgamento(item.data_julgamento);
+
+                return `
+                <tr data-row-proc-id="${item.id_processo}">
+                    <td>
+                        <div class="font-mono" style="font-weight: 600; color: var(--color-navy);">${item.numero_processo}</div>
+                        <div style="font-size: var(--text-xs); color: var(--text-secondary);">Julgamento: ${dataJulg}</div>
+                    </td>
+                    <td style="font-weight: 500;">${item.tema}</td>
+                    <td>
+                        <div>${item.magistrado}</div>
+                        <div style="font-size: var(--text-xs); color: var(--text-secondary);">TJAL · ${item.comarca || "Maceió"}</div>
+                    </td>
+                    <td>
+                        <span>${item.partes_anonimizadas}</span>
+                    </td>
+                    <td>
+                        <span class="badge-editorial ${badgeClass}">${item.resultado}</span>
+                    </td>
+                    <td style="text-align: right; white-space: nowrap;">
+                        <button type="button" data-inspect-id="${item.id_processo}" class="btn btn-secondary btn-sm btn-inspecionar-proc">
+                            Abrir decisão
+                        </button>
+                        <button type="button" data-pdf-id="${item.id_processo}" class="btn btn-ghost btn-sm btn-exportar-pdf">
+                            PDF
+                        </button>
+                    </td>
+                </tr>`;
+            })
+            .join("");
+    }
+
+    document.querySelectorAll(".btn-inspecionar-proc").forEach((btn) => {
+        btn.addEventListener("click", () => {
+            const idProc = btn.getAttribute("data-inspect-id");
+            if (idProc) abrirDrawerProcesso(idProc);
+        });
+    });
+
+    document.querySelectorAll(".btn-salvar-proc").forEach((btn) => {
+        btn.addEventListener("click", () => {
+            const idProc = btn.getAttribute("data-save-id");
+            if (idProc) toggleSalvarDecisao(idProc);
+        });
+    });
+
+    document.querySelectorAll(".btn-copiar-ref").forEach((btn) => {
+        btn.addEventListener("click", () => {
+            const idProc = btn.getAttribute("data-ref-id");
+            const found = itens.find((i) => i.id_processo === idProc);
+            if (found) copiarReferenciaDecisao(found);
+        });
+    });
+
+    document.querySelectorAll(".btn-exportar-pdf").forEach((btn) => {
+        btn.addEventListener("click", () => {
+            const idProc = btn.getAttribute("data-pdf-id");
+            if (idProc) exportarRelatorioPdfProcesso(idProc);
+        });
+    });
+}
+
+export function alternarVisaoResultados(modo) {
+    state.resultsViewMode = modo;
+    const btnCards = document.getElementById("btn-view-cards");
+    const btnTable = document.getElementById("btn-view-table");
+    const cardsBox = document.getElementById("decisions-cards-container");
+    const tableBox = document.getElementById("decisions-table-container");
+
+    if (modo === "cards") {
+        btnCards?.classList.add("active");
+        btnCards?.setAttribute("aria-pressed", "true");
+        btnTable?.classList.remove("active");
+        btnTable?.setAttribute("aria-pressed", "false");
+        cardsBox?.classList.remove("hidden");
+        tableBox?.classList.add("hidden");
+    } else {
+        btnTable?.classList.add("active");
+        btnTable?.setAttribute("aria-pressed", "true");
+        btnCards?.classList.remove("active");
+        btnCards?.setAttribute("aria-pressed", "false");
+        tableBox?.classList.remove("hidden");
+        cardsBox?.classList.add("hidden");
+    }
+}
+
+/* ==========================================================================
+   5. Leitura Individual de Decisão Judicial (Seção 12)
+   ========================================================================== */
+async function abrirDrawerProcesso(idProcesso) {
+    const drawer = document.getElementById("drawer-processo");
+    if (!drawer) return;
+
+    try {
+        const det = await fetchProcessoDetalhes(idProcesso);
+        state.drawerProcessId = det.id_processo;
+        state.currentDrawerPayload = det;
+        const meta = det.metadados_extraidos;
+        const pred = det.analise_preditiva;
+
+        document.getElementById("drawer-proc-id").textContent = det.id_processo;
+        document.getElementById("drawer-proc-cnj").textContent = `Processo nº ${meta.numero_processo}`;
+        document.getElementById("drawer-proc-tema").textContent = meta.tema;
+        document.getElementById("drawer-proc-juiz").textContent = meta.magistrado;
+        document.getElementById("drawer-proc-comarca").textContent = `TJAL · ${meta.comarca}`;
+        document.getElementById("drawer-proc-autor").textContent = meta.partes_anonimizadas.autor;
+        document.getElementById("drawer-proc-reu").textContent = meta.partes_anonimizadas.reu;
+        document.getElementById("drawer-proc-prob").textContent =
+            `${Math.round(pred.probabilidade_deferimento * 100)}% em ${pred.casos_similares_encontrados || 42} decisões semelhantes`;
+        document.getElementById("drawer-proc-resumo").textContent = det.resumo_nlp;
+        document.getElementById("drawer-proc-tese").textContent = pred.tese_recomendada;
+
+        const saveBtn = document.getElementById("btn-drawer-save");
+        if (saveBtn) {
+            saveBtn.textContent = state.savedDecisions.has(det.id_processo)
+                ? "Salva na biblioteca"
+                : "Salvar decisão";
+        }
+
+        drawer.classList.remove("hidden");
+        announceStatus(`Leitura da decisão aberta para o processo ${meta.numero_processo}.`);
+    } catch (err) {
+        showToast(err.message);
+    }
+}
+
+function fecharDrawerProcesso() {
+    document.getElementById("drawer-processo")?.classList.add("hidden");
+}
+
+function atualizarControlesPaginacao() {
+    const btnPrev = document.getElementById("btn-page-prev");
+    const btnNext = document.getElementById("btn-page-next");
+    const pageInfo = document.getElementById("pagination-info");
+
+    const totalPaginas = Math.max(1, Math.ceil(state.totalProcessosLista / state.limitePorPagina));
+    if (pageInfo) pageInfo.textContent = `Página ${state.paginaAtual} de ${totalPaginas}`;
+    if (btnPrev) btnPrev.disabled = state.paginaAtual <= 1;
+    if (btnNext) btnNext.disabled = state.paginaAtual >= totalPaginas;
+}
+
+/* ==========================================================================
+   6. Análise Comparativa de Petição e Importação CSV (RF-02 a RF-06)
    ========================================================================== */
 export function alternarModoUpload(mode) {
     state.uploadMode = mode;
@@ -481,7 +971,7 @@ export function resetarFluxoUpload() {
     if (inputPdf) inputPdf.value = "";
     if (inputCsv) inputCsv.value = "";
 
-    announceStatus("Esteira de submissão restaurada.");
+    announceStatus("Formulário de submissão de documentos pronto.");
 }
 
 function exibirErroUpload(mensagem) {
@@ -494,14 +984,14 @@ function exibirErroUpload(mensagem) {
     if (errMsg) errMsg.textContent = mensagem;
     errBox?.classList.remove("hidden");
 
-    announceStatus(`Recusa de ingestão: ${mensagem}`);
+    announceStatus(`Não foi possível concluir a leitura: ${mensagem}`);
 }
 
 export async function processarArquivoPdf(file) {
     if (!file) return;
     if (!file.name.toLowerCase().endsWith(".pdf")) {
         exibirErroUpload(
-            "Formato inválido (RN-04): Selecione exclusivamente arquivos com extensão .PDF."
+            "O arquivo selecionado não está em formato PDF. Selecione um documento com extensão .PDF para prosseguir."
         );
         return;
     }
@@ -509,24 +999,26 @@ export async function processarArquivoPdf(file) {
     document.getElementById("upload-selection-container")?.classList.add("hidden");
     document.getElementById("error-state")?.classList.add("hidden");
     document.getElementById("loading-state")?.classList.remove("hidden");
-    announceStatus("Processando petição na barreira local LGPD...");
+    announceStatus("Examinando documento e aplicando proteção de dados pessoais...");
 
     try {
         const resultado = await uploadProcessoPdf(file);
         document.getElementById("loading-state")?.classList.add("hidden");
         document.getElementById("upload-selection-container")?.classList.remove("hidden");
         renderizarResultadoPredicaoPdf(resultado);
-        showToast(`Dossiê ${resultado.metadados_extraidos.numero_processo} higienizado e analisado.`);
+        showToast(
+            `Estudo comparativo concluído para o processo ${resultado.metadados_extraidos.numero_processo}.`
+        );
         carregarDashboard();
     } catch (err) {
-        exibirErroUpload(err.message || "Falha ao processar o PDF.");
+        exibirErroUpload(err.message || "Não foi possível ler o arquivo PDF enviado.");
     }
 }
 
 export async function processarArquivoCsv(file) {
     if (!file) return;
     if (!file.name.toLowerCase().endsWith(".csv")) {
-        exibirErroUpload("Formato inválido (RN-04): Selecione uma planilha .CSV.");
+        exibirErroUpload("Selecione uma planilha no formato .CSV para importar decisões em lote.");
         return;
     }
 
@@ -534,7 +1026,7 @@ export async function processarArquivoCsv(file) {
     document.getElementById("error-state")?.classList.add("hidden");
     document.getElementById("csv-result-state")?.classList.add("hidden");
     document.getElementById("loading-state")?.classList.remove("hidden");
-    announceStatus("Processando planilha CSV em lote...");
+    announceStatus("Processando planilha de decisões...");
 
     try {
         const resCsv = await uploadProcessosCsv(file);
@@ -547,10 +1039,10 @@ export async function processarArquivoCsv(file) {
         document.getElementById("csv-res-importados").textContent = String(resCsv.total_importados_com_sucesso);
         document.getElementById("csv-res-lgpd").textContent = String(resCsv.total_entidades_anonimizadas_lgpd);
 
-        showToast(`${resCsv.total_importados_com_sucesso} processos importados e anonimizados via CSV.`);
+        showToast(`${resCsv.total_importados_com_sucesso} decisões adicionadas ao acervo.`);
         carregarDashboard();
     } catch (err) {
-        exibirErroUpload(err.message || "Falha ao importar planilha CSV.");
+        exibirErroUpload(err.message || "Não foi possível importar a planilha CSV.");
     }
 }
 
@@ -567,13 +1059,16 @@ export function renderizarResultadoPredicaoPdf(payload) {
     const probPct = Math.round(pred.probabilidade_deferimento * 100);
     const margemPct = Math.round((pred.margem_confianca || 0.08) * 100);
 
-    document.getElementById("res-id-processo").textContent = payload.id_processo;
+    document.getElementById("res-id-processo").textContent = `Ref. ${payload.id_processo}`;
     document.getElementById("res-numero-cnj").textContent = meta.numero_processo;
     document.getElementById("res-probabilidade").textContent = `${probPct}%`;
-    document.getElementById("res-margem").textContent = `±${margemPct}% intervalo de confiança`;
+    document.getElementById("res-margem").textContent = `±${margemPct}% variação observada na amostra`;
     document.getElementById("res-prazo").textContent = `${pred.tempo_estimado_sentenca_meses} meses`;
     document.getElementById("res-similares").textContent = `${pred.casos_similares_encontrados} julgados`;
-    document.getElementById("res-provedor-ia").textContent = pred.provedor_ia || "local_heuristic";
+    document.getElementById("res-provedor-ia").textContent =
+        pred.provedor_ia === "local_heuristic" || !pred.provedor_ia
+            ? "Análise Estatística Local"
+            : `Análise (${pred.provedor_ia})`;
 
     document.getElementById("res-tema").textContent = meta.tema;
     document.getElementById("res-magistrado").textContent = meta.magistrado;
@@ -582,7 +1077,7 @@ export function renderizarResultadoPredicaoPdf(payload) {
     document.getElementById("res-reu").textContent = meta.partes_anonimizadas.reu;
 
     document.getElementById("res-lgpd-badge").textContent =
-        `LGPD Verificado · ${lgpd.total_cpfs_mascarados} CPF/RG e ${lgpd.total_nomes_mascarados} nome(s) mascarados`;
+        `LGPD: ${lgpd.total_cpfs_mascarados} documento(s) e ${lgpd.total_nomes_mascarados} nome(s) ocultados`;
 
     document.getElementById("res-resumo-nlp").textContent = payload.resumo_nlp;
     document.getElementById("res-tese-recomendada").textContent = pred.tese_recomendada;
@@ -590,203 +1085,43 @@ export function renderizarResultadoPredicaoPdf(payload) {
 }
 
 /* ==========================================================================
-   5. Acervo Processual, Filtros, Paginação e Context Drawer Lateral (RF-08)
-   ========================================================================== */
-export async function carregarBaseConhecimento(novaPagina = null) {
-    if (novaPagina !== null) {
-        state.paginaAtual = novaPagina;
-    }
-
-    const busca = document.getElementById("filtro-busca")?.value.trim() || "";
-    const tema = document.getElementById("filtro-tema")?.value || "";
-    const juiz = document.getElementById("filtro-juiz")?.value || "";
-
-    let lista = {
-        total: FALLBACK_PROCESSOS.length,
-        pagina: 1,
-        itens: FALLBACK_PROCESSOS,
-    };
-
-    try {
-        lista = await fetchProcessos({
-            tema,
-            juiz,
-            busca,
-            pagina: state.paginaAtual,
-            limite: state.limitePorPagina,
-        });
-    } catch {
-        // Fallback local
-    }
-
-    state.totalProcessosLista = lista.total;
-    const tbody = document.getElementById("historico-tbody");
-    const countLabel = document.getElementById("historico-total-label");
-
-    if (countLabel) {
-        countLabel.textContent = `${lista.total} processo(s) higienizado(s) no acervo`;
-    }
-    if (!tbody) return;
-
-    if (!lista.itens || lista.itens.length === 0) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="6" style="padding: 28px; text-align: center; color: var(--text-secondary);">
-                    Nenhum processo encontrado para os critérios selecionados.
-                </td>
-            </tr>`;
-        return;
-    }
-
-    tbody.innerHTML = lista.itens
-        .map((item) => {
-            const resLower = (item.resultado || "").toLowerCase();
-            const dotClass =
-                resLower === "improcedente"
-                    ? "dot-danger"
-                    : resLower.includes("analise")
-                    ? "dot-warning"
-                    : "dot-success";
-
-            const probText =
-                item.probabilidade_deferimento != null
-                    ? `${Math.round(item.probabilidade_deferimento * 100)}%`
-                    : "—";
-
-            return `
-            <tr data-row-proc-id="${item.id_processo}">
-                <td>
-                    <div class="font-mono" style="font-size: var(--text-xs); font-weight: 600;">${item.numero_processo}</div>
-                    <div class="font-mono" style="font-size: 10.5px; color: var(--text-muted);">${item.id_processo}</div>
-                </td>
-                <td style="font-weight: 500;">${item.tema}</td>
-                <td>
-                    <div>${item.magistrado}</div>
-                    <div style="font-size: var(--text-xs); color: var(--text-muted);">${item.comarca || ""}</div>
-                </td>
-                <td>
-                    <span>${item.partes_anonimizadas}</span>
-                    <span class="tag-subtle tag-lgpd" style="margin-left: 6px;">LGPD</span>
-                </td>
-                <td>
-                    <div class="status-inline">
-                        <span class="dot ${dotClass}" aria-hidden="true"></span>
-                        <span style="font-weight: 500; color: var(--text-primary);">${item.resultado}</span>
-                    </div>
-                    <div class="font-mono" style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
-                        Score IA: ${probText}
-                    </div>
-                </td>
-                <td style="text-align: right; white-space: nowrap;">
-                    <button type="button" data-inspect-id="${item.id_processo}" class="btn btn-secondary btn-xs btn-inspecionar-proc">
-                        Inspecionar
-                    </button>
-                    <button type="button" data-pdf-id="${item.id_processo}" class="btn btn-ghost btn-xs btn-exportar-pdf">
-                        PDF
-                    </button>
-                </td>
-            </tr>`;
-        })
-        .join("");
-
-    tbody.querySelectorAll(".btn-inspecionar-proc").forEach((btn) => {
-        btn.addEventListener("click", () => {
-            const idProc = btn.getAttribute("data-inspect-id");
-            if (idProc) abrirDrawerProcesso(idProc);
-        });
-    });
-
-    tbody.querySelectorAll(".btn-exportar-pdf").forEach((btn) => {
-        btn.addEventListener("click", () => {
-            const idProc = btn.getAttribute("data-pdf-id");
-            if (idProc) exportarRelatorioPdfProcesso(idProc);
-        });
-    });
-
-    atualizarControlesPaginacao();
-}
-
-async function abrirDrawerProcesso(idProcesso) {
-    const drawer = document.getElementById("drawer-processo");
-    if (!drawer) return;
-
-    try {
-        const det = await fetchProcessoDetalhes(idProcesso);
-        state.drawerProcessId = det.id_processo;
-        const meta = det.metadados_extraidos;
-        const pred = det.analise_preditiva;
-
-        document.getElementById("drawer-proc-id").textContent = det.id_processo;
-        document.getElementById("drawer-proc-cnj").textContent = meta.numero_processo;
-        document.getElementById("drawer-proc-tema").textContent = meta.tema;
-        document.getElementById("drawer-proc-juiz").textContent = meta.magistrado;
-        document.getElementById("drawer-proc-comarca").textContent = meta.comarca;
-        document.getElementById("drawer-proc-autor").textContent = meta.partes_anonimizadas.autor;
-        document.getElementById("drawer-proc-reu").textContent = meta.partes_anonimizadas.reu;
-        document.getElementById("drawer-proc-prob").textContent = `${Math.round(pred.probabilidade_deferimento * 100)}% (±${Math.round(pred.margem_confianca * 100)}%)`;
-        document.getElementById("drawer-proc-resumo").textContent = det.resumo_nlp;
-        document.getElementById("drawer-proc-tese").textContent = pred.tese_recomendada;
-
-        drawer.classList.add("is-open");
-        announceStatus(`Painel de inspeção aberto para o processo ${meta.numero_processo}.`);
-    } catch (err) {
-        showToast(err.message);
-    }
-}
-
-function fecharDrawerProcesso() {
-    document.getElementById("drawer-processo")?.classList.remove("is-open");
-}
-
-function atualizarControlesPaginacao() {
-    const btnPrev = document.getElementById("btn-page-prev");
-    const btnNext = document.getElementById("btn-page-next");
-    const pageInfo = document.getElementById("pagination-info");
-
-    const totalPaginas = Math.max(1, Math.ceil(state.totalProcessosLista / state.limitePorPagina));
-    if (pageInfo) pageInfo.textContent = `Página ${state.paginaAtual} de ${totalPaginas}`;
-    if (btnPrev) btnPrev.disabled = state.paginaAtual <= 1;
-    if (btnNext) btnNext.disabled = state.paginaAtual >= totalPaginas;
-}
-
-/* ==========================================================================
-   6. Exportação de Relatório Estratégico em PDF (RF-09)
+   7. Exportação de Relatório Analítico em PDF (RF-09)
    ========================================================================== */
 export function exportarRelatorioPdfProcesso(idProcesso = null) {
     const targetId = idProcesso || state.lastAnalyzedProcessId || "proc-1004";
     const url = getRelatorioPdfUrl(targetId);
-    showToast(`Exportando relatório estratégico PDF (${targetId})...`);
+    showToast(`Preparando relatório analítico em PDF (${targetId})...`);
     window.open(url, "_blank", "noopener,noreferrer");
 }
 
 /* ==========================================================================
-   7. Modal de Autenticação JWT (RF-01) & Command Palette (Ctrl+K)
+   8. Modais de Autenticação (RF-01) e Metodologia (Seção 21.3)
    ========================================================================== */
-function configurarModalAutenticacao() {
-    const modal = document.getElementById("login-modal");
-    const btnOpen = document.getElementById("btn-open-login");
-    const btnClose = document.getElementById("btn-close-login");
-    const form = document.getElementById("login-form");
+function configurarModais() {
+    const loginModal = document.getElementById("login-modal");
+    const btnOpenLogin = document.getElementById("btn-open-login");
+    const btnCloseLogin = document.getElementById("btn-close-login");
+    const loginForm = document.getElementById("login-form");
     const feedback = document.getElementById("login-feedback");
 
-    btnOpen?.addEventListener("click", () => {
-        modal?.classList.remove("hidden");
+    btnOpenLogin?.addEventListener("click", () => {
+        loginModal?.classList.remove("hidden");
         document.getElementById("login-email")?.focus();
     });
 
-    btnClose?.addEventListener("click", () => {
-        modal?.classList.add("hidden");
+    btnCloseLogin?.addEventListener("click", () => {
+        loginModal?.classList.add("hidden");
     });
 
-    form?.addEventListener("submit", async (e) => {
+    loginForm?.addEventListener("submit", async (e) => {
         e.preventDefault();
         const email = document.getElementById("login-email")?.value.trim() || "";
         const senha = document.getElementById("login-senha")?.value || "";
 
         if (feedback) {
-            feedback.style.background = "var(--accent-subtle)";
-            feedback.style.color = "var(--accent-primary)";
-            feedback.textContent = "Validando credenciais e emitindo token JWT...";
+            feedback.style.background = "var(--color-navy-subtle)";
+            feedback.style.color = "var(--color-navy)";
+            feedback.textContent = "Verificando credenciais do advogado...";
             feedback.classList.remove("hidden");
         }
 
@@ -798,163 +1133,113 @@ function configurarModalAutenticacao() {
                 token: res.access_token,
             };
 
-            document.getElementById("sidebar-user-name").textContent = res.usuario.nome;
-            document.getElementById("sidebar-user-oab").textContent = `OAB ${res.usuario.oab} · JWT`;
+            const nameEl = document.getElementById("sidebar-user-name");
+            const oabEl = document.getElementById("sidebar-user-oab");
+            if (nameEl) nameEl.textContent = res.usuario.nome;
+            if (oabEl) oabEl.textContent = `OAB ${res.usuario.oab}`;
 
             if (feedback) {
-                feedback.style.background = "var(--success-bg)";
-                feedback.style.color = "var(--success-fg)";
-                feedback.textContent = `Sessão autenticada: ${res.usuario.nome} (OAB ${res.usuario.oab}).`;
+                feedback.style.background = "var(--color-sage-subtle)";
+                feedback.style.color = "#2F4F44";
+                feedback.textContent = `Sessão autenticada para ${res.usuario.nome}.`;
             }
-            showToast(`Token JWT emitido para ${res.usuario.nome}.`);
-            setTimeout(() => modal?.classList.add("hidden"), 700);
+
+            showToast(`Bem-vindo(a), ${res.usuario.nome}.`);
+            setTimeout(() => {
+                loginModal?.classList.add("hidden");
+                feedback?.classList.add("hidden");
+            }, 700);
         } catch (err) {
             if (feedback) {
-                feedback.style.background = "var(--danger-bg)";
-                feedback.style.color = "var(--danger-fg)";
-                feedback.textContent = err.message;
+                feedback.style.background = "var(--status-error-bg)";
+                feedback.style.color = "var(--status-error-fg)";
+                feedback.textContent = err.message || "Não foi possível autenticar com as credenciais informadas.";
             }
         }
     });
-}
 
-function configurarCommandPalette() {
-    const modal = document.getElementById("modal-command");
-    const input = document.getElementById("cmd-search-input");
-    const list = document.getElementById("cmd-results-list");
-    const btnClose = document.getElementById("btn-close-cmd");
-
-    const commands = [
-        {
-            label: "Ir para Panorama Geral de Jurimetria",
-            meta: "Visão RF-07",
-            action: () => switchTab("dashboard"),
-        },
-        {
-            label: "Abrir Triagem Documental & Dossiê Preditivo",
-            meta: "Visão RF-02 / RF-06",
-            action: () => switchTab("upload"),
-        },
-        {
-            label: "Consultar Acervo Processual Higienizado",
-            meta: "Visão RF-08",
-            action: () => switchTab("historico"),
-        },
-        {
-            label: "Executar Petição PDF de Demonstração (API Real)",
-            meta: "POST /upload-pdf",
-            action: () => {
-                switchTab("upload");
-                processarArquivoPdf(buildSamplePetitionPdfFile());
-            },
-        },
-        {
-            label: "Executar Importação em Lote CSV de Demonstração",
-            meta: "POST /upload-csv",
-            action: () => {
-                switchTab("upload");
-                alternarModoUpload("csv");
-                processarArquivoCsv(buildSampleBatchCsvFile());
-            },
-        },
-        {
-            label: "Exportar Relatório Estratégico em PDF do Processo Ativo",
-            meta: "GET /relatorios/pdf",
-            action: () => exportarRelatorioPdfProcesso(),
-        },
-    ];
-
-    function renderCommands(filterText = "") {
-        if (!list) return;
-        const q = filterText.trim().toLowerCase();
-        const filtered = commands.filter(
-            (c) => !q || c.label.toLowerCase().includes(q) || c.meta.toLowerCase().includes(q)
-        );
-        list.innerHTML = filtered
-            .map(
-                (cmd, idx) => `
-            <button type="button" class="cmd-item" data-cmd-idx="${idx}">
-                <span>${cmd.label}</span>
-                <span class="font-mono" style="font-size: 11px; color: var(--text-muted);">${cmd.meta}</span>
-            </button>`
-            )
-            .join("");
-
-        list.querySelectorAll(".cmd-item").forEach((btn, idx) => {
-            btn.addEventListener("click", () => {
-                modal?.classList.add("hidden");
-                filtered[idx]?.action();
-            });
-        });
-    }
-
-    function openCmd() {
-        modal?.classList.remove("hidden");
-        if (input) {
-            input.value = "";
-            renderCommands("");
-            input.focus();
-        }
-    }
-
-    document.getElementById("btn-open-cmd")?.addEventListener("click", openCmd);
-    document.getElementById("btn-workspace-cmd")?.addEventListener("click", openCmd);
-    btnClose?.addEventListener("click", () => modal?.classList.add("hidden"));
-    input?.addEventListener("input", () => renderCommands(input.value));
-
-    document.addEventListener("keydown", (e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
-            e.preventDefault();
-            openCmd();
-        } else if (e.key === "Escape") {
-            modal?.classList.add("hidden");
-            document.getElementById("login-modal")?.classList.add("hidden");
-            fecharDrawerProcesso();
-        }
+    // Modal de Metodologia
+    const methModal = document.getElementById("methodology-modal");
+    document.getElementById("btn-open-methodology")?.addEventListener("click", () => {
+        methModal?.classList.remove("hidden");
+    });
+    document.getElementById("btn-close-methodology")?.addEventListener("click", () => {
+        methModal?.classList.add("hidden");
     });
 }
 
 /* ==========================================================================
-   8. Inicialização Global
+   9. Inicialização de Eventos da Aplicação
    ========================================================================== */
-document.addEventListener("DOMContentLoaded", () => {
+function initApp() {
+    updateSavedCounterUI();
     setupTabKeyboardNavigation();
-    configurarModalAutenticacao();
-    configurarCommandPalette();
-    verificarConectividadeApi();
-    carregarDashboard();
+    configurarModais();
 
-    // Navegação de abas
+    // Abas principais
+    document.getElementById("btn-historico")?.addEventListener("click", () => switchTab("historico"));
     document.getElementById("btn-dashboard")?.addEventListener("click", () => switchTab("dashboard"));
     document.getElementById("btn-upload")?.addEventListener("click", () => switchTab("upload"));
-    document.getElementById("btn-historico")?.addEventListener("click", () => switchTab("historico"));
-    document.getElementById("btn-topbar-new-analysis")?.addEventListener("click", () => switchTab("upload"));
-    document.getElementById("btn-overview-ver-todos")?.addEventListener("click", () => switchTab("historico"));
 
-    // Atalhos operacionais da Sidebar
-    document.getElementById("btn-nav-sample-pdf")?.addEventListener("click", () => {
-        switchTab("upload");
-        processarArquivoPdf(buildSamplePetitionPdfFile());
+    // Ações de navegação contextual (Seção 7.3)
+    document.getElementById("btn-go-jurimetria-from-search")?.addEventListener("click", () => {
+        switchTab("dashboard");
+        showToast("Exibindo indicadores jurimétricos do acervo consultado.");
     });
+
+    document.getElementById("btn-overview-ver-todos")?.addEventListener("click", () => {
+        switchTab("historico");
+    });
+
+    document.getElementById("btn-nav-saved-decisions")?.addEventListener("click", () => {
+        const selectCol = document.getElementById("filtro-colecao");
+        if (selectCol) selectCol.value = "salvos";
+        switchTab("historico");
+        carregarBaseConhecimento(1);
+        showToast("Exibindo decisões salvas na biblioteca do escritório.");
+    });
+
     document.getElementById("btn-nav-export-pdf")?.addEventListener("click", () => {
         exportarRelatorioPdfProcesso();
     });
 
-    // Alternância de Modo PDF / CSV
+    document.getElementById("btn-topbar-new-analysis")?.addEventListener("click", () => {
+        switchTab("upload");
+        alternarModoUpload("pdf");
+    });
+
+    // Alternância entre Cartões de Decisão e Tabela Comparativa
+    document.getElementById("btn-view-cards")?.addEventListener("click", () => alternarVisaoResultados("cards"));
+    document.getElementById("btn-view-table")?.addEventListener("click", () => alternarVisaoResultados("table"));
+
+    // Atalhos de pesquisas recentes (Seção 9.4)
+    document.querySelectorAll(".recent-chip").forEach((chip) => {
+        chip.addEventListener("click", () => {
+            const qTema = chip.getAttribute("data-quick-tema") || "";
+            const qBusca = chip.getAttribute("data-quick-busca") || "";
+            const elTema = document.getElementById("filtro-tema");
+            const elBusca = document.getElementById("filtro-busca");
+            if (elTema) elTema.value = qTema;
+            if (elBusca) elBusca.value = qBusca;
+            carregarBaseConhecimento(1);
+        });
+    });
+
+    // Submissão de PDF / CSV
     document.getElementById("mode-btn-pdf")?.addEventListener("click", () => alternarModoUpload("pdf"));
     document.getElementById("mode-btn-csv")?.addEventListener("click", () => alternarModoUpload("csv"));
 
-    // Inputs de Arquivo Reais
-    document.getElementById("file-input-pdf")?.addEventListener("change", (e) => {
+    const inputPdf = document.getElementById("file-input-pdf");
+    const inputCsv = document.getElementById("file-input-csv");
+    inputPdf?.addEventListener("change", (e) => {
         const file = e.target.files?.[0];
         if (file) processarArquivoPdf(file);
     });
-    document.getElementById("file-input-csv")?.addEventListener("change", (e) => {
+    inputCsv?.addEventListener("change", (e) => {
         const file = e.target.files?.[0];
         if (file) processarArquivoCsv(file);
     });
 
-    // Demonstração Real com 1 Clique
     document.getElementById("btn-sample-pdf")?.addEventListener("click", () => {
         processarArquivoPdf(buildSamplePetitionPdfFile());
     });
@@ -962,12 +1247,11 @@ document.addEventListener("DOMContentLoaded", () => {
         processarArquivoCsv(buildSampleBatchCsvFile());
     });
 
-    // Botões de Reset / Reversão (ISO 9241-110 Controlabilidade)
     document.getElementById("btn-reset-upload")?.addEventListener("click", resetarFluxoUpload);
     document.getElementById("btn-reset-csv")?.addEventListener("click", resetarFluxoUpload);
     document.getElementById("btn-retry-error")?.addEventListener("click", resetarFluxoUpload);
 
-    // Exportação de Relatório PDF (RF-09)
+    // Exportação PDF (RF-09)
     document.getElementById("btn-header-export-pdf")?.addEventListener("click", () => {
         exportarRelatorioPdfProcesso();
     });
@@ -975,40 +1259,85 @@ document.addEventListener("DOMContentLoaded", () => {
         exportarRelatorioPdfProcesso(state.lastAnalyzedProcessId);
     });
 
-    // Context Drawer do Acervo
-    document.getElementById("btn-close-drawer")?.addEventListener("click", fecharDrawerProcesso);
-    document.getElementById("btn-drawer-export-pdf")?.addEventListener("click", () => {
-        exportarRelatorioPdfProcesso(state.drawerProcessId);
-    });
-    document.getElementById("btn-drawer-open-dossier")?.addEventListener("click", async () => {
-        try {
-            const det = await fetchProcessoDetalhes(state.drawerProcessId);
-            fecharDrawerProcesso();
-            switchTab("upload");
-            renderizarResultadoPredicaoPdf(det);
-        } catch (err) {
-            showToast(err.message);
-        }
-    });
-
-    // Filtros e Paginação (RF-08)
+    // Filtros e paginação na Pesquisa Jurisprudencial (RF-08)
     document.getElementById("form-filtros-historico")?.addEventListener("submit", (e) => {
         e.preventDefault();
         carregarBaseConhecimento(1);
     });
+
+    ["filtro-tema", "filtro-juiz", "filtro-ordenacao", "filtro-colecao"].forEach((id) => {
+        document.getElementById(id)?.addEventListener("change", () => carregarBaseConhecimento(1));
+    });
+
     document.getElementById("btn-limpar-filtros")?.addEventListener("click", () => {
-        const elBusca = document.getElementById("filtro-busca");
-        const elTema = document.getElementById("filtro-tema");
-        const elJuiz = document.getElementById("filtro-juiz");
-        if (elBusca) elBusca.value = "";
-        if (elTema) elTema.value = "";
-        if (elJuiz) elJuiz.value = "";
+        const fBusca = document.getElementById("filtro-busca");
+        const fTema = document.getElementById("filtro-tema");
+        const fJuiz = document.getElementById("filtro-juiz");
+        const fCol = document.getElementById("filtro-colecao");
+        if (fBusca) fBusca.value = "";
+        if (fTema) fTema.value = "";
+        if (fJuiz) fJuiz.value = "";
+        if (fCol) fCol.value = "todos";
         carregarBaseConhecimento(1);
     });
+
     document.getElementById("btn-page-prev")?.addEventListener("click", () => {
         if (state.paginaAtual > 1) carregarBaseConhecimento(state.paginaAtual - 1);
     });
     document.getElementById("btn-page-next")?.addEventListener("click", () => {
         carregarBaseConhecimento(state.paginaAtual + 1);
     });
-});
+
+    // Leitor Individual de Decisão (#drawer-processo)
+    document.getElementById("btn-close-drawer")?.addEventListener("click", fecharDrawerProcesso);
+    document.getElementById("btn-drawer-export-pdf")?.addEventListener("click", () => {
+        exportarRelatorioPdfProcesso(state.drawerProcessId);
+    });
+    document.getElementById("btn-drawer-open-dossier")?.addEventListener("click", () => {
+        if (state.currentDrawerPayload) {
+            renderizarResultadoPredicaoPdf(state.currentDrawerPayload);
+        }
+        fecharDrawerProcesso();
+        switchTab("upload");
+    });
+    document.getElementById("btn-drawer-save")?.addEventListener("click", () => {
+        toggleSalvarDecisao(state.drawerProcessId);
+        const saveBtn = document.getElementById("btn-drawer-save");
+        if (saveBtn) {
+            saveBtn.textContent = state.savedDecisions.has(state.drawerProcessId)
+                ? "Salva na biblioteca"
+                : "Salvar decisão";
+        }
+    });
+    document.getElementById("btn-drawer-copy-ref")?.addEventListener("click", () => {
+        if (state.currentDrawerPayload) {
+            const meta = state.currentDrawerPayload.metadados_extraidos;
+            copiarReferenciaDecisao({
+                numero_processo: meta.numero_processo,
+                comarca: meta.comarca,
+                magistrado: meta.magistrado,
+                tema: meta.tema,
+                data_julgamento: "2026-10-05",
+            });
+        }
+    });
+
+    // Atalho global Escape para fechar janelas sobrepostas
+    window.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+            fecharDrawerProcesso();
+            document.getElementById("login-modal")?.classList.add("hidden");
+            document.getElementById("methodology-modal")?.classList.add("hidden");
+        }
+    });
+
+    verificarConectividadeApi();
+    carregarBaseConhecimento(1);
+    carregarDashboard();
+}
+
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initApp);
+} else {
+    initApp();
+}

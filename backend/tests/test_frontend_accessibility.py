@@ -52,7 +52,7 @@ def test_rnf09_wcag_inputs_labels_e_tabelas_semanticas():
 
 
 def test_rnf09_rnf10_contraste_wcag_e_design_tokens():
-    """Verifica ausência de classes/CDNs de template IA (Tailwind/FontAwesome) e presença dos tokens."""
+    """Verifica conformidade com o Guia Legal Editorial + Legal Intelligence e ausência de CDNs legados."""
     html = INDEX_HTML.read_text(encoding="utf-8")
     css = TOKENS_CSS.read_text(encoding="utf-8")
 
@@ -61,6 +61,10 @@ def test_rnf09_rnf10_contraste_wcag_e_design_tokens():
     assert "text-slate-400" not in html
     assert "text-green-500" not in html
     assert "text-justify" not in html
+    assert "Source+Serif+4" in html
+    assert "decisions-cards-container" in html
+    assert "--color-navy: #20364A" in css
+    assert "--bg-ivory: #F6F4EF" in css
     assert "--touch-target-min: 44px" in css
     assert ":focus-visible" in css
 
