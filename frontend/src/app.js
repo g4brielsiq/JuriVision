@@ -11,6 +11,7 @@ import {
     buildSampleBatchCsvFile,
     buildSamplePetitionPdfFile,
     checkApiHealth,
+    consultarProcessoDatajud,
     fetchDashboardMetricas,
     fetchProcessoDetalhes,
     fetchProcessos,
@@ -1097,6 +1098,70 @@ export function exportarRelatorioPdfProcesso(idProcesso = null) {
 /* ==========================================================================
    8. Modais de Autenticação (RF-01) e Metodologia (Seção 21.3)
    ========================================================================== */
+
+/* ==========================================================================
+   Consulta Oficial ao DataJud (CNJ / TJAL) - EAP 1.4.2
+   ========================================================================== */
+function exibirResultadoDataJud(data) {
+    const box = document.getElementById("datajud-result-box");
+    if (!box) return;
+
+    document.getElementById("dj-badge-tribunal").textContent = `CNJ · ${data.tribunal || "TJAL"}`;
+    document.getElementById("dj-badge-fonte").textContent = data.fonte === "datajud_api"
+        ? "✅ Consulta em Tempo Real: API Pública DataJud (CNJ)"
+        : "ℹ️ Acervo Local Homologado (Fallback Resiliente TJAL)";
+    document.getElementById("dj-numero-processo").textContent = `Processo CNJ: ${data.numero_processo}`;
+    document.getElementById("dj-classe").textContent = data.classe || "Procedimento Comum Cível";
+    document.getElementById("dj-assunto").textContent = data.assunto_principal || "Dano Moral";
+    document.getElementById("dj-orgao").textContent = data.orgao_julgador || "Vara Cível de Maceió";
+
+    let dataFormatada = "Não informada";
+    if (data.data_ajuizamento) {
+        try {
+            dataFormatada = new Date(data.data_ajuizamento).toLocaleDateString("pt-BR");
+        } catch (_) {
+            dataFormatada = String(data.data_ajuizamento);
+        }
+    }
+    document.getElementById("dj-data").textContent = dataFormatada;
+
+    const listUl = document.getElementById("dj-movimentacoes-list");
+    listUl.innerHTML = "";
+    if (data.movimentos_recentes && data.movimentos_recentes.length > 0) {
+        data.movimentos_recentes.forEach(m => {
+            const li = document.createElement("li");
+            const dtStr = m.data_hora ? ` (${m.data_hora.substring(0, 10)})` : "";
+            li.textContent = `${m.nome}${dtStr}`;
+            listUl.appendChild(li);
+        });
+    } else {
+        const li = document.createElement("li");
+        li.textContent = "Nenhuma movimentação adicional indexada no tribunal.";
+        listUl.appendChild(li);
+    }
+
+    document.getElementById("dj-mensagem-status").textContent = data.mensagem || "";
+    box.classList.remove("hidden");
+    box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+async function dispararConsultaDataJud() {
+    const inputBusca = document.getElementById("filtro-busca");
+    const termo = (inputBusca?.value || "").trim();
+    const numeroCnj = termo || "0710802-55.2018.8.02.0001";
+
+    showToast("Consultando metadados na API Pública do DataJud (CNJ)...");
+    announceStatus("Consultando processo no DataJud...");
+
+    try {
+        const data = await consultarProcessoDatajud(numeroCnj);
+        exibirResultadoDataJud(data);
+        showToast("Dados do DataJud recuperados com sucesso!");
+    } catch (err) {
+        showToast(`Consulta ao DataJud: ${err.message}`);
+    }
+}
+
 function configurarModais() {
     const loginModal = document.getElementById("login-modal");
     const btnOpenLogin = document.getElementById("btn-open-login");
@@ -1260,6 +1325,13 @@ function initApp() {
     });
 
     // Filtros e paginação na Pesquisa Jurisprudencial (RF-08)
+    
+    // Consulta Oficial DataJud (CNJ)
+    document.getElementById("btn-consultar-datajud")?.addEventListener("click", dispararConsultaDataJud);
+    document.getElementById("btn-fechar-datajud")?.addEventListener("click", () => {
+        document.getElementById("datajud-result-box")?.classList.add("hidden");
+    });
+
     document.getElementById("form-filtros-historico")?.addEventListener("submit", (e) => {
         e.preventDefault();
         carregarBaseConhecimento(1);

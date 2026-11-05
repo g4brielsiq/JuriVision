@@ -16,6 +16,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.ai_gateway import AnonimizadorLGPD, ExtratorDocumental, ai_gateway
+from app.core.datajud_client import DataJudClient
 from app.core.database import get_db
 from app.models.entities import AnalisePreditiva, LogAuditoriaLGPD, Processo
 from app.schemas.contracts import (
@@ -29,6 +30,7 @@ from app.schemas.contracts import (
     ProcessoListItemSchema,
     ProcessoListResponse,
     ProcessoUploadResponse,
+    DataJudProcessoResponse,
 )
 
 router = APIRouter(prefix="/api/v1/processos", tags=["Processos e Base de Conhecimento (RF-02 a RF-08)"])
@@ -412,6 +414,19 @@ def listar_processos(
         pagina=pagina,
         itens=itens,
     )
+
+
+
+@router.get("/datajud/{numero_processo}", response_model=DataJudProcessoResponse, status_code=status.HTTP_200_OK)
+async def consultar_processo_datajud(
+    numero_processo: str,
+    db: Session = Depends(get_db),
+) -> DataJudProcessoResponse:
+    """
+    Consulta metadados processuais na API Pública do DataJud (CNJ) com fallback local (TJAL).
+    Rastreabilidade: EAP 1.4.2 / RF-08 / ADR-002
+    """
+    return await DataJudClient.consultar_processo(numero_processo=numero_processo, db=db)
 
 
 @router.get("/{id_processo}", response_model=ProcessoUploadResponse, status_code=status.HTTP_200_OK)

@@ -140,3 +140,12 @@ export async function fetchProcessoDetalhes(idProcesso) {
 export function getRelatorioPdfUrl(idProcesso) {
     return `${getApiBaseUrl()}/api/v1/relatorios/processo/${encodeURIComponent(idProcesso)}/pdf`;
 }
+
+export async function consultarProcessoDatajud(numeroProcesso) {
+    const res = await fetch(`${getApiBaseUrl()}/api/v1/processos/datajud/${encodeURIComponent(numeroProcesso)}`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw new Error(data.detail || `Erro ao consultar metadados no DataJud (HTTP ${res.status}).`);
+    }
+    return data;
+}

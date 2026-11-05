@@ -7,6 +7,7 @@ Rastreabilidade:
 from abc import ABC, abstractmethod
 import hashlib
 import io
+import json
 import logging
 import re
 from typing import Tuple
@@ -367,38 +368,139 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
         )
 
 
-class ResilientAIGateway(AIGatewayPort):
+
+class GeminiAIAdapter(AIGatewayPort):
     """
-    Gateway principal da camada Back-end para o serviço `ai_engine` (ADR-001 e ADR-002).
-    Tenta comunicação HTTP interna com `http://ai_engine:8001/internal/v1/analyze` e,
-    em caso de indisponibilidade, timeout ou modo scaffolding do container de IA,
-    aciona automaticamente o `LocalDeterministicFallbackAdapter` (RNF-05).
+    Adaptador para a API do Google Gemini (Google AI Studio - Free Tier).
+    Rastreabilidade:
+    - ADR-002: Adapter pluggável com barreira LGPD obrigatória pré-chamada.
+    - Termos do Free Tier: Tráfego executado exclusivamente sobre texto higienizado (Art. 12 da LGPD).
     """
 
     def __init__(self) -> None:
         self._fallback = LocalDeterministicFallbackAdapter()
 
     def analyze_document(self, request: InternalAnalyzeRequest) -> InternalAnalyzeResponse:
-        # Só tenta rede externa se AI_PROVIDER != local_only ou se o serviço estiver configurado
-        endpoint = f"{settings.AI_ENGINE_URL.rstrip('/')}/internal/v1/analyze"
+        api_key = settings.GEMINI_API_KEY.strip()
+        if not api_key:
+            return self._fallback.analyze_document(request)
+
+        # 1. Obter o baseline determinístico local
+        base_resp = self._fallback.analyze_document(request)
+        sanitized_text, _, _ = AnonimizadorLGPD.sanitize_text(request.texto_bruto or "")
+
+        # 2. Montar prompt estruturado estritamente sobre texto desidentificado
+        prompt = (
+            "Você é um perito jurimétrico especialista em jurisprudência cível e do consumidor do TJAL.\n"
+            "Analise o teor fático anonimizado da petição a seguir (dados pessoais já foram desidentificados sob a LGPD):\n\n"
+            f"--- INÍCIO DO TEXTO ANONIMIZADO ---\n{sanitized_text[:4000]}\n--- FIM DO TEXTO ANONIMIZADO ---\n\n"
+            "Com base nas teses e pedidos, responda EXCLUSIVAMENTE em formato JSON com as chaves:\n"
+            "- resumo_nlp: síntese concisa da causa de pedir e pedidos em até 3 parágrafos objetivos.\n"
+            "- tese_recomendada: fundamento legal e precedentes consolidados mais aderentes ao caso.\n"
+            "- probabilidade_ajustada: float entre 0.15 e 0.95 refletindo a força técnica dos argumentos.\n"
+            "- tendencia_juiz: síntese qualitativa sobre o histórico de julgamento em casos similares em Alagoas."
+        )
+
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{settings.GEMINI_MODEL}:generateContent?key={api_key}"
+        )
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": 0.2,
+                "responseMimeType": "application/json",
+            },
+        }
+
         try:
-            with httpx.Client(timeout=settings.AI_ENGINE_TIMEOUT_SECONDS) as client:
-                response = client.post(endpoint, json=request.model_dump())
-                if response.status_code == 200:
-                    parsed = InternalAnalyzeResponse.model_validate(response.json())
-                    # Defesa em profundidade LGPD (RN-01): garante que mesmo respostas externas estejam limpas
-                    clean_resumo, extra_cpfs, _ = AnonimizadorLGPD.sanitize_text(parsed.resumo_nlp)
-                    parsed.resumo_nlp = clean_resumo
-                    parsed.auditoria_lgpd.total_cpfs_mascarados += extra_cpfs
-                    return parsed
+            with httpx.Client(timeout=settings.GEMINI_TIMEOUT_SECONDS) as client:
+                res = client.post(url, json=payload)
+                if res.status_code == 200:
+                    data = res.json()
+                    candidates = data.get("candidates", [])
+                    if candidates:
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        if parts:
+                            raw_reply = parts[0].get("text", "")
+                            parsed_json = json.loads(raw_reply)
+                            clean_resumo, extra_cpf, _ = AnonimizadorLGPD.sanitize_text(
+                                parsed_json.get("resumo_nlp", base_resp.resumo_nlp)
+                            )
+                            clean_tese, _, _ = AnonimizadorLGPD.sanitize_text(
+                                parsed_json.get("tese_recomendada", base_resp.analise_preditiva.tese_recomendada)
+                            )
+                            clean_tendencia, _, _ = AnonimizadorLGPD.sanitize_text(
+                                parsed_json.get("tendencia_juiz", base_resp.analise_preditiva.tendencia_juiz)
+                            )
+                            prob = float(
+                                parsed_json.get(
+                                    "probabilidade_ajustada",
+                                    base_resp.analise_preditiva.probabilidade_deferimento,
+                                )
+                            )
+                            prob = max(min(prob, 0.95), 0.15)
+
+                            base_resp.resumo_nlp = clean_resumo
+                            base_resp.analise_preditiva.probabilidade_deferimento = prob
+                            base_resp.analise_preditiva.tese_recomendada = clean_tese
+                            base_resp.analise_preditiva.tendencia_juiz = clean_tendencia
+                            base_resp.analise_preditiva.provedor_ia = f"gemini ({settings.GEMINI_MODEL})"
+                            base_resp.auditoria_lgpd.total_cpfs_mascarados += extra_cpf
+                            return base_resp
+
+                logger.warning(
+                    "Gemini API retornou status %d. Acionando fallback determinístico local.",
+                    res.status_code,
+                )
         except Exception as exc:
             logger.info(
-                "Serviço interno ai_engine (%s) não ativo ou em modo scaffolding (%s). "
-                "Executando LocalDeterministicFallbackAdapter (ADR-002 / RNF-05).",
-                endpoint,
+                "Chamada ao Gemini API não concluída (%s: %s). Acionando fallback determinístico local (ADR-002).",
                 exc.__class__.__name__,
+                str(exc),
             )
 
+        return base_resp
+
+
+class ResilientAIGateway(AIGatewayPort):
+    """
+    Gateway principal da camada Back-end para os provedores de IA (ADR-001 e ADR-002).
+    - Se GEMINI_API_KEY estiver configurada e AI_PROVIDER for gemini ou auto, utiliza Gemini.
+    - Se AI_PROVIDER == 'external', tenta comunicação HTTP com ai_engine.
+    - Em caso de timeout, offline ou erro, executa LocalDeterministicFallbackAdapter (RNF-05).
+    """
+
+    def __init__(self) -> None:
+        self._fallback = LocalDeterministicFallbackAdapter()
+        self._gemini = GeminiAIAdapter()
+
+    def analyze_document(self, request: InternalAnalyzeRequest) -> InternalAnalyzeResponse:
+        # 1. Se GEMINI_API_KEY estiver configurada e AI_PROVIDER for gemini ou auto, utiliza Gemini
+        if settings.GEMINI_API_KEY.strip() and settings.AI_PROVIDER in ("gemini", "auto"):
+            return self._gemini.analyze_document(request)
+
+        # 2. Se AI_PROVIDER for external, tenta comunicação HTTP interna com ai_engine
+        if settings.AI_PROVIDER == "external":
+            endpoint = f"{settings.AI_ENGINE_URL.rstrip('/')}/internal/v1/analyze"
+            try:
+                with httpx.Client(timeout=settings.AI_ENGINE_TIMEOUT_SECONDS) as client:
+                    response = client.post(endpoint, json=request.model_dump())
+                    if response.status_code == 200:
+                        parsed = InternalAnalyzeResponse.model_validate(response.json())
+                        clean_resumo, extra_cpfs, _ = AnonimizadorLGPD.sanitize_text(parsed.resumo_nlp)
+                        parsed.resumo_nlp = clean_resumo
+                        parsed.auditoria_lgpd.total_cpfs_mascarados += extra_cpfs
+                        return parsed
+            except Exception as exc:
+                logger.info(
+                    "Serviço interno ai_engine (%s) não ativo ou em modo scaffolding (%s). "
+                    "Executando LocalDeterministicFallbackAdapter (ADR-002 / RNF-05).",
+                    endpoint,
+                    exc.__class__.__name__,
+                )
+
+        # 3. Fallback determinístico local (offline, seguro e de custo zero)
         return self._fallback.analyze_document(request)
 
 

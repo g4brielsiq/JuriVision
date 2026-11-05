@@ -144,3 +144,34 @@ class InternalAnalyzeResponse(BaseModel):
     resumo_nlp: str
     analise_preditiva: AnalisePreditivaSchema
     auditoria_lgpd: AuditoriaLGPDSchema
+
+
+# ==============================================================================
+# 8.8 Consulta Pública DataJud / CNJ (Integração Híbrida)
+# ==============================================================================
+class DataJudMovimentoSchema(BaseModel):
+    codigo: Optional[int] = None
+    nome: str
+    data_hora: Optional[str] = None
+
+
+class DataJudAssuntoSchema(BaseModel):
+    codigo: Optional[int] = None
+    nome: str
+    principal: Optional[bool] = False
+
+
+class DataJudProcessoResponse(BaseModel):
+    numero_processo: str
+    tribunal: str
+    classe: str
+    classe_codigo: Optional[int] = None
+    assuntos: List[DataJudAssuntoSchema] = []
+    assunto_principal: str
+    orgao_julgador: str
+    data_ajuizamento: Optional[str] = None
+    grau: Optional[str] = None
+    movimentos_recentes: List[DataJudMovimentoSchema] = []
+    fonte: str = "datajud_api"  # "datajud_api" | "local_cache_fallback"
+    sucesso: bool = True
+    mensagem: str = "Metadados recuperados com sucesso da API Pública do DataJud."

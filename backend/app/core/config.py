@@ -36,6 +36,18 @@ class Settings:
     AI_ENGINE_TIMEOUT_SECONDS: float = float(os.getenv("AI_ENGINE_TIMEOUT_SECONDS", "2.5"))
     AI_PROVIDER: str = os.getenv("AI_PROVIDER", "local")
 
+    # Integração Opcional com Google AI Studio (Gemini Free Tier)
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    GEMINI_TIMEOUT_SECONDS: float = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "4.0"))
+
+    # Integração Híbrida com a API Pública do DataJud (CNJ)
+    # Chave pública oficial para consulta de metadados processuais (TPU/CNJ)
+    DATAJUD_API_KEY: str = os.getenv("DATAJUD_API_KEY", "cDZHYUpZwHbBoikSmFtUtqQCFlPqzqMV")
+    DATAJUD_BASE_URL: str = os.getenv("DATAJUD_BASE_URL", "https://api-publica.datajud.cnj.jus.br")
+    DATAJUD_TIMEOUT_SECONDS: float = float(os.getenv("DATAJUD_TIMEOUT_SECONDS", "3.0"))
+    DATAJUD_DEFAULT_ALIAS: str = os.getenv("DATAJUD_DEFAULT_ALIAS", "api_publica_tjal")
+
     @property
     def postgres_url(self) -> str:
         if self.DATABASE_URL_OVERRIDE:
