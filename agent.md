@@ -133,5 +133,7 @@ Para permitir que o desenvolvimento ocorra em múltiplos chats/sessões sem perd
    - Implementados `frontend/src/components/design-tokens.css` (Design Tokens semânticos, contraste WCAG 1.4.3 AA $\ge 7:1$, `:focus-visible`, touch targets $\ge 44\text{px}$ pela Lei de Fitts), `frontend/src/services/api.js` (cliente HTTP REST tipado), `frontend/src/app.js` (navegação WAI-ARIA 1.2 por teclado, estados ISO 9241-110 e Heurísticas de Nielsen) e `frontend/index.html` cobrindo 100% de `RF-01` a `RF-09` e corrigindo `NC-UX-01` a `NC-UX-12`.
 4. **Passo 4 — Verificação Automatizada de Contratos e Acessibilidade (ISO/IEC/IEEE 29119): CONCLUÍDO (`11 passed` no `pytest`).**
    - Criadas e aprovadas as suítes `backend/tests/test_api_contracts.py` (`CT-01` a `CT-09`) e `backend/tests/test_frontend_accessibility.py` (`RNF-04`, `RNF-09`, `RNF-10`).
-5. **Próximo Passo Operacional (Sincronização Remota GitHub / Milestone M4):**
-   - Assim que o proprietário do repositório remoto (`g4brielsiq/JuriVision`) aceitar o convite de colaborador para `VictorSamyr`, executar `git push -u origin feat/backend-core-arquitetura` para publicar os commits atômicos `M1`, `M2` e `M3`. Opcionalmente, evoluir o worker interno `ai_engine/` quando a equipe definir a chave de API externa (`Gemini`/`OpenAI`) ou pesos adicionais do modelo local.
+5. **Sincronização Remota GitHub (Milestones M1, M2 e M3): CONCLUÍDA.**
+   - Branch `feat/backend-core-arquitetura` publicada com sucesso em `origin/feat/backend-core-arquitetura` (`https://github.com/g4brielsiq/JuriVision/tree/feat/backend-core-arquitetura`).
+6. **Próximo Passo Opcional (Milestone M4 — Evolução Interna do Container `ai_engine/` e Homologação Final):**
+   - Implementar o servidor HTTP interno (`FastAPI` na porta `8001` expondo `POST /internal/v1/analyze`) dentro de `ai_engine/worker.py` com suporte plugável a `AI_PROVIDER=local|gemini|openai`, ou abrir Pull Request da branch `feat/backend-core-arquitetura` para `main`.
