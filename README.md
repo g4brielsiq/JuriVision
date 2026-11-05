@@ -42,27 +42,100 @@ O sistema é estruturado em 4 serviços orquestrados via Docker Compose:
 
 ## 3. Como Executar o Projeto e Rodar os Testes
 
-### 3.1 Execução via Docker Compose
-Copie o arquivo de exemplo [`.env.example`](./.env.example) para `.env` na raiz do repositório e inicie os serviços:
+### 3.1 Pré-requisitos
+Para executar o projeto em ambiente local de desenvolvimento, são necessários:
+* **Python 3.11+** (com gerenciador `pip`)
+* **Node.js 18+** e **npm**
+* *(Opcional)* **Docker e Docker Compose** (caso prefira rodar os containers isolados com PostgreSQL)
+
+---
+
+### 3.2 Execução Local Direta (Recomendada / Sem Docker)
+
+Esta modalidade executa o **Back-end** e o **Front-end** diretamente no seu sistema operacional. O Back-end possui mecanismo de resiliência e portabilidade (*ADR-003*): se o PostgreSQL não estiver ativo, ele aciona automaticamente o fallback em banco relacional local **SQLite** (`jurivision_local.sqlite3`) e popula os dados iniciais (*seed*) automaticamente.
+
+#### Passo 1: Instalar as Dependências
+
+Abra o terminal na raiz do projeto (`JuriVision/`):
 
 ```bash
-cp .env.example .env
-docker compose up --build
-```
-
-* **Interface Web (`frontend`):** `http://localhost:5173`
-* **API Core & Documentação OpenAPI/Swagger (`backend`):** `http://localhost:8000/docs`
-* **Healthcheck da API (`backend`):** `http://localhost:8000/health`
-
-### 3.2 Execução Local Rápida e Verificação Automatizada (`pytest`)
-
-```bash
-# 1. Instalar dependências do Back-end
+# 1. Dependências do Back-end (Python)
 pip install -r backend/requirements.txt
 
-# 2. Executar a suíte de verificação automatizada (11 testes: CT-01 a CT-09 + Acessibilidade WCAG)
-PYTHONPATH=backend pytest backend/tests/ -v
+# 2. Dependências do Front-end (Node.js)
+cd frontend
+npm install
+cd ..
 ```
+
+#### Passo 2: Iniciar a API Core (Back-end)
+
+Em um terminal na raiz do projeto:
+
+* **No Windows (PowerShell):**
+  ```powershell
+  python -m uvicorn app.main:app --app-dir backend --reload --port 8000
+  ```
+* **No Linux / macOS (Bash):**
+  ```bash
+  uvicorn app.main:app --app-dir backend --reload --port 8000
+  ```
+
+> O Back-end estará disponível em: `http://localhost:8000`  
+> Documentação interativa Swagger: `http://localhost:8000/docs`
+
+#### Passo 3: Iniciar a Interface Web (Front-end)
+
+Em um segundo terminal:
+
+```bash
+cd frontend
+npm run dev
+```
+
+> A interface estará disponível no navegador em: **`http://localhost:5173`**
+
+---
+
+### 3.3 Execução via Docker Compose (Todos os Serviços Orquestrados)
+
+Caso possua o Docker e Docker Compose instalados e deseje subir o ecossistema completo (Frontend + Backend + PostgreSQL 16 Alpine + AI Engine):
+
+1. Crie o arquivo `.env` a partir do modelo:
+   * **Linux / macOS:** `cp .env.example .env`
+   * **Windows (PowerShell):** `Copy-Item .env.example .env`
+2. Construa as imagens e suba os containers:
+   ```bash
+   docker compose up --build
+   ```
+
+---
+
+### 3.4 Credenciais de Acesso Padrão (Ambiente de Teste / Seed)
+
+O banco de dados é inicializado automaticamente com um usuário advogado pré-cadastrado para autenticação JWT (*RF-01*):
+
+| Campo | Valor Padrão |
+| :--- | :--- |
+| **E-mail** | `advogado@escritorio.com` |
+| **Senha** | `senhaSegura123` |
+| **Advogado** | Lucas Gabriel |
+| **Inscrição OAB** | `12345/AL` |
+
+---
+
+### 3.5 Verificação e Testes Automatizados (`pytest` — ISO/IEC/IEEE 29119)
+
+Para rodar os 11 casos de teste automatizados (contratos de API REST, barreira de anonimização LGPD, predições heurísticas e conformidade WCAG 2.2 AA / WAI-ARIA):
+
+* **No Windows (PowerShell):**
+  ```powershell
+  $env:PYTHONPATH="backend"; pytest backend/tests/ -v
+  ```
+* **No Linux / macOS (Bash):**
+  ```bash
+  PYTHONPATH=backend pytest backend/tests/ -v
+  ```
 
 ---
 
