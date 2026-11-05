@@ -1,9 +1,10 @@
-# Plano de Gestão, Governança e Controle do Projeto
+# Plano de Gestão, Governança e Controle do Projeto — JuriVision
 
-> **Projeto:** Plataforma Analítica e Preditiva para Gestão de Processos Jurídicos  
+> **Projeto:** JuriVision — Plataforma Analítica e Preditiva para Gestão de Processos Jurídicos  
 > **Disciplina:** Gerência de Projetos — Prof. Rafael De Amorim Silva  
 > **Instituição:** Universidade Federal de Alagoas (UFAL) — Instituto de Computação (IC)  
-> **Equipe Epsilon:** Daniel Filipe, Emanuele Vitória, Fernando Gabriel, Gabriel Damião, Lucas Gabriel, Pedro Henrique, Victor Samyr, Ygor Vasconcelos.
+> **Equipe Epsilon:** Daniel Filipe, Emanuele Vitória, Fernando Gabriel, Gabriel Damião, Lucas Gabriel, Pedro Henrique, Victor Samyr, Ygor Vasconcelos.  
+> **Normas de Referência:** ISO 9001, ISO/IEC/IEEE 12207, CMMI-DEV (Nível 3+), MPS.BR e PMBOK.
 
 ---
 
@@ -31,7 +32,7 @@ Para otimizar o fluxo de trabalho e evitar sobreposições técnicas, os 8 integ
 * **Dupla 2 — Back-end e Arquitetura:** Victor Samyr e Gabriel Damião  
   * *Foco:* API REST em FastAPI, modelagem do banco relacional PostgreSQL, autenticação JWT, integração entre módulos e persistência.
 * **Dupla 3 — Dados e Inteligência Artificial:** Pedro Henrique e Ygor Vasconcelos  
-  * *Foco:* Pipeline de OCR/leitura de PDFs, motor de anonimização (LGPD), sumarização em linguagem natural (NLP) e modelo preditivo de êxito.
+  * *Foco:* Pipeline de OCR/leitura de PDFs e CSVs, motor local de anonimização (LGPD), e módulo desacoplado de IA (`AIProviderAdapter`) combinando modelo heurístico/estatístico local com integração opcional a APIs externas de LLM (Gemini / GPT) sobre textos higienizados.
 * **Dupla 4 — Gerência de Projetos e Requisitos:** Daniel Filipe e Fernando Gabriel  
   * *Foco:* Coordenação de prazos, definição de critérios de aceite, controle de riscos, garantia de qualidade e elaboração de artefatos formais.
 
@@ -228,6 +229,7 @@ A severidade orienta o esforço prioritário da equipe:
 | **Alto** | Atraso na integração de contratos entre módulos | Média | Alto | **Mitigar:** Contratos Pydantic congelados como fonte única da verdade técnica. |
 | **Alto** | Perda ou inconsistência de dados durante a ingestão | Baixa | Alto | **Mitigar:** Validações rigorosas de schema na camada de entrada da API. |
 | **Médio** | Falha no processamento de PDFs complexos ou digitalizados | Alta | Médio | **Mitigar:** Fallback estruturado com mensagens claras ao usuário e suporte a CSVs. |
+| **Médio** | Indisponibilidade, latência ou limite de cota em API externa de LLM (Gemini/GPT) | Média | Médio | **Mitigar:** Padrão *Strategy/Adapter* (`ADR-002`) com *fallback* automático e imediato para o modelo heurístico/estatístico local (`local_heuristic`). |
 | **Médio** | Problemas na formatação de exportação de relatórios | Média | Médio | **Mitigar:** Geração orientada a templates padronizados. |
 | **Baixo** | Inconsistências cosméticas de layout e documentação | Média | Baixo | **Aceitar:** Ajustes incrementais ao longo das revisões de Sprint. |
 
@@ -368,6 +370,7 @@ O modelo financeiro foi projetado considerando custos operacionais recorrentes e
 
 Ao utilizar agentes autônomos de desenvolvimento (como o Google Antigravity):
 
-1. **Rastreabilidade por Pacote da EAP:** Toda solicitação de código deve referenciar seu item correspondente (ex: *"Implementar pacote 1.4.1 — Anonimização LGPD"*).
-2. **Checagem de Critérios de Aceite:** Nenhuma pull request gerada por agente deve ser incorporada sem passar pelo fluxo de inspeção definido na Seção 4.2.
-3. **Respeito à Autonomia das Duplas:** O agente está estritamente proibido de alterar códigos fora do escopo da subpasta atribuída à sua respectiva dupla (`frontend/`, `backend/`, `ai_engine/`).
+1. **Rastreabilidade por Pacote da EAP e IRP:** Toda implementação ou alteração de código deve referenciar seu pacote correspondente na EAP e seu Requisito Funcional/Não Funcional na Matriz de Rastreabilidade de `docs/MODELING.md` (ex: *"Implementar pacote 1.4.1 / RF-04 — Anonimização LGPD"*).
+2. **Checagem de Critérios de Aceite (ISO/IEC/IEEE 29119):** Nenhuma entrega deve ser incorporada sem passar pelo fluxo de inspeção definido na Seção 4.2 e pelos Casos de Teste da Matriz de Rastreabilidade.
+3. **Integração Transversal e Fronteiras Modulares:** A arquitetura mantém a separação física e lógica entre os subsistemas (`frontend/`, `backend/`, `ai_engine/`, `docs/`). A engenharia de Arquitetura e Back-end (Dupla 2) possui autorização transversal para integrar e harmonizar todos os módulos do monorepo, garantindo o cumprimento dos contratos definidos em `ARCHITECTURE.md`.
+4. **Continuidade entre Sessões e Isolamento da Camada de IA:** Todas as decisões de projeto e checkpoints de progresso são mantidos sincronizados na Seção 6 de `agent.md`. O desenvolvimento da Fase 3 prioriza a construção completa do `backend/` (com banco de dados e contratos REST) e do `frontend/` (auditado sob ISO 9241, WCAG 2.2 AA e Heurísticas de Nielsen), mantendo o `ai_engine/` isolado por contrato/adapter para permitir evolução independente entre modelo local simples ou API externa de LLM (Gemini/GPT).

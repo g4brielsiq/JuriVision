@@ -6,9 +6,9 @@ Sem rotas de negócio, autenticação ou persistência nesta etapa.
 from fastapi import FastAPI
 
 app = FastAPI(
-    title="Plataforma Jurimetria - API Core",
+    title="JuriVision - API Core",
     version="0.1.0",
-    description="API Gateway e serviços de negócio (Scaffolding Inicial)",
+    description="API Gateway e serviços de negócio da Plataforma Analítica e Preditiva JuriVision",
 )
 
 @app.get("/health", tags=["Healthcheck"])
