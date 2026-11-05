@@ -117,13 +117,19 @@ Para permitir que o desenvolvimento ocorra em múltiplos chats/sessões sem perd
 3. **Estratégia de Isolamento do Módulo de IA (`ai_engine`) para a Fase 3:**
    - Como a implementação interna definitiva da IA é delicada (podendo variar entre um modelo estatístico/heurístico simples local ou integração via API externa com LLMs como Gemini/GPT), **a implementação da Fase 3 priorizará todo o restante do sistema (`backend`, `postgres` e `frontend`) mantendo a IA estritamente isolada atrás de uma fronteira de abstração (Padrão Port & Adapter / Gateway Client)**.
    - O `backend` implementará toda a sua regra de negócio, persistência, autenticação, geração de relatórios PDF, ingestão de arquivos e higienização/validação contratual, comunicando-se com a camada de IA através de uma interface desacoplada que possui um *provider/stub* funcional imediato (permitindo testar e homologar 100% do Back-end e Front-end de ponta a ponta sem bloqueio pelo motor de IA definitivo).
+4. **Gerência de Configuração, Branching e Política de Milestones de Push (CMMI-DEV CM / MPS.BR GCO):**
+   - Branch dedicada de trabalho: `feat/backend-core-arquitetura` (evitando commits diretos na `main` sem verificação).
+   - **Milestone M1 (Baseline Normativa, Modelagem UML 2.5 e Auditoria UX/UI):** Commit atômico das especificações (`ARCHITECTURE.md`, `docs/MODELING.md`, `docs/MANAGEMENT.md`, `README.md`, `.env.example`, `docker-compose.yml`, `agent.md`).
+   - **Milestone M2 (Back-end Core Certificado + Isolamento de IA + Verificação `pytest`):** Implementação integral de `backend/` (`core/`, `models/`, `schemas/`, `routers/`, `ai_gateway.py` e `tests/test_api_contracts.py` cobrindo `CT-01` a `CT-09`) seguida de **Push imediato** para a branch remota após aprovação nos testes.
+   - **Milestone M3 (Engenharia de Front-end WCAG 2.2 AA / ISO 9241 + Integração Full-Stack):** Evolução do `frontend/` consumindo a API real seguida de Commit + Push.
+   - **Milestone M4 (Homologação Integrada Docker e Revisão Final):** Validação completa de containers e preparação de Pull Request para `main`.
 
 ### 6.3 Plano de Trabalho Imediato (Fase 3 — Implementação Certificada)
-1. **Passo 1 — Auditoria e Adequação de UX/UI e Acessibilidade (ISO 9241, WCAG 2.2 AA, Nielsen e Leis de UX): CONCLUÍDO.**
+1. **Passo 1 — Auditoria e Adequação de UX/UI e Acessibilidade (ISO 9241, WCAG 2.2 AA, Nielsen e Leis de UX): CONCLUÍDO (Milestone M1).**
    - Auditoria concluída sobre `frontend/index.html` e `frontend/`; requisitos `RNF-04`, `RNF-09`, `RNF-10` e Seção 2.4 incorporados em `docs/MODELING.md`.
-2. **Passo 2 — Implementação Certificada do Back-end Core (`backend/`) com Isolamento de IA (PRÓXIMO PASSO AGUARDANDO AUTORIZAÇÃO):**
-   - Implementar configuração central e banco de dados (`app/core/`), entidades ORM SQLAlchemy (`app/models/`), contratos Pydantic v2 (`app/schemas/`), cliente/porta desacoplada para o motor de IA com *fallback* determinístico local (incluindo higienização LGPD de segurança e cálculo estatístico), e todos os routers (`app/routers/`: `/auth`, `/dashboard`, `/processos`, `/relatorios`) + *seed* inicial de dados.
-3. **Passo 3 — Engenharia de Front-end e Integração (`frontend/`):**
+2. **Passo 2 — Implementação Certificada do Back-end Core (`backend/`) com Isolamento de IA e Suíte de Testes (`CT-01` a `CT-09`): CONCLUÍDO (Milestone M2).**
+   - Implementados `app/core/config.py`, `app/core/database.py`, `app/core/security.py`, `app/core/ai_gateway.py` (`Port & Adapter` + `AnonimizadorLGPD` + `ExtratorDocumental`), `app/core/seed.py`, `app/models/entities.py`, `app/schemas/contracts.py`, `app/routers/{auth,dashboard,processos,relatorios}.py`, `app/main.py` e `tests/test_api_contracts.py` (100% aprovado no `pytest`).
+3. **Passo 3 — Engenharia de Front-end e Integração (`frontend/` — Milestone M3 — PRÓXIMO PASSO):**
    - Evoluir a camada de front-end aplicando Design Tokens, semântica HTML5, atributos WAI-ARIA, contraste WCAG 2.2 AA, estados de feedback (Heurísticas de Nielsen / ISO 9241-110) e integração real com a API FastAPI.
-4. **Passo 4 — Verificação Automatizada (ISO/IEC/IEEE 29119):**
-   - Criar testes automatizados validando todos os endpoints e regras de negócio (`RF-01` a `RF-09`).
+4. **Passo 4 — Homologação Integrada (ISO/IEC/IEEE 29119 — Milestone M4):**
+   - Validar execução integrada ponta a ponta entre Front-end, Back-end e Banco de Dados.

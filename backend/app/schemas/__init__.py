@@ -1,3 +1,39 @@
-"""
-Módulo de schemas e contratos de dados (Pydantic v2).
-"""
+from app.schemas.contracts import (
+    AnalisePreditivaSchema,
+    AuditoriaLGPDSchema,
+    ContextoHistoricoSchema,
+    CSVUploadResponse,
+    DashboardMetricasResponse,
+    DecisaoJuizSchema,
+    InternalAnalyzeRequest,
+    InternalAnalyzeResponse,
+    LoginRequest,
+    LoginResponse,
+    MetadadosExtraidosSchema,
+    PartesAnonimizadasSchema,
+    ProcessoListItemSchema,
+    ProcessoListResponse,
+    ProcessoUploadResponse,
+    UsuarioProfileSchema,
+    VolumeTemaSchema,
+)
+
+__all__ = [
+    "LoginRequest",
+    "UsuarioProfileSchema",
+    "LoginResponse",
+    "DecisaoJuizSchema",
+    "VolumeTemaSchema",
+    "DashboardMetricasResponse",
+    "PartesAnonimizadasSchema",
+    "MetadadosExtraidosSchema",
+    "AnalisePreditivaSchema",
+    "AuditoriaLGPDSchema",
+    "ProcessoUploadResponse",
+    "CSVUploadResponse",
+    "ProcessoListItemSchema",
+    "ProcessoListResponse",
+    "ContextoHistoricoSchema",
+    "InternalAnalyzeRequest",
+    "InternalAnalyzeResponse",
+]
