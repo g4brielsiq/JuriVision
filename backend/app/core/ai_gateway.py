@@ -422,7 +422,10 @@ class GeminiAIAdapter(AIGatewayPort):
                     if candidates:
                         parts = candidates[0].get("content", {}).get("parts", [])
                         if parts:
-                            raw_reply = parts[0].get("text", "")
+                            raw_reply = parts[0].get("text", "").strip()
+                            if raw_reply.startswith("```"):
+                                raw_reply = re.sub(r"^```(?:json)?\s*", "", raw_reply)
+                                raw_reply = re.sub(r"\s*```$", "", raw_reply)
                             parsed_json = json.loads(raw_reply)
                             clean_resumo, extra_cpf, _ = AnonimizadorLGPD.sanitize_text(
                                 parsed_json.get("resumo_nlp", base_resp.resumo_nlp)

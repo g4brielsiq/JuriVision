@@ -21,6 +21,12 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "`$env:PYTHONPATH=
 
 # 3. Iniciar Frontend em nova janela
 Write-Host "[3/3] Iniciando Interface Web Vite (Porta 5173)..." -ForegroundColor Green
+if (-not (Test-Path "frontend\node_modules")) {
+    Write-Host "[Frontend] Instalando dependencias Node..." -ForegroundColor Yellow
+    Push-Location frontend
+    npm install
+    Pop-Location
+}
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd frontend; npm run dev"
 
 Write-Host ""
