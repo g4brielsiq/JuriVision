@@ -105,7 +105,7 @@ function persistSavedIds(savedSet) {
 }
 
 const state = {
-    activeTab: "historico", // Seção 4.1: Pesquisa antes de visualização
+    activeTab: "historico",
     resultsViewMode: "cards", // "cards" (documental) | "table" (comparativa)
     uploadMode: "pdf",
     apiOnline: false,
@@ -281,16 +281,16 @@ async function verificarConectividadeApi() {
         state.apiOnline = true;
         const provider = health.ai_provider_configured || "local";
         if (badge) {
-            badge.innerHTML = `<span class="dot dot-success" aria-hidden="true"></span><span>Acervo TJAL sincronizado</span>`;
+            badge.innerHTML = `<span class="dot dot-success" aria-hidden="true"></span><span>TJAL Conectado</span>`;
         }
         if (motorEl) {
             motorEl.textContent =
-                provider === "local" ? "Classificação Estruturada" : `Classificação (${provider})`;
+                provider === "local" ? "Estruturada" : `Classificação (${provider})`;
         }
     } catch {
         state.apiOnline = false;
         if (badge) {
-            badge.innerHTML = `<span class="dot dot-warning" aria-hidden="true"></span><span>Acervo local de demonstração</span>`;
+            badge.innerHTML = `<span class="dot dot-warning" aria-hidden="true"></span><span>Base Local</span>`;
         }
     }
 }
@@ -319,7 +319,7 @@ async function carregarDashboard() {
 
     if (elTaxa) elTaxa.textContent = `${pct}%`;
     if (elDenom) {
-        elDenom.textContent = `${favCount} decisões favoráveis/acordos em ${total} julgados analisados`;
+        elDenom.textContent = `${favCount} favoráveis em ${total} julgados`;
     }
     if (elPrazo) elPrazo.textContent = `${metricas.tempo_medio_tramitacao_meses} Meses`;
     if (elTotal) elTotal.textContent = String(total);
@@ -342,16 +342,16 @@ function renderizarMatrizesPrecisao(metricas) {
                 <div class="comparative-bar-row">
                     <div class="comparative-row-top">
                         <div>
-                            <strong style="color: var(--color-navy);">${d.juiz}</strong>
-                            <span style="display: block; font-size: var(--text-xs); color: var(--text-secondary);">
-                                Amostra: ${total} decisões (${d.procedentes} favoráveis · ${d.improcedentes} improcedentes)
+                            <strong style="color: var(--color-navy); font-size: var(--text-sm);">${d.juiz}</strong>
+                            <span style="display: block; font-size: var(--text-xs); color: var(--text-muted);">
+                                ${total} julgados (${d.procedentes} fav. / ${d.improcedentes} impr.)
                             </span>
                         </div>
                         <div style="text-align: right;">
-                            <strong class="tabular-nums" style="color: var(--color-navy);">${favPct}% favoráveis</strong>
+                            <strong class="tabular-nums" style="color: var(--color-navy); font-size: var(--text-sm);">${favPct}% fav.</strong>
                             <div>
-                                <button type="button" class="btn btn-ghost btn-sm btn-drill-judge" data-judge="${d.juiz}" style="padding: 0 4px; min-height: 24px;">
-                                    Ver as ${total} decisões →
+                                <button type="button" class="btn btn-ghost btn-sm btn-drill-judge" data-judge="${d.juiz}" style="padding: 0 4px; min-height: 22px; font-size: 11px;">
+                                    Filtrar (${total})
                                 </button>
                             </div>
                         </div>
@@ -387,13 +387,13 @@ function renderizarMatrizesPrecisao(metricas) {
                 <div class="comparative-bar-row">
                     <div class="comparative-row-top">
                         <div>
-                            <strong style="color: var(--color-navy);">${t.tema}</strong>
-                            <span style="display: block; font-size: var(--text-xs); color: var(--text-secondary);">
-                                ${approxCount} julgado(s) no conjunto (${t.percentual}% do universo)
+                            <strong style="color: var(--color-navy); font-size: var(--text-sm);">${t.tema}</strong>
+                            <span style="display: block; font-size: var(--text-xs); color: var(--text-muted);">
+                                ${approxCount} julgados (${t.percentual}%)
                             </span>
                         </div>
-                        <button type="button" class="btn btn-ghost btn-sm btn-drill-theme" data-theme="${t.tema}">
-                            Ver decisões (${approxCount}) →
+                        <button type="button" class="btn btn-ghost btn-sm btn-drill-theme" data-theme="${t.tema}" style="padding: 0 4px; min-height: 22px; font-size: 11px;">
+                            Filtrar (${approxCount})
                         </button>
                     </div>
                     <div class="comparative-track" aria-hidden="true">
@@ -672,7 +672,7 @@ export async function carregarBaseConhecimento(novaPagina = null) {
 
     const countLabel = document.getElementById("historico-total-label");
     if (countLabel) {
-        countLabel.textContent = `${state.totalProcessosLista} decisões encontradas para esta pesquisa.`;
+        countLabel.textContent = `${state.totalProcessosLista} decisões encontradas`;
     }
 
     renderizarListaDecisoes(itens);
@@ -725,37 +725,34 @@ function renderizarListaDecisoes(itens) {
                             <div class="decision-court-line">
                                 <span>TJAL · ${comarca}</span>
                                 <span aria-hidden="true">·</span>
-                                <span class="font-mono">Processo nº ${item.numero_processo}</span>
+                                <span class="font-mono">${item.numero_processo}</span>
                             </div>
                             <div class="decision-process-meta">
-                                <span><strong>Magistrado(a):</strong> ${item.magistrado}</span>
+                                <span>${item.magistrado}</span>
                                 <span aria-hidden="true">·</span>
-                                <span><strong>Data de julgamento:</strong> ${dataJulg}</span>
+                                <span>${dataJulg}</span>
                                 <span aria-hidden="true">·</span>
-                                <span><strong>Partes (LGPD):</strong> ${item.partes_anonimizadas}</span>
+                                <span title="Partes com proteção LGPD">${item.partes_anonimizadas}</span>
                             </div>
                         </div>
 
                         <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                             ${
                                 isSaved
-                                    ? `<span class="badge-editorial badge-saved">Salva na biblioteca</span>`
+                                    ? `<span class="badge-editorial badge-saved">Salva</span>`
                                     : ""
                             }
                             <span class="badge-editorial ${badgeClass}">
-                                Resultado classificado: ${item.resultado}
+                                ${item.resultado}
                             </span>
                         </div>
                     </div>
 
                     <div class="decision-subject-row">
-                        <h3 class="decision-subject-title">Assunto: ${item.tema}</h3>
+                        <h3 class="decision-subject-title">${item.tema}</h3>
                     </div>
 
                     <div class="decision-excerpt-box">
-                        <span class="excerpt-provenance-tag">
-                            Síntese factual estruturada · Dados pessoais protegidos (LGPD)
-                        </span>
                         <p class="legal-prose" style="font-size: var(--text-base);">
                             ${sintese}
                         </p>
@@ -767,16 +764,16 @@ function renderizarListaDecisoes(itens) {
                                 Abrir decisão
                             </button>
                             <button type="button" class="btn btn-secondary btn-sm btn-salvar-proc" data-save-id="${item.id_processo}">
-                                ${isSaved ? "Remover da biblioteca" : "Salvar decisão"}
+                                ${isSaved ? "Salva ✓" : "Salvar"}
                             </button>
                             <button type="button" class="btn btn-secondary btn-sm btn-copiar-ref" data-ref-id="${item.id_processo}">
-                                Copiar referência
+                                Copiar ref.
                             </button>
                         </div>
 
                         <div class="decision-actions-group">
                             <button type="button" class="btn btn-ghost btn-sm btn-exportar-pdf" data-pdf-id="${item.id_processo}">
-                                Exportar relatório (PDF)
+                                PDF
                             </button>
                         </div>
                     </div>
@@ -797,12 +794,12 @@ function renderizarListaDecisoes(itens) {
                 <tr data-row-proc-id="${item.id_processo}">
                     <td>
                         <div class="font-mono" style="font-weight: 600; color: var(--color-navy);">${item.numero_processo}</div>
-                        <div style="font-size: var(--text-xs); color: var(--text-secondary);">Julgamento: ${dataJulg}</div>
+                        <div style="font-size: var(--text-xs); color: var(--text-muted);">${dataJulg}</div>
                     </td>
                     <td style="font-weight: 500;">${item.tema}</td>
                     <td>
                         <div>${item.magistrado}</div>
-                        <div style="font-size: var(--text-xs); color: var(--text-secondary);">TJAL · ${item.comarca || "Maceió"}</div>
+                        <div style="font-size: var(--text-xs); color: var(--text-muted);">${item.comarca || "TJAL"}</div>
                     </td>
                     <td>
                         <span>${item.partes_anonimizadas}</span>
@@ -812,7 +809,7 @@ function renderizarListaDecisoes(itens) {
                     </td>
                     <td style="text-align: right; white-space: nowrap;">
                         <button type="button" data-inspect-id="${item.id_processo}" class="btn btn-secondary btn-sm btn-inspecionar-proc">
-                            Abrir decisão
+                            Abrir
                         </button>
                         <button type="button" data-pdf-id="${item.id_processo}" class="btn btn-ghost btn-sm btn-exportar-pdf">
                             PDF
@@ -966,6 +963,8 @@ export function resetarFluxoUpload() {
     document.getElementById("loading-state")?.classList.add("hidden");
     document.getElementById("error-state")?.classList.add("hidden");
     document.getElementById("csv-result-state")?.classList.add("hidden");
+    document.getElementById("result-state")?.classList.add("hidden");
+    document.getElementById("result-empty-state")?.classList.remove("hidden");
 
     const inputPdf = document.getElementById("file-input-pdf");
     const inputCsv = document.getElementById("file-input-csv");
@@ -1048,6 +1047,8 @@ export async function processarArquivoCsv(file) {
 }
 
 export function renderizarResultadoPredicaoPdf(payload) {
+    document.getElementById("result-empty-state")?.classList.add("hidden");
+    document.getElementById("result-state")?.classList.remove("hidden");
     state.lastAnalyzedProcessId = payload.id_processo;
     const meta = payload.metadados_extraidos;
     const pred = payload.analise_preditiva;
@@ -1063,13 +1064,13 @@ export function renderizarResultadoPredicaoPdf(payload) {
     document.getElementById("res-id-processo").textContent = `Ref. ${payload.id_processo}`;
     document.getElementById("res-numero-cnj").textContent = meta.numero_processo;
     document.getElementById("res-probabilidade").textContent = `${probPct}%`;
-    document.getElementById("res-margem").textContent = `±${margemPct}% variação observada na amostra`;
+    document.getElementById("res-margem").textContent = `±${margemPct}% na amostra`;
     document.getElementById("res-prazo").textContent = `${pred.tempo_estimado_sentenca_meses} meses`;
     document.getElementById("res-similares").textContent = `${pred.casos_similares_encontrados} julgados`;
     document.getElementById("res-provedor-ia").textContent =
         pred.provedor_ia === "local_heuristic" || !pred.provedor_ia
-            ? "Análise Estatística Local"
-            : `Análise (${pred.provedor_ia})`;
+            ? "Estatística Local"
+            : String(pred.provedor_ia);
 
     document.getElementById("res-tema").textContent = meta.tema;
     document.getElementById("res-magistrado").textContent = meta.magistrado;
@@ -1078,7 +1079,7 @@ export function renderizarResultadoPredicaoPdf(payload) {
     document.getElementById("res-reu").textContent = meta.partes_anonimizadas.reu;
 
     document.getElementById("res-lgpd-badge").textContent =
-        `LGPD: ${lgpd.total_cpfs_mascarados} documento(s) e ${lgpd.total_nomes_mascarados} nome(s) ocultados`;
+        `LGPD: ${lgpd.total_cpfs_mascarados} doc(s) e ${lgpd.total_nomes_mascarados} nome(s) mascarados`;
 
     document.getElementById("res-resumo-nlp").textContent = payload.resumo_nlp;
     document.getElementById("res-tese-recomendada").textContent = pred.tese_recomendada;
@@ -1108,9 +1109,9 @@ function exibirResultadoDataJud(data) {
 
     document.getElementById("dj-badge-tribunal").textContent = `CNJ · ${data.tribunal || "TJAL"}`;
     document.getElementById("dj-badge-fonte").textContent = data.fonte === "datajud_api"
-        ? "✅ Consulta em Tempo Real: API Pública DataJud (CNJ)"
-        : "ℹ️ Acervo Local Homologado (Fallback Resiliente TJAL)";
-    document.getElementById("dj-numero-processo").textContent = `Processo CNJ: ${data.numero_processo}`;
+        ? "API Pública DataJud (CNJ)"
+        : "Base Local Homologada (TJAL)";
+    document.getElementById("dj-numero-processo").textContent = `Processo nº ${data.numero_processo}`;
     document.getElementById("dj-classe").textContent = data.classe || "Procedimento Comum Cível";
     document.getElementById("dj-assunto").textContent = data.assunto_principal || "Dano Moral";
     document.getElementById("dj-orgao").textContent = data.orgao_julgador || "Vara Cível de Maceió";
@@ -1305,6 +1306,51 @@ function initApp() {
         if (file) processarArquivoCsv(file);
     });
 
+    // Suporte a Arrastar e Soltar (Drag & Drop)
+    const boxPdf = document.getElementById("upload-box-pdf");
+    if (boxPdf) {
+        ["dragenter", "dragover"].forEach((evt) => {
+            boxPdf.addEventListener(evt, (e) => {
+                e.preventDefault();
+                boxPdf.classList.add("dragover");
+            });
+        });
+        ["dragleave", "drop"].forEach((evt) => {
+            boxPdf.addEventListener(evt, (e) => {
+                e.preventDefault();
+                boxPdf.classList.remove("dragover");
+            });
+        });
+        boxPdf.addEventListener("drop", (e) => {
+            const files = e.dataTransfer?.files;
+            if (files && files.length > 0) {
+                processarArquivoPdf(files[0]);
+            }
+        });
+    }
+
+    const boxCsv = document.getElementById("upload-box-csv");
+    if (boxCsv) {
+        ["dragenter", "dragover"].forEach((evt) => {
+            boxCsv.addEventListener(evt, (e) => {
+                e.preventDefault();
+                boxCsv.classList.add("dragover");
+            });
+        });
+        ["dragleave", "drop"].forEach((evt) => {
+            boxCsv.addEventListener(evt, (e) => {
+                e.preventDefault();
+                boxCsv.classList.remove("dragover");
+            });
+        });
+        boxCsv.addEventListener("drop", (e) => {
+            const files = e.dataTransfer?.files;
+            if (files && files.length > 0) {
+                processarArquivoCsv(files[0]);
+            }
+        });
+    }
+
     document.getElementById("btn-sample-pdf")?.addEventListener("click", () => {
         processarArquivoPdf(buildSamplePetitionPdfFile());
     });
@@ -1406,6 +1452,7 @@ function initApp() {
     verificarConectividadeApi();
     carregarBaseConhecimento(1);
     carregarDashboard();
+    switchTab("historico");
 }
 
 if (document.readyState === "loading") {
