@@ -176,14 +176,32 @@ class DataJudClient:
         """Busca o processo no banco relacional local (SQLite/PostgreSQL) ou gera registro de contingência."""
         if db:
             clean_num = re.sub(r"\D", "", numero_processo)
-            proc = (
-                db.query(Processo)
-                .filter(
-                    (Processo.numero_processo == numero_processo)
-                    | (Processo.numero_processo.like(f"%{clean_num}%"))
+            proc = None
+            if len(clean_num) == 20:
+                masked_cnj = f"{clean_num[:7]}-{clean_num[7:9]}.{clean_num[9:13]}.{clean_num[13]}.{clean_num[14:16]}.{clean_num[16:]}"
+                proc = (
+                    db.query(Processo)
+                    .filter(
+                        (Processo.numero_processo == numero_processo)
+                        | (Processo.numero_processo == masked_cnj)
+                    )
+                    .first()
                 )
-                .first()
-            )
+            elif len(clean_num) >= 7:
+                proc = (
+                    db.query(Processo)
+                    .filter(
+                        (Processo.numero_processo == numero_processo)
+                        | (Processo.numero_processo.like(f"%{clean_num}%"))
+                    )
+                    .first()
+                )
+            elif numero_processo.strip():
+                proc = (
+                    db.query(Processo)
+                    .filter(Processo.numero_processo == numero_processo.strip())
+                    .first()
+                )
             if proc:
                 return DataJudProcessoResponse(
                     numero_processo=proc.numero_processo,

@@ -169,3 +169,33 @@ Toda nova modificação deve seguir o modelo abaixo:
   - `docs/ROTEIRO_DEMONSTRACAO.md` - Guia oficial de apresentação e pitch de 5 minutos.
   - `scripts/seed_tjal_expandido.py` - Script de carga expandida de dados do TJAL.
   - `docs/CHANGELOG_EQUIPE.md` - Registro consolidado da equipe.
+
+---
+
+### [2026-11-09] — Refinamento de Governança, Resiliência e Homologação de Pontas Soltas
+- **Branch:** `fix/sprint1-refinamentos`
+- **Responsáveis:** Victor Samyr e Gabriel Damião (com revisão por Equipe Epsilon)
+- **Pacotes da EAP / Requisitos Atendidos:** EAP 1.1 (Governança e RACI), EAP 1.4.2 (DataJud Fallback), EAP 1.4.3 (Gemini Resiliência), EAP 1.5.1 (ISO 29119 - 19 Testes).
+- **Resumo da Mudança:**
+  1. **Governança de Membros (`docs/membros/`):**
+     - Corrigida a regra do `.gitignore` para permitir o versionamento dos diários de bordo individuais (`CHANGELOG.md`) e do guia geral (`docs/membros/README.md`), garantindo auditoria acadêmica para os 8 membros.
+     - Inicializados os 8 arquivos `CHANGELOG.md` estruturados por dupla e pacotes da EAP.
+  2. **Ambiente Local e Portabilidade (`start_dev.ps1`):**
+     - Adicionada verificação preventiva da pasta `node_modules` no PowerShell com execução automática de `npm install`, espelhando o comportamento seguro do `start_dev.bat`.
+  3. **Robustez na Busca Local do DataJud (`DataJudClient`):**
+     - Adicionado suporte a busca por CNJ com 20 dígitos contínuos (sem máscara), reconvertendo para a máscara padrão CNJ e evitando falsos positivos com inputs vazios.
+  4. **Resiliência de Parse no Gemini (`GeminiAIAdapter`):**
+     - Adicionado tratamento para remoção defensiva de blocos markdown (```json ... ```) em respostas do LLM antes do `json.loads`.
+  5. **Documentação e Template de Variáveis (`.env.example`):**
+     - Registradas variáveis para `AI_PROVIDER=auto`, `GEMINI_MODEL`, `DATAJUD_BASE_URL` e timeouts.
+  6. **Ampliação da Suíte de Testes (19/19 aprovados):**
+     - Novos testes automatizados cobrindo busca por CNJ sem máscara e tratamento defensivo de markdown no Gemini.
+
+- **Arquivos Criados / Modificados:**
+  - `.gitignore` - Desbloqueado versionamento de documentação de membros.
+  - `start_dev.ps1` - Automação preventiva de `npm install`.
+  - `backend/app/core/datajud_client.py` - Busca inteligente de fallback por CNJ com e sem máscara.
+  - `backend/app/core/ai_gateway.py` - Sanitização prévia de markdown fences em respostas JSON.
+  - `.env.example` - Documentação expandida de variáveis de ambiente.
+  - `backend/tests/test_datajud_and_gemini.py` - 2 novos testes adicionados (total 19 passed).
+  - `docs/membros/*/CHANGELOG.md` - Diários individuais criados.
