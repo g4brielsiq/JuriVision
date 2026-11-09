@@ -47,10 +47,9 @@ postgres_data/
 ai_engine/data/*
 !ai_engine/data/.gitkeep
 
-# Diários de bordo individuais dos membros (preserva pastas via .gitkeep)
-docs/membros/**/*.md
-docs/membros/*.md
-!docs/membros/**/.gitkeep
+# Diários de bordo individuais dos membros (preserva pastas via .gitkeep e ignora CHANGELOGs individuais)
+docs/membros/*/*.md
+!docs/membros/*/.gitkeep
 
 # IDEs e Sistema Operacional
 .vscode/

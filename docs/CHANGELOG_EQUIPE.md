@@ -148,3 +148,24 @@ Toda nova modificação deve seguir o modelo abaixo:
   - `frontend/src/app.js` - Controle de evento e renderização dinâmica.
   - `docs/membros/*/CHANGELOG.md` - Registros individuais atualizados.
   - `docs/CHANGELOG_EQUIPE.md` - Registro consolidado da equipe.
+
+---
+
+### [2026-11-09] — Preparação para Entrega: Roteiro de Demonstração e Expansão do Dataset TJAL
+- **Branch:** `feat/sprint1-integracao-dev`
+- **Responsáveis:** Equipe Epsilon (Gabriel Damião, Victor Samyr, Daniel Filipe, Fernando Gabriel, Pedro Henrique e Ygor Vasconcelos)
+- **Pacotes da EAP / Requisitos Atendidos:** EAP 1.1 (Gerenciamento do Projeto), EAP 1.4.2 (Base de Conhecimento), EAP 1.5.1 (Garantia de Qualidade) e EAP 1.5.2 (Deploy/Apresentação).
+- **Resumo da Mudança:**
+  1. **Roteiro Oficial de Demonstração (`docs/ROTEIRO_DEMONSTRACAO.md`):**
+     - Estruturado roteiro cronometrado de 5 minutos cobrindo: Abertura e Dashboard, Pesquisa e Consulta DataJud (CNJ), Ingestão e Barreira LGPD (Art. 12), Jurimetria Preditiva e Governança/Testes.
+     - Inclui checklist de pré-apresentação e tabela de respostas blindadas para as perguntas mais prováveis da banca acadêmica.
+  2. **Carga Expandida do Acervo TJAL (`scripts/seed_tjal_expandido.py`):**
+     - Script idempotente gerando 50 novos processos reais/sintéticos higienizados (LGPD) com distribuição realista de varas de Alagoas (Maceió, Arapiraca, Penedo, Rio Largo).
+     - Acervo expandido de 13 para **63 julgados**, enriquecendo os gráficos de volume por tema e decisões por juiz no Dashboard.
+  3. **Homologação e Testes Automatizados:**
+     - Todos os **17 testes no pytest continuam 100% aprovados** (`17 passed in 7.42s`).
+
+- **Arquivos Criados / Modificados:**
+  - `docs/ROTEIRO_DEMONSTRACAO.md` - Guia oficial de apresentação e pitch de 5 minutos.
+  - `scripts/seed_tjal_expandido.py` - Script de carga expandida de dados do TJAL.
+  - `docs/CHANGELOG_EQUIPE.md` - Registro consolidado da equipe.
