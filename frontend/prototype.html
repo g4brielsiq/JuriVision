@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JuriPredict - Plataforma Analítica e Preditiva</title>
+    <!-- Tailwind CSS para Estilização Rápida -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js para os Gráficos -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- FontAwesome para Ícones -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .loader { border-top-color: #3b82f6; -webkit-animation: spinner 1.5s linear infinite; animation: spinner 1.5s linear infinite; }
+        @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-slate-50 h-screen flex overflow-hidden">
+
+    <!-- Sidebar Lateral -->
+    <aside class="w-64 bg-slate-900 text-white flex flex-col transition-all duration-300">
+        <div class="p-6 border-b border-slate-700">
+            <h1 class="text-2xl font-bold text-blue-400"><i class="fa-solid fa-scale-balanced mr-2"></i>JuriPredict</h1>
+            <p class="text-xs text-slate-400 mt-1">Equipe Epsilon - Direito & IA</p>
+        </div>
+        <nav class="flex-1 p-4 space-y-2">
+            <button onclick="switchTab('dashboard')" class="w-full flex items-center p-3 text-left bg-blue-600 rounded-lg shadow transition tab-btn" id="btn-dashboard">
+                <i class="fa-solid fa-chart-pie w-6"></i> Jurimetria
+            </button>
+            <button onclick="switchTab('upload')" class="w-full flex items-center p-3 text-left hover:bg-slate-800 rounded-lg transition text-slate-300 tab-btn" id="btn-upload">
+                <i class="fa-solid fa-file-arrow-up w-6"></i> Novo Processo (PDF)
+            </button>
+            <button onclick="switchTab('historico')" class="w-full flex items-center p-3 text-left hover:bg-slate-800 rounded-lg transition text-slate-300 tab-btn" id="btn-historico">
+                <i class="fa-solid fa-folder-open w-6"></i> Base de Conhecimento
+            </button>
+        </nav>
+        <div class="p-4 border-t border-slate-700 flex items-center">
+            <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center font-bold text-sm">LG</div>
+            <div class="ml-3">
+                <p class="text-sm font-semibold">Lucas Gabriel</p>
+                <p class="text-xs text-slate-400">Advogado(a)</p>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Conteúdo Principal -->
+    <main class="flex-1 flex flex-col h-full overflow-hidden">
+        <!-- Topbar -->
+        <header class="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8">
+            <h2 class="text-xl font-semibold text-slate-800" id="header-title">Dashboard Analítico</h2>
+            <div class="flex items-center space-x-4">
+                <button class="text-slate-400 hover:text-blue-600"><i class="fa-solid fa-bell"></i></button>
+                <button onclick="window.print()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition"><i class="fa-solid fa-download mr-2"></i>Exportar Relatório Estratégico</button>
+            </div>
+        </header>
+
+        <!-- Área de Telas -->
+        <div class="flex-1 overflow-y-auto p-8">
+            
+            <!-- TELA 1: DASHBOARD -->
+            <div id="dashboard" class="tab-content active space-y-6">
+                <!-- Cards de Resumo -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100 border-l-4 border-l-blue-500">
+                        <p class="text-sm text-slate-500 font-medium">Taxa de Êxito Global</p>
+                        <h3 class="text-3xl font-bold text-slate-800 mt-2">68.4% <span class="text-sm text-green-500 font-normal"><i class="fa-solid fa-arrow-trend-up"></i> +2.1%</span></h3>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100 border-l-4 border-l-purple-500">
+                        <p class="text-sm text-slate-500 font-medium">Tempo Médio de Tramitação</p>
+                        <h3 class="text-3xl font-bold text-slate-800 mt-2">14 Meses</h3>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100 border-l-4 border-l-emerald-500">
+                        <p class="text-sm text-slate-500 font-medium">Processos Analisados (Base)</p>
+                        <h3 class="text-3xl font-bold text-slate-800 mt-2">1,248</h3>
+                    </div>
+                </div>
+                <!-- Gráficos -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                        <h4 class="text-lg font-semibold text-slate-800 mb-4">Decisões por Magistrado</h4>
+                        <canvas id="chartJuizes" height="200"></canvas>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                        <h4 class="text-lg font-semibold text-slate-800 mb-4">Volume por Tema</h4>
+                        <canvas id="chartTemas" height="200"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TELA 2: UPLOAD E PREDIÇÃO -->
+            <div id="upload" class="tab-content max-w-4xl mx-auto">
+                <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-8">
+                    <div class="text-center mb-8">
+                        <h3 class="text-2xl font-bold text-slate-800">Análise de Novo Processo</h3>
+                        <p class="text-slate-500 mt-2">Faça o upload da petição em PDF para extração inteligente e cálculo de previsibilidade estatística.</p>
+                    </div>
+                    
+                    <!-- Área de Drop -->
+                    <div id="drop-area" class="border-2 border-dashed border-slate-300 rounded-xl p-12 text-center hover:bg-slate-50 hover:border-blue-500 transition cursor-pointer" onclick="iniciarSimulacaoIA()">
+                        <i class="fa-solid fa-file-pdf text-5xl text-blue-500 mb-4"></i>
+                        <p class="text-lg font-medium text-slate-700">Clique para selecionar o PDF</p>
+                        <p class="text-sm text-slate-400 mt-1">Simular upload da petição inicial</p>
+                    </div>
+
+                    <!-- Estado de Carregamento (Oculto) -->
+                    <div id="loading-state" class="hidden text-center py-12">
+                        <div class="loader ease-linear rounded-full border-4 border-t-4 border-slate-200 h-16 w-16 mx-auto mb-4"></div>
+                        <h4 class="text-lg font-semibold text-slate-700">Processamento de Linguagem Natural (NLP) em andamento...</h4>
+                        <p class="text-slate-500">A extrair entidades, anonimizar dados e a consultar base histórica.</p>
+                    </div>
+
+                    <!-- Resultado da Predição (Oculto) -->
+                    <div id="result-state" class="hidden mt-8 space-y-6">
+                        <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-6 flex items-start">
+                            <div class="bg-emerald-500 text-white p-3 rounded-lg"><i class="fa-solid fa-robot text-xl"></i></div>
+                            <div class="ml-4 flex-1">
+                                <h4 class="text-lg font-bold text-emerald-800">Parecer Preditivo da IA</h4>
+                                <p class="text-emerald-700 mt-1">"Com base em 42 casos similares na Vara de Defesa do Consumidor, há <strong>75% de probabilidade de deferimento</strong> utilizando a jurisprudência atual. O tempo estimado para sentença é de 8 a 10 meses."</p>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="border border-slate-200 rounded-xl p-5">
+                                <h5 class="font-semibold text-slate-800 border-b pb-2 mb-3">Atributos Extraídos do PDF</h5>
+                                <ul class="space-y-2 text-sm text-slate-600">
+                                    <li><strong>Tema:</strong> Atraso de Voo / Dano Moral</li>
+                                    <li><strong>Magistrado Associado:</strong> Dr. Rafael De Amorim</li>
+                                    <li><strong>Parte (Autor):</strong> Lucas G. *** <span class="text-xs bg-slate-200 px-2 py-1 rounded ml-1">LGPD</span></li>
+                                    <li><strong>Parte (Réu):</strong> Companhia Aérea XPTO</li>
+                                </ul>
+                            </div>
+                            <div class="border border-slate-200 rounded-xl p-5">
+                                <h5 class="font-semibold text-slate-800 border-b pb-2 mb-3">Resumo Automático</h5>
+                                <p class="text-sm text-slate-600 text-justify">Ação de indenização por danos morais motivada por cancelamento injustificado de voo internacional sem prestação de assistência material. O autor requer indemnização fixada no teto do juizado especial.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TELA 3: BASE DE DADOS / HISTÓRICO -->
+            <div id="historico" class="tab-content">
+                <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+                    <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                        <h3 class="font-bold text-slate-800">Processos Estruturados</h3>
+                        <div class="relative">
+                            <i class="fa-solid fa-search absolute left-3 top-3 text-slate-400"></i>
+                            <input type="text" placeholder="Buscar jurisprudência..." class="pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                    </div>
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-100 text-slate-600 text-sm">
+                                <th class="p-4 border-b">ID Processo</th>
+                                <th class="p-4 border-b">Tema</th>
+                                <th class="p-4 border-b">Magistrado</th>
+                                <th class="p-4 border-b">Partes (Anonimizadas)</th>
+                                <th class="p-4 border-b">Resultado</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-sm text-slate-700">
+                            <tr class="hover:bg-slate-50 border-b">
+                                <td class="p-4 font-mono text-blue-600">0019283-44.2023...</td>
+                                <td class="p-4">Dano Moral</td>
+                                <td class="p-4">Dra. Maria Silva</td>
+                                <td class="p-4">Felipe *** vs B. Bradesco</td>
+                                <td class="p-4"><span class="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold">Procedente</span></td>
+                            </tr>
+                            <tr class="hover:bg-slate-50 border-b">
+                                <td class="p-4 font-mono text-blue-600">0004512-19.2024...</td>
+                                <td class="p-4">Direito Trabalhista</td>
+                                <td class="p-4">Dr. Rafael De Amorim</td>
+                                <td class="p-4">Emanuele *** vs Softwares LTDA</td>
+                                <td class="p-4"><span class="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold">Acordo</span></td>
+                            </tr>
+                            <tr class="hover:bg-slate-50 border-b">
+                                <td class="p-4 font-mono text-blue-600">0055102-88.2023...</td>
+                                <td class="p-4">Plano de Saúde</td>
+                                <td class="p-4">Dra. Maria Silva</td>
+                                <td class="p-4">José R. *** vs Unimed ***</td>
+                                <td class="p-4"><span class="bg-red-100 text-red-700 px-2 py-1 rounded text-xs font-bold">Improcedente</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Scripts de Interação e Gráficos -->
+    <script>
+        // Lógica de Navegação de Abas
+        function switchTab(tabId) {
+            // Esconder todas as abas
+            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+            // Resetar botões do menu
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('bg-blue-600', 'text-white');
+                btn.classList.add('text-slate-300', 'hover:bg-slate-800');
+            });
+            
+            // Ativar aba selecionada
+            document.getElementById(tabId).classList.add('active');
+            
+            // Estilizar botão ativo
+            const activeBtn = document.getElementById(`btn-${tabId}`);
+            activeBtn.classList.remove('text-slate-300', 'hover:bg-slate-800');
+            activeBtn.classList.add('bg-blue-600', 'text-white');
+
+            // Atualizar Título do Header
+            const titles = {
+                'dashboard': 'Dashboard Analítico',
+                'upload': 'Análise de Novo Processo',
+                'historico': 'Base de Conhecimento Estruturada'
+            };
+            document.getElementById('header-title').innerText = titles[tabId];
+
+            // Renderizar gráficos se for a aba dashboard
+            if(tabId === 'dashboard' && !window.chartsRendered) {
+                renderCharts();
+                window.chartsRendered = true;
+            }
+        }
+
+        // Lógica de Simulação de IA (Upload)
+        function iniciarSimulacaoIA() {
+            document.getElementById('drop-area').classList.add('hidden');
+            document.getElementById('loading-state').classList.remove('hidden');
+
+            // Simula o tempo de processamento do backend (3 segundos)
+            setTimeout(() => {
+                document.getElementById('loading-state').classList.add('hidden');
+                document.getElementById('result-state').classList.remove('hidden');
+            }, 3000);
+        }
+
+        // Lógica de Renderização de Gráficos (Chart.js)
+        function renderCharts() {
+            // Gráfico 1: Decisões por Magistrado
+            new Chart(document.getElementById('chartJuizes'), {
+                type: 'bar',
+                data: {
+                    labels: ['Dr. Rafael De Amorim', 'Dra. Maria Silva', 'Dr. Carlos Souza'],
+                    datasets: [
+                        { label: 'Procedentes', data: [120, 95, 60], backgroundColor: '#3b82f6' },
+                        { label: 'Improcedentes', data: [45, 80, 50], backgroundColor: '#ef4444' }
+                    ]
+                },
+                options: { responsive: true, scales: { x: { stacked: true }, y: { stacked: true } } }
+            });
+
+            // Gráfico 2: Volume por Tema
+            new Chart(document.getElementById('chartTemas'), {
+                type: 'doughnut',
+                data: {
+                    labels: ['Dano Moral', 'Trabalhista', 'Tributário', 'Saúde'],
+                    datasets: [{
+                        data: [45, 25, 20, 10],
+                        backgroundColor: ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b']
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+        }
+
+        // Inicializar Dashboard ao abrir
+        renderCharts();
+        window.chartsRendered = true;
+    </script>
+</body>
+</html>
