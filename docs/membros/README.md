@@ -1,46 +1,42 @@
 # Governança de Contribuição Individual — Equipe Epsilon (JuriVision)
 
 **Disciplina:** Gerência de Projetos — Universidade Federal de Alagoas (UFAL)  
-**Professor:** Rafael De Amorim Silva  
-**Data de Implantação:** 05/11/2026 (Sprint Final do MVP — Entrega: 10/11/2026)
+**Professor Avaliador:** Rafael De Amorim Silva  
+**Data de Consolidação:** 09/11/2026 (Consolidação do MVP — Sprint 1)
 
 ---
 
 ## 1. Finalidade deste Diretório
 
-Em conformidade com as diretrizes da disciplina de Gerência de Projetos, este diretório centraliza os **registros individuais de atividade, desenvolvimento e aprendizado de cada um dos 8 integrantes** da Equipe Epsilon.
+Em conformidade com as diretrizes da disciplina de Gerência de Projetos, este diretório centraliza os **registros individuais de atividade, desenvolvimento e responsabilidade técnica dos integrantes ativos** da Equipe Epsilon que efetivamente implementaram e entregaram o MVP da Plataforma JuriVision.
 
-Ele tem valor avaliativo fundamental para:
-1. Comprovar a participação contínua de cada membro no projeto.
-2. Mapear de forma inequívoca quais cards do Trello e commits Git pertencem a cada integrante.
-3. Explicar decisões técnicas, desafios superados e contribuições práticas.
-
----
-
-## 2. Mapa dos Integrantes por Dupla de Trabalho
-
-| Dupla | Papel Principal | Integrantes | Arquivo de Registro |
-| :---: | :--- | :--- | :--- |
-| **Dupla 1** | Front-end & Experiência do Usuário (UI/UX) | **Emanuele Vitória** | [`emanuele-vitoria/CHANGELOG.md`](./emanuele-vitoria/CHANGELOG.md) |
-| **Dupla 1** | Front-end & Experiência do Usuário (UI/UX) | **Lucas Gabriel** | [`lucas-gabriel/CHANGELOG.md`](./lucas-gabriel/CHANGELOG.md) |
-| **Dupla 2** | Back-end, Arquitetura & Testes | **Victor Samyr** | [`victor-samyr/CHANGELOG.md`](./victor-samyr/CHANGELOG.md) |
-| **Dupla 2** | Back-end, Arquitetura & Testes | **Gabriel Damião** | [`gabriel-damiao/CHANGELOG.md`](./gabriel-damiao/CHANGELOG.md) |
-| **Dupla 3** | Dados, DataJud & Inteligência Artificial | **Pedro Henrique** | [`pedro-henrique/CHANGELOG.md`](./pedro-henrique/CHANGELOG.md) |
-| **Dupla 3** | Dados, DataJud & Inteligência Artificial | **Ygor Vasconcelos** | [`ygor-vasconcelos/CHANGELOG.md`](./ygor-vasconcelos/CHANGELOG.md) |
-| **Dupla 4** | Gerência de Projetos, Requisitos & Qualidade | **Daniel Filipe** | [`daniel-filipe/CHANGELOG.md`](./daniel-filipe/CHANGELOG.md) |
-| **Dupla 4** | Gerência de Projetos, Requisitos & Qualidade | **Fernando Gabriel** | [`fernando-gabriel/CHANGELOG.md`](./fernando-gabriel/CHANGELOG.md) |
+Este documento tem valor avaliativo para:
+1. Comprovar a participação e entrega contínua dos membros no projeto.
+2. Mapear de forma inequívoca os pacotes da EAP, decisões arquiteturais e commits aos seus respectivos autores.
+3. Documentar a consolidação e absorção de responsabilidades técnicas pela equipe ativa.
 
 ---
 
-## 3. Padrão de Preenchimento para Cada Membro
+## 2. Quadro de Responsabilidade Técnica da Equipe Efetiva
 
-A cada tarefa desenvolvida, cada integrante deve atualizar seu arquivo de changelog no seguinte formato:
+Diante da ausência de contribuições práticas por parte de integrantes previstos na concepção teórica inicial, a totalidade do escopo do MVP (Engenharia de Requisitos, Arquitetura, Full-Stack, Barreira LGPD, Integrações DataJud/Gemini e Qualidade) foi integralmente conduzida, implementada e homologada pelos **3 integrantes ativos** abaixo:
 
-```markdown
-### [YYYY-MM-DD] - [Título da Atividade / Card Trello]
-- **Card Trello Associado:** [CARD-XXX - Nome da Tarefa]
-- **Branch Utilizada:** `<nome>/<tarefa>`
-- **Commits:** `hash_do_commit` - Descrição sucinta.
-- **O que foi feito:** Descrição técnica do que foi implementado ou resolvido.
-- **Desafios / Lições Aprendidas:** Dificuldades encontradas e como foram contornadas.
-```
+| Integrante | Papel no Projeto | Pacotes da EAP de Atuação | Diário Individual |
+| :--- | :--- | :--- | :--- |
+| **Victor Samyr** | Engenharia de Back-end, Arquitetura & Governança de Dados | EAP 1.3.1 (Armazenamento), EAP 1.3.2 (API Core), EAP 1.4.1 (Barreira LGPD) | [`victor-samyr/CHANGELOG.md`](./victor-samyr/CHANGELOG.md) |
+| **Gabriel Damião** | Engenharia de Back-end, Integração DataJud & Demonstração | EAP 1.3.2 (API REST), EAP 1.4.2 (Integração DataJud), EAP 1.5.2 (Deploy) | [`gabriel-damiao/CHANGELOG.md`](./gabriel-damiao/CHANGELOG.md) |
+| **Lucas Gabriel** | Responsável Técnico, Engenharia Front-end, Dados & IA | EAP 1.1/1.2 (Gerência/Requisitos), EAP 1.3.3 (UI/UX), EAP 1.4.3 (Gemini/NLP), EAP 1.5.1 (Acessibilidade) | [`lucas-gabriel/CHANGELOG.md`](./lucas-gabriel/CHANGELOG.md) |
+
+---
+
+## 3. Absorção de Responsabilidades e Centralização Técnica
+
+Conforme deliberado na consolidação oficial da equipe:
+- **Camada de Front-end, Experiência do Usuário, Requisitos e IA:** O integrante **Lucas Gabriel** assumiu formalmente como **Responsável Técnico**, centralizando a arquitetura e execução da interface (*Legal Editorial + Legal Intelligence*), a conformidade com WCAG 2.2 AA / WAI-ARIA 1.2, a esteira de dados/NLP (Google AI Studio - Gemini Free Tier) e o alinhamento com a EAP/matriz RACI.
+- **Camada de Back-end, Persistência e Integrações Oficiais:** Os integrantes **Victor Samyr** e **Gabriel Damião** conduziram e implementaram o núcleo da API FastAPI, a conformidade determinística da Barreira LGPD (Art. 12 da Lei 13.709/2018), a resiliência dual do banco de dados (PostgreSQL + SQLite) e o cliente oficial assíncrono para a API Pública do DataJud (CNJ/TJAL).
+
+---
+
+## 4. Estrutura dos Diários de Bordo Individuais
+
+Cada integrante mantém seu histórico detalhado em sua respectiva pasta, registrando tarefas, branches, commits e impactos na qualidade do software.
