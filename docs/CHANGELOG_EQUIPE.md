@@ -199,3 +199,24 @@ Toda nova modificação deve seguir o modelo abaixo:
   - `.env.example` - Documentação expandida de variáveis de ambiente.
   - `backend/tests/test_datajud_and_gemini.py` - 2 novos testes adicionados (total 19 passed).
   - `docs/membros/*/CHANGELOG.md` - Diários individuais criados.
+
+
+---
+
+### [2026-11-09] — Consolidação de Governança Efetiva: Limpeza de Pastas Inativas e RACI
+- **Branch:** `fix/governanca-membros-consolidacao`
+- **Responsáveis:** Victor Samyr, Gabriel Damião e Lucas Gabriel (Equipe Efetiva Epsilon)
+- **Pacotes da EAP / Requisitos Atendidos:** EAP 1.1 (Governança e RACI), EAP 1.4.1 a 1.4.3 (Full-Stack e IA), EAP 1.5.1 (Garantia de Qualidade).
+- **Resumo da Mudança:**
+  1. **Consolidação de Governança e Rastreabilidade (`docs/membros/`):**
+     - Remoção das 5 pastas de integrantes inativos que não entregaram código nem participaram das entregas da Sprint 1 (`daniel-filipe`, `emanuele-vitoria`, `fernando-gabriel`, `pedro-henrique`, `ygor-vasconcelos`).
+     - Centralização formal: **Lucas Gabriel** assume como **Responsável Técnico**, absorvendo front-end/UI/UX, acessibilidade, inteligência de dados/Gemini e engenharia de requisitos; **Victor Samyr** e **Gabriel Damião** consolidam a arquitetura back-end, banco dual, barreira LGPD e cliente DataJud.
+     - Restauração do `.gitignore` para o estado anterior padrão limpo (sem regras artificiais de bloqueio de documentação).
+     - Atualização do `docs/membros/README.md` e dos diários de bordo individuais dos 3 integrantes ativos.
+
+- **Arquivos Criados / Modificados:**
+  - `.gitignore` - Restaurado para o estado limpo padrão.
+  - `docs/membros/` - Removidas as 5 pastas inativas; preservadas as 3 pastas ativas (`victor-samyr`, `gabriel-damiao`, `lucas-gabriel`).
+  - `docs/membros/README.md` - Quadro de responsabilidades consolidado com os 3 membros ativos.
+  - `docs/membros/*/CHANGELOG.md` - Diários individuais detalhados dos 3 membros ativos.
+  - `docs/CHANGELOG_EQUIPE.md` - Registro oficial consolidado da equipe.
