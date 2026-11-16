@@ -1450,7 +1450,6 @@ function initApp() {
     });
 
     verificarConectividadeApi();
-    carregarBaseConhecimento(1);
     carregarDashboard();
     switchTab("historico");
 }

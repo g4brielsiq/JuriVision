@@ -67,6 +67,8 @@ def test_rnf09_rnf10_contraste_wcag_e_design_tokens():
     assert "--bg-ivory: #F6F4EF" in css
     assert "--touch-target-min: 44px" in css
     assert ":focus-visible" in css
+    assert "sidebar-saved-desc" in html
+    assert ".context-header {\n    display: none" not in css
 
 
 def test_rnf04_integracao_completa_contratos_api():
