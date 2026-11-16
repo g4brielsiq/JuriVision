@@ -83,3 +83,4 @@ def test_rnf04_integracao_completa_contratos_api():
     assert "/api/v1/processos" in api_code
     assert "/api/v1/relatorios/processo/" in api_code
     assert "resetarFluxoUpload" in app_code
+    assert "getAuthHeader" in api_code
