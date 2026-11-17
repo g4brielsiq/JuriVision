@@ -409,6 +409,29 @@ erDiagram
 }
 ```
 
+### 8.5.1 Cadastro e Edição Manual de Processos (`RF-08`, `RN-01`)
+
+* **Rotas:** `POST /api/v1/processos` (cadastro, **201 Created**) e `PUT /api/v1/processos/{id_processo}` (edição completa, **200 OK**)
+* **Request Body (igual para as duas rotas):**
+
+```json
+{
+  "numero_processo": "0801234-56.2025.8.02.0001",
+  "tema": "Dano Moral",
+  "magistrado": "Dr. Rafael De Amorim",
+  "comarca": "1ª Vara Cível de Maceió",
+  "autor": "Maria Aparecida Santos",
+  "reu": "Banco do Brasil S.A.",
+  "resumo": "Autora: Maria Aparecida Santos, CPF 123.456.789-00, teve o nome negativado indevidamente.",
+  "resultado": "Em Analise",
+  "data_julgamento": "2025-08-15"
+}
+```
+
+* **Regras:** `numero_processo` no formato CNJ; `resultado` ∈ {`Procedente`, `Improcedente`, `Acordo`, `Em Analise`} (padrão `Em Analise`); `comarca` e `data_julgamento` opcionais. Autor, réu e resumo passam pelo `AnonimizadorLGPD` antes da persistência (`RN-01`); nomes já mascarados (`***`) são preservados na edição. A `analise_preditiva` é uma estimativa heurística calculada com processos do mesmo tema e magistrado na base (`provedor_ia = "local_heuristic"`).
+* **Response Body:** mesmo formato de `GET /api/v1/processos/{id_processo}` (Seção 8.3).
+* **Erros:** `422` (validação), `409` (número CNJ já cadastrado em outro processo), `404` (edição de processo inexistente).
+
 ### 8.6 Exportação de Relatório Estratégico (`RF-09`)
 
 * **Rota:** `GET /api/v1/relatorios/processo/{id_processo}/pdf`
