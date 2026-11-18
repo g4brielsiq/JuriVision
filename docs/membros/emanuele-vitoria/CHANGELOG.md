@@ -16,3 +16,10 @@
 - Desenvolvimento dos cartões documentais de decisão e tabela comparativa na visualização de resultados.
 - Garantia de acessibilidade semântica WCAG 2.2 AA e WAI-ARIA 1.2 nos componentes visuais.
 - **Status:** Entregue e homologado com 100% de testes automatizados aprovados.
+
+### [2026-11-16] — Cadastro e Edição Manual de Processos (Back-end)
+- **Branch de Atuação:** `feat/cadastro-edicao-processos`
+- **Atividades Realizadas:**
+- Implementação das rotas `POST /api/v1/processos` e `PUT /api/v1/processos/{id}` com anonimização LGPD obrigatória.
+- Criação de 9 testes automatizados (CT-10 a CT-13) e documentação do contrato na Seção 8.5.1 do `ARCHITECTURE.md`.
+- **Status:** Aguardando revisão (PR para `dev`).

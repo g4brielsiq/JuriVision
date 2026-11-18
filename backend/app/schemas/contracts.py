@@ -4,8 +4,9 @@ Rastreabilidade:
 - ARCHITECTURE.md: Seção 8 (Contratos Oficiais de API REST — 8.1 a 8.7)
 - MODELING.md: RNF-01 (Adequação Funcional — Completude e Correção Funcional), RF-01 a RF-09
 """
-from typing import List, Optional
-from pydantic import BaseModel, Field
+from datetime import date
+from typing import List, Literal, Optional
+from pydantic import BaseModel, Field, field_validator
 
 
 # ==============================================================================
@@ -122,6 +123,44 @@ class ProcessoListResponse(BaseModel):
     total: int = Field(..., ge=0)
     pagina: int = Field(..., ge=1)
     itens: List[ProcessoListItemSchema]
+
+
+# ==============================================================================
+# 8.5.1 Cadastro e Edição Manual de Processos (RF-08 / RN-01)
+# ==============================================================================
+CNJ_PATTERN = r"^\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}$"
+
+ResultadoProcesso = Literal["Procedente", "Improcedente", "Acordo", "Em Analise"]
+
+
+class ProcessoCadastroRequest(BaseModel):
+    """
+    Corpo de entrada para cadastro (POST) e edição completa (PUT) de um processo.
+    Os nomes das partes e o resumo são recebidos em texto bruto e SEMPRE passam pelo
+    AnonimizadorLGPD antes da persistência (RN-01). Nada é gravado sem máscara.
+    """
+
+    numero_processo: str = Field(
+        ...,
+        pattern=CNJ_PATTERN,
+        description="Número CNJ no formato NNNNNNN-DD.AAAA.J.TR.OOOO",
+        examples=["0801234-56.2025.8.02.0001"],
+    )
+    tema: str = Field(..., min_length=2, max_length=120, examples=["Dano Moral"])
+    magistrado: str = Field(..., min_length=2, max_length=150, examples=["Dr. Rafael De Amorim"])
+    comarca: str = Field(
+        default="1ª Vara Cível de Maceió", min_length=2, max_length=150, examples=["1ª Vara Cível de Maceió"]
+    )
+    autor: str = Field(..., min_length=2, max_length=200, examples=["Maria Aparecida Santos"])
+    reu: str = Field(..., min_length=2, max_length=200, examples=["Banco do Brasil S.A."])
+    resumo: str = Field(..., min_length=10, description="Ementa ou síntese dos fatos (será higienizada)")
+    resultado: ResultadoProcesso = Field(default="Em Analise")
+    data_julgamento: Optional[date] = Field(default=None, examples=["2025-08-15"])
+
+    @field_validator("numero_processo", "tema", "magistrado", "comarca", "autor", "reu", "resumo", mode="before")
+    @classmethod
+    def _strip_texto(cls, value):
+        return value.strip() if isinstance(value, str) else value
 
 
 # ==============================================================================

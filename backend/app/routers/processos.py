@@ -12,7 +12,7 @@ from typing import Optional
 import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.ai_gateway import AnonimizadorLGPD, ExtratorDocumental, ai_gateway
@@ -27,6 +27,7 @@ from app.schemas.contracts import (
     InternalAnalyzeRequest,
     MetadadosExtraidosSchema,
     PartesAnonimizadasSchema,
+    ProcessoCadastroRequest,
     ProcessoListItemSchema,
     ProcessoListResponse,
     ProcessoUploadResponse,
@@ -428,6 +429,157 @@ def listar_processos(
         itens=itens,
     )
 
+
+
+
+# ==============================================================================
+# Cadastro e Edição Manual de Processos (RF-08 / RN-01)
+# ==============================================================================
+RESULTADOS_FAVORAVEIS = ("procedente", "acordo")
+
+
+def _estimar_analise_preditiva(db: Session, payload: ProcessoCadastroRequest, ignorar_id: Optional[str] = None) -> dict:
+    """
+    Estima os campos de AnalisePreditiva para um processo cadastrado manualmente, usando apenas
+    dados reais da base: processos do mesmo tema e do mesmo magistrado já persistidos.
+    Não há modelo treinado aqui: os valores são heurísticos e o provedor é registrado como 'local_heuristic'.
+    """
+    base = db.query(Processo)
+    if ignorar_id:
+        base = base.filter(Processo.id_processo != ignorar_id)
+
+    mesmo_tema = base.filter(func.lower(Processo.tema) == payload.tema.lower()).all()
+    mesmo_juiz = base.filter(func.lower(Processo.magistrado) == payload.magistrado.lower()).all()
+
+    resultado = payload.resultado.lower()
+    if resultado in RESULTADOS_FAVORAVEIS:
+        probabilidade = 0.76  # mesma convenção da importação CSV para processos já decididos
+    elif resultado == "improcedente":
+        probabilidade = 0.38
+    else:
+        decididos = [
+            p for p in (mesmo_juiz or mesmo_tema)
+            if (p.resultado_historico or "").lower() in RESULTADOS_FAVORAVEIS + ("improcedente",)
+        ]
+        if decididos:
+            favoraveis = sum(1 for p in decididos if p.resultado_historico.lower() in RESULTADOS_FAVORAVEIS)
+            probabilidade = round(favoraveis / len(decididos), 2)
+        else:
+            probabilidade = 0.5
+        probabilidade = max(min(probabilidade, 0.92), 0.08)
+
+    prazos = [p.analise_preditiva.tempo_estimado_sentenca_meses for p in mesmo_tema if p.analise_preditiva]
+    tempo = int(round(sum(prazos) / len(prazos))) if prazos else 12
+
+    return {
+        "probabilidade_deferimento": probabilidade,
+        "margem_confianca": 0.08,
+        "tempo_estimado_sentenca_meses": max(tempo, 1),
+        "casos_similares_encontrados": len(mesmo_tema),
+        "tese_recomendada": f"Estimativa heurística a partir de {len(mesmo_tema)} processo(s) do tema '{payload.tema}' na base.",
+        "tendencia_juiz": f"Baseado em {len(mesmo_juiz)} processo(s) de {payload.magistrado} na base.",
+        "provedor_ia_utilizado": "local_heuristic",
+    }
+
+
+def _aplicar_cadastro(db: Session, proc: Processo, payload: ProcessoCadastroRequest) -> None:
+    """Aplica os campos do payload ao processo, passando partes e resumo pela barreira LGPD (RN-01)."""
+    autor_anon, autor_masked = AnonimizadorLGPD.mask_party_name(payload.autor)
+    reu_anon, reu_masked = AnonimizadorLGPD.mask_party_name(payload.reu)
+    resumo_limpo, cpfs_masked, names_masked = AnonimizadorLGPD.sanitize_text(
+        payload.resumo, known_natural_names=[payload.autor, payload.reu]
+    )
+
+    proc.numero_processo = payload.numero_processo
+    proc.tema = payload.tema
+    proc.magistrado = payload.magistrado
+    proc.comarca = payload.comarca
+    proc.autor_anonimizado = autor_anon
+    proc.reu_anonimizado = reu_anon
+    proc.resumo_nlp = resumo_limpo
+    proc.resultado_historico = payload.resultado
+    proc.data_julgamento = payload.data_julgamento
+    proc.status = "PROCESSADO"
+
+    # no_autoflush: evita gravar o processo ainda incompleto enquanto a base é consultada
+    with db.no_autoflush:
+        estimativa = _estimar_analise_preditiva(db, payload, ignorar_id=proc.id_processo)
+    if proc.analise_preditiva:
+        for campo, valor in estimativa.items():
+            setattr(proc.analise_preditiva, campo, valor)
+    else:
+        proc.analise_preditiva = AnalisePreditiva(id_processo=proc.id_processo, **estimativa)
+
+    proc.logs_lgpd.append(
+        LogAuditoriaLGPD(
+            id_processo=proc.id_processo,
+            total_cpfs_mascarados=cpfs_masked,
+            total_nomes_mascarados=names_masked + int(autor_masked) + int(reu_masked),
+            texto_higienizado_verificado=True,
+        )
+    )
+
+
+def _garantir_numero_unico(db: Session, numero_processo: str, ignorar_id: Optional[str] = None) -> None:
+    query = db.query(Processo).filter(Processo.numero_processo == numero_processo)
+    if ignorar_id:
+        query = query.filter(Processo.id_processo != ignorar_id)
+    if query.first():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Já existe um processo cadastrado com o número '{numero_processo}'.",
+        )
+
+
+@router.post("", response_model=ProcessoUploadResponse, status_code=status.HTTP_201_CREATED)
+def cadastrar_processo(
+    payload: ProcessoCadastroRequest,
+    db: Session = Depends(get_db),
+) -> ProcessoUploadResponse:
+    """
+    Cadastra manualmente um processo na Base de Conhecimento (RF-08).
+    Partes e resumo são anonimizados antes da persistência (RN-01). Retorna 409 se o número CNJ já existir.
+    """
+    _garantir_numero_unico(db, payload.numero_processo)
+
+    short_hash = hashlib.sha1(f"{payload.numero_processo}-{uuid.uuid4()}".encode("utf-8")).hexdigest()[:5]
+    proc = Processo(
+        id_processo=f"proc-{short_hash}",
+        usuario_id="usr-01",
+        numero_processo=payload.numero_processo,
+        arquivo_nome="cadastro_manual",
+        origem_ingestao="MANUAL",
+    )
+    db.add(proc)
+    _aplicar_cadastro(db, proc, payload)
+    db.commit()
+
+    return obter_detalhes_processo(proc.id_processo, db)
+
+
+@router.put("/{id_processo}", response_model=ProcessoUploadResponse, status_code=status.HTTP_200_OK)
+def editar_processo(
+    id_processo: str,
+    payload: ProcessoCadastroRequest,
+    db: Session = Depends(get_db),
+) -> ProcessoUploadResponse:
+    """
+    Edita (substituição completa dos campos editáveis) um processo existente (RF-08).
+    Nomes já mascarados (com '***') são preservados; novos nomes passam pela barreira LGPD (RN-01).
+    Retorna 404 se o processo não existir e 409 se o novo número CNJ pertencer a outro processo.
+    """
+    proc = db.query(Processo).filter(Processo.id_processo == id_processo).first()
+    if not proc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Processo '{id_processo}' não encontrado na base de conhecimento.",
+        )
+    _garantir_numero_unico(db, payload.numero_processo, ignorar_id=id_processo)
+
+    _aplicar_cadastro(db, proc, payload)
+    db.commit()
+
+    return obter_detalhes_processo(proc.id_processo, db)
 
 
 @router.get("/datajud/{numero_processo}", response_model=DataJudProcessoResponse, status_code=status.HTTP_200_OK)
