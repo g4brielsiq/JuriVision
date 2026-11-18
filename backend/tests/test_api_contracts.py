@@ -105,6 +105,28 @@ def test_ct02_upload_pdf_invalido_retorna_422(client: TestClient):
     assert "ErroProcessamento" in resp.json()["detail"]
 
 
+def test_ct02_upload_pdf_acima_limite_15mb_retorna_413(client: TestClient):
+    """CT-02 / RN-04 / SEC-05: Upload de PDF superior a 15MB deve retornar HTTP 413 (Payload Too Large)."""
+    oversized_bytes = b"%PDF-1.4\n" + b"0" * (15 * 1024 * 1024)
+    resp = client.post(
+        "/api/v1/processos/upload-pdf",
+        files={"file": ("arquivo_gigante.pdf", io.BytesIO(oversized_bytes), "application/pdf")},
+    )
+    assert resp.status_code == 413
+    assert "15MB" in resp.json()["detail"]
+
+
+def test_ct03_upload_csv_acima_limite_10mb_retorna_413(client: TestClient):
+    """CT-03 / RN-04 / SEC-05: Upload de CSV superior a 10MB deve retornar HTTP 413 (Payload Too Large)."""
+    oversized_bytes = b"col1,col2\n" + b"x" * (10 * 1024 * 1024)
+    resp = client.post(
+        "/api/v1/processos/upload-csv",
+        files={"file": ("planilha_gigante.csv", io.BytesIO(oversized_bytes), "text/csv")},
+    )
+    assert resp.status_code == 413
+    assert "10MB" in resp.json()["detail"]
+
+
 def test_ct03_upload_csv_em_lote_e_anonimizacao(client: TestClient):
     """CT-03 (RF-03, RF-04): Importação em lote de planilha CSV padronizada com higienização LGPD."""
     csv_content = (

@@ -47,6 +47,9 @@ REQUIRED_CSV_COLUMNS = {
     "data_julgamento",
 }
 
+MAX_PDF_SIZE_BYTES = 15 * 1024 * 1024  # 15 MB (RN-04 / SEC-05)
+MAX_CSV_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB (RN-04 / SEC-05)
+
 
 def _compute_historical_context(db: Session, raw_text: str) -> ContextoHistoricoSchema:
     """
@@ -113,6 +116,11 @@ async def upload_processo_pdf(
         )
 
     file_bytes = await file.read()
+    if len(file_bytes) > MAX_PDF_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="ErroProcessamento (RN-04 / SEC-05): Arquivo excede o limite máximo permitido de 15MB.",
+        )
     try:
         raw_text = ExtratorDocumental.extract_text_from_pdf_bytes(file_bytes)
     except ValueError as exc:
@@ -229,6 +237,11 @@ async def upload_processos_csv(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="ErroProcessamento (RN-04): O arquivo CSV enviado está vazio.",
+        )
+    if len(raw_bytes) > MAX_CSV_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="ErroProcessamento (RN-04 / SEC-05): Planilha CSV excede o limite máximo permitido de 10MB.",
         )
 
     try:

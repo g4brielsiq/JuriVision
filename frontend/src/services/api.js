@@ -15,6 +15,15 @@ export function getApiBaseUrl() {
 }
 
 /**
+ * Recupera o token JWT de autenticação do storage e retorna o cabeçalho Bearer.
+ */
+export function getAuthHeader() {
+    if (typeof window === "undefined") return {};
+    const token = localStorage.getItem("jurivision_token") || sessionStorage.getItem("jurivision_token");
+    return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+/**
  * Constrói em memória um arquivo PDF 1.4 válido (%PDF-1.4) para demonstração real de upload
  * na rota POST /api/v1/processos/upload-pdf caso o usuário deseje testar com 1 clique.
  */
@@ -78,11 +87,16 @@ export async function loginAdvogado(email, senha) {
     if (!res.ok) {
         throw new Error(data.detail || "Falha na autenticação. Verifique suas credenciais.");
     }
+    if (data.access_token && typeof window !== "undefined") {
+        localStorage.setItem("jurivision_token", data.access_token);
+    }
     return data;
 }
 
 export async function fetchDashboardMetricas() {
-    const res = await fetch(`${getApiBaseUrl()}/api/v1/dashboard/metricas`);
+    const res = await fetch(`${getApiBaseUrl()}/api/v1/dashboard/metricas`, {
+        headers: { ...getAuthHeader() },
+    });
     if (!res.ok) throw new Error(`Erro ao carregar métricas: HTTP ${res.status}`);
     return res.json();
 }
@@ -92,6 +106,7 @@ export async function uploadProcessoPdf(file) {
     formData.append("file", file);
     const res = await fetch(`${getApiBaseUrl()}/api/v1/processos/upload-pdf`, {
         method: "POST",
+        headers: { ...getAuthHeader() },
         body: formData,
     });
     const data = await res.json().catch(() => ({}));
@@ -106,6 +121,7 @@ export async function uploadProcessosCsv(file) {
     formData.append("file", file);
     const res = await fetch(`${getApiBaseUrl()}/api/v1/processos/upload-csv`, {
         method: "POST",
+        headers: { ...getAuthHeader() },
         body: formData,
     });
     const data = await res.json().catch(() => ({}));
@@ -123,13 +139,17 @@ export async function fetchProcessos({ tema = "", juiz = "", busca = "", pagina 
     params.set("pagina", String(pagina));
     params.set("limite", String(limite));
 
-    const res = await fetch(`${getApiBaseUrl()}/api/v1/processos?${params.toString()}`);
+    const res = await fetch(`${getApiBaseUrl()}/api/v1/processos?${params.toString()}`, {
+        headers: { ...getAuthHeader() },
+    });
     if (!res.ok) throw new Error(`Erro ao consultar processos: HTTP ${res.status}`);
     return res.json();
 }
 
 export async function fetchProcessoDetalhes(idProcesso) {
-    const res = await fetch(`${getApiBaseUrl()}/api/v1/processos/${encodeURIComponent(idProcesso)}`);
+    const res = await fetch(`${getApiBaseUrl()}/api/v1/processos/${encodeURIComponent(idProcesso)}`, {
+        headers: { ...getAuthHeader() },
+    });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
         throw new Error(data.detail || `Processo ${idProcesso} não encontrado.`);
@@ -142,7 +162,9 @@ export function getRelatorioPdfUrl(idProcesso) {
 }
 
 export async function consultarProcessoDatajud(numeroProcesso) {
-    const res = await fetch(`${getApiBaseUrl()}/api/v1/processos/datajud/${encodeURIComponent(numeroProcesso)}`);
+    const res = await fetch(`${getApiBaseUrl()}/api/v1/processos/datajud/${encodeURIComponent(numeroProcesso)}`, {
+        headers: { ...getAuthHeader() },
+    });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
         throw new Error(data.detail || `Erro ao consultar metadados no DataJud (HTTP ${res.status}).`);
