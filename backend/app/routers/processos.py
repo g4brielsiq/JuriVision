@@ -11,7 +11,7 @@ import io
 from typing import Optional
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
@@ -580,6 +580,45 @@ def editar_processo(
     db.commit()
 
     return obter_detalhes_processo(proc.id_processo, db)
+
+
+@router.delete(
+    "/{id_processo}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    summary="Excluir processo judicial",
+    description=(
+        "Remove definitivamente um processo da base de conhecimento pelo seu ID. "
+        "As entidades associadas (análise preditiva e logs de auditoria LGPD) são excluídas "
+        "automaticamente em cascata. Retorna HTTP 204 em caso de sucesso ou HTTP 404 se não encontrado."
+    ),
+    responses={
+        status.HTTP_204_NO_CONTENT: {
+            "description": "Processo e registros vinculados excluídos com sucesso.",
+        },
+        status.HTTP_404_NOT_FOUND: {
+            "description": "Processo não encontrado na base de conhecimento.",
+        },
+    },
+)
+def excluir_processo(
+    id_processo: str,
+    db: Session = Depends(get_db),
+) -> Response:
+    """
+    Exclui um processo judicial da Base de Conhecimento (RF-08).
+    Aproveita a remoção em cascata (cascade='all, delete-orphan') para apagar a análise preditiva e logs LGPD.
+    """
+    proc = db.query(Processo).filter(Processo.id_processo == id_processo).first()
+    if not proc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Processo '{id_processo}' não encontrado na base de conhecimento.",
+        )
+
+    db.delete(proc)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/datajud/{numero_processo}", response_model=DataJudProcessoResponse, status_code=status.HTTP_200_OK)
