@@ -202,9 +202,28 @@ Toda nova modificação deve seguir o modelo abaixo:
 
 ---
 
+### [2026-11-09] — Consolidação de Governança Efetiva: Limpeza de Pastas Inativas e RACI
+- **Branch:** `fix/governanca-membros-consolidacao`
+- **Responsáveis:** Victor Samyr, Gabriel Damião e Lucas Gabriel (Equipe Efetiva Epsilon)
+- **Pacotes da EAP / Requisitos Atendidos:** EAP 1.1 (Governança e RACI), EAP 1.4.1 a 1.4.3 (Full-Stack e IA), EAP 1.5.1 (Garantia de Qualidade).
+- **Resumo da Mudança:**
+  1. **Consolidação de Governança e Rastreabilidade (`docs/membros/`):**
+     - Remoção de pastas de integrantes inativos que não entregaram código na Sprint 1.
+     - Centralização formal: **Lucas Gabriel** assume como **Responsável Técnico**, absorvendo front-end/UI/UX, acessibilidade, inteligência de dados/Gemini e engenharia de requisitos; **Victor Samyr** e **Gabriel Damião** consolidam a arquitetura back-end, banco dual, barreira LGPD e cliente DataJud.
+     - Restauração do `.gitignore` para o estado anterior padrão limpo (sem regras artificiais de bloqueio de documentação).
+     - Atualização do `docs/membros/README.md` e dos diários de bordo individuais dos membros ativos.
+
+- **Arquivos Criados / Modificados:**
+  - `.gitignore` - Restaurado para o estado limpo padrão.
+  - `docs/membros/README.md` - Quadro de responsabilidades consolidado.
+  - `docs/membros/*/CHANGELOG.md` - Diários individuais detalhados dos membros ativos.
+  - `docs/CHANGELOG_EQUIPE.md` - Registro oficial consolidado da equipe.
+
+---
+
 ### [2026-11-16] — Cadastro e Edição Manual de Processos
 - **Branch:** `feat/cadastro-edicao-processos`
-- **Autor / Dupla:** Emanuele Vitória
+- **Autor / Dupla:** Emanuele Vitória (com revisão da Equipe Epsilon)
 - **Pacote da EAP / Requisitos:** EAP 1.3.2 (API REST), RF-08, RN-01
 - **Resumo da Mudança:** Novas rotas `POST /api/v1/processos` e `PUT /api/v1/processos/{id_processo}` para cadastrar e editar processos sem depender de upload de PDF/CSV. Partes e resumo passam pela barreira `AnonimizadorLGPD` antes de gravar; cada cadastro/edição gera um registro em `LogAuditoriaLGPD`. Somente back-end: a tela de cadastro/edição fica para o front-end.
 - **Arquivos Criados / Modificados:**
