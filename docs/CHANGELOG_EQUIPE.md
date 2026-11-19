@@ -200,7 +200,6 @@ Toda nova modificação deve seguir o modelo abaixo:
   - `backend/tests/test_datajud_and_gemini.py` - 2 novos testes adicionados (total 19 passed).
   - `docs/membros/*/CHANGELOG.md` - Diários individuais criados.
 
-
 ---
 
 ### [2026-11-09] — Consolidação de Governança Efetiva: Limpeza de Pastas Inativas e RACI
@@ -209,14 +208,35 @@ Toda nova modificação deve seguir o modelo abaixo:
 - **Pacotes da EAP / Requisitos Atendidos:** EAP 1.1 (Governança e RACI), EAP 1.4.1 a 1.4.3 (Full-Stack e IA), EAP 1.5.1 (Garantia de Qualidade).
 - **Resumo da Mudança:**
   1. **Consolidação de Governança e Rastreabilidade (`docs/membros/`):**
-     - Remoção das 5 pastas de integrantes inativos que não entregaram código nem participaram das entregas da Sprint 1 (`daniel-filipe`, `emanuele-vitoria`, `fernando-gabriel`, `pedro-henrique`, `ygor-vasconcelos`).
+     - Remoção de pastas de integrantes inativos que não entregaram código na Sprint 1.
      - Centralização formal: **Lucas Gabriel** assume como **Responsável Técnico**, absorvendo front-end/UI/UX, acessibilidade, inteligência de dados/Gemini e engenharia de requisitos; **Victor Samyr** e **Gabriel Damião** consolidam a arquitetura back-end, banco dual, barreira LGPD e cliente DataJud.
      - Restauração do `.gitignore` para o estado anterior padrão limpo (sem regras artificiais de bloqueio de documentação).
-     - Atualização do `docs/membros/README.md` e dos diários de bordo individuais dos 3 integrantes ativos.
+     - Atualização do `docs/membros/README.md` e dos diários de bordo individuais dos membros ativos.
 
 - **Arquivos Criados / Modificados:**
   - `.gitignore` - Restaurado para o estado limpo padrão.
-  - `docs/membros/` - Removidas as 5 pastas inativas; preservadas as 3 pastas ativas (`victor-samyr`, `gabriel-damiao`, `lucas-gabriel`).
-  - `docs/membros/README.md` - Quadro de responsabilidades consolidado com os 3 membros ativos.
-  - `docs/membros/*/CHANGELOG.md` - Diários individuais detalhados dos 3 membros ativos.
+  - `docs/membros/README.md` - Quadro de responsabilidades consolidado.
+  - `docs/membros/*/CHANGELOG.md` - Diários individuais detalhados dos membros ativos.
   - `docs/CHANGELOG_EQUIPE.md` - Registro oficial consolidado da equipe.
+
+---
+
+### [2026-11-16] — Cadastro e Edição Manual de Processos
+- **Branch:** `feat/cadastro-edicao-processos`
+- **Autor / Dupla:** Emanuele Vitória (com revisão da Equipe Epsilon)
+- **Pacote da EAP / Requisitos:** EAP 1.3.2 (API REST), RF-08, RN-01
+- **Resumo da Mudança:** Novas rotas `POST /api/v1/processos` e `PUT /api/v1/processos/{id_processo}` para cadastrar e editar processos sem depender de upload de PDF/CSV. Partes e resumo passam pela barreira `AnonimizadorLGPD` antes de gravar; cada cadastro/edição gera um registro em `LogAuditoriaLGPD`. Somente back-end: a tela de cadastro/edição fica para o front-end.
+- **Arquivos Criados / Modificados:**
+  - `backend/app/schemas/contracts.py` - Novo schema `ProcessoCadastroRequest` (validação CNJ, resultado e tamanhos).
+  - `backend/app/schemas/__init__.py` - Exporta o novo schema.
+  - `backend/app/routers/processos.py` - Rotas de cadastro e edição, estimativa heurística da análise preditiva e checagem de número duplicado.
+  - `backend/tests/test_cadastro_edicao.py` - 9 novos testes (CT-10 a CT-13).
+  - `ARCHITECTURE.md` - Contrato da API na Seção 8.5.1.
+- **Como Testar / Executar Localmente:**
+  - PowerShell: `$env:PYTHONPATH="backend"; pytest backend/tests/ -v` (30 testes aprovados).
+  - Swagger: `http://localhost:8000/docs` → "Processos e Base de Conhecimento" → `POST /api/v1/processos`.
+- **Impacto no Ambiente / Novas Variáveis:** Nenhum. Sem novas dependências nem variáveis no `.env`.
+- **Notas para Assistentes de IA:**
+  - Nunca persistir autor, réu ou resumo sem passar por `AnonimizadorLGPD` (RN-01).
+  - O `PUT` é substituição completa: o front-end deve reenviar todos os campos (pode reenviar os nomes já mascarados retornados pelo `GET`).
+  - `origem_ingestao = "MANUAL"` identifica processos cadastrados por este fluxo.
