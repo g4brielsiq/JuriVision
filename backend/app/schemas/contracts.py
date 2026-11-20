@@ -189,6 +189,23 @@ CNJ_PATTERN = r"^\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}$"
 ResultadoProcesso = Literal["Procedente", "Improcedente", "Acordo", "Em Analise"]
 
 
+class ProcessoDetalhesResponse(ProcessoUploadResponse):
+    resultado: str
+    data_julgamento: Optional[date]
+
+
+class ProcessoAnonimizacaoRequest(BaseModel):
+    autor: str = Field(default="", max_length=200)
+    reu: str = Field(default="", max_length=200)
+    resumo: str = ""
+
+
+class ProcessoAnonimizacaoResponse(BaseModel):
+    partes_anonimizadas: PartesAnonimizadasSchema
+    resumo: str
+    auditoria_lgpd: AuditoriaLGPDSchema
+
+
 class ProcessoCadastroRequest(BaseModel):
     """
     Corpo de entrada para cadastro (POST) e edição completa (PUT) de um processo.

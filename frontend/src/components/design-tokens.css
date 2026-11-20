@@ -1561,6 +1561,45 @@ a {
     font-weight: 600;
 }
 
+.julgado-dialog {
+    max-width: 760px;
+}
+
+.julgado-campos {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+    gap: var(--space-3);
+}
+
+.julgado-acoes {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.julgado-previa {
+    padding: var(--space-3);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-control);
+    overflow-wrap: anywhere;
+}
+
+.julgado-previa h3 {
+    font-size: var(--text-base);
+}
+
+#julgado-previa-resumo {
+    white-space: pre-wrap;
+    max-height: 10rem;
+    overflow: auto;
+}
+
+#julgado-resumo {
+    resize: vertical;
+}
+
 .account-hint,
 .account-feedback {
     font-size: var(--text-xs);

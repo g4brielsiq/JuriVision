@@ -25,3 +25,11 @@
 - A ação **Criar conta** abre o formulário de cadastro na janela de conta, acessível por teclado. O formulário consome a API real e exibe progresso, confirmação e erros.
 - A API valida e normaliza os dados, rejeita e-mails e inscrições duplicados e grava a senha como hash. Após o cadastro, o login recebe o e-mail da nova conta.
 - O contrato e o exemplo de uso estão em [REGISTER_ADVICE.md](./REGISTER_ADVICE.md). Os testes de contrato cobrem cadastro, login, duplicidade e validação de campos.
+
+### [2026-11-19] - Cadastro e edição de julgados na interface
+
+- **Branch:** `FrontEnd/Ygor`
+- A pesquisa ganhou a ação **Cadastrar julgado**, integrada ao `POST /api/v1/processos`. A leitura da decisão ganhou a ação **Editar julgado**, integrada ao `PUT /api/v1/processos/{id}`. O formulário de edição recupera os dados salvos, incluindo resultado e data do julgamento.
+- A prévia é atualizada ao editar as partes ou a síntese. O novo endpoint usa a mesma rotina de anonimização do salvamento e processa o rascunho sem gravá-lo.
+- **Verificação:** build do frontend, quatro testes estáticos de acessibilidade, integração do formulário com requisições simuladas e verificação direta da persistência com SQLite. A suíte HTTP completa ficou pendente neste ambiente.
+- O fluxo e o exemplo fictício para teste estão no [README](../../../README.md#36-cadastro-e-edição-de-julgados).

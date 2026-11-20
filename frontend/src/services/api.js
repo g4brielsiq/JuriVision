@@ -183,6 +183,31 @@ export async function fetchProcessoDetalhes(idProcesso) {
     return data;
 }
 
+export async function salvarProcesso(payload, idProcesso) {
+    const caminho = idProcesso ? `/${encodeURIComponent(idProcesso)}` : "";
+    const res = await fetch(`${getApiBaseUrl()}/api/v1/processos${caminho}`, {
+        method: idProcesso ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeader() },
+        body: JSON.stringify(payload),
+    });
+    if (res.status === 409) throw new Error("Já existe uma decisão com esse número CNJ.");
+    if (res.status === 404) throw new Error("A decisão não está mais disponível para edição.");
+    if (res.status === 422) throw new Error("Revise os campos e o formato do número CNJ.");
+    if (!res.ok) throw new Error("Não foi possível salvar a decisão. Tente novamente.");
+    return res.json();
+}
+
+export async function preverAnonimizacao(payload, signal) {
+    const res = await fetch(`${getApiBaseUrl()}/api/v1/processos/anonimizacao/previa`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeader() },
+        body: JSON.stringify(payload),
+        signal,
+    });
+    if (!res.ok) throw new Error("Não foi possível atualizar a prévia.");
+    return res.json();
+}
+
 export function getRelatorioPdfUrl(idProcesso) {
     return `${getApiBaseUrl()}/api/v1/relatorios/processo/${encodeURIComponent(idProcesso)}/pdf`;
 }

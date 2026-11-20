@@ -139,6 +139,8 @@ Para permitir que o desenvolvimento ocorra em múltiplos chats/sessões sem perd
    - **Milestone M4 (Homologação Integrada Docker e Revisão Final):** Validação completa de containers e preparação de Pull Request para `main`.
 
 ### 6.3 Plano de Trabalho Imediato (Fase 3 — Implementação Certificada)
+- **Cadastro e edição manual de julgados (RF-08 / RN-01):** modal acessível pela pesquisa e pelo leitor da decisão, com prévia de anonimização durante o preenchimento. A prévia e a gravação compartilham o anonimizador do back-end. A consulta de detalhes fornece resultado e data de julgamento para a edição.
+
 1. **Passo 1 — Auditoria e Adequação de UX/UI e Acessibilidade (ISO 9241, WCAG 2.2 AA, Nielsen e Leis de UX): CONCLUÍDO (Milestone M1).**
    - Auditoria concluída sobre `frontend/index.html` e `frontend/`; requisitos `RNF-04`, `RNF-09`, `RNF-10` e Seção 2.4 incorporados em `docs/MODELING.md`.
 2. **Passo 2 — Implementação Certificada do Back-end Core (`backend/`) com Isolamento de IA e Suíte de Testes (`CT-01` a `CT-09`): CONCLUÍDO (Milestone M2).**
