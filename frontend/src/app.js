@@ -17,6 +17,7 @@ import {
     fetchProcessos,
     getRelatorioPdfUrl,
     loginAdvogado,
+    registerAdvogado,
     uploadProcessoPdf,
     uploadProcessosCsv,
 } from "./services/api.js";
@@ -1164,32 +1165,75 @@ async function dispararConsultaDataJud() {
 }
 
 function configurarModais() {
-    const loginModal = document.getElementById("login-modal");
-    const btnOpenLogin = document.getElementById("btn-open-login");
-    const btnCloseLogin = document.getElementById("btn-close-login");
+    const accountDialog = document.getElementById("login-modal");
+    const title = document.getElementById("login-modal-title");
     const loginForm = document.getElementById("login-form");
-    const feedback = document.getElementById("login-feedback");
+    const loginEmail = document.getElementById("login-email");
+    const loginSenha = document.getElementById("login-senha");
+    const loginFeedback = document.getElementById("login-feedback");
+    const loginSubmit = loginForm.querySelector('[type="submit"]');
+    const registerForm = document.getElementById("register-form");
+    const registerFeedback = document.getElementById("register-feedback");
+    const registerSubmit = registerForm.querySelector('[type="submit"]');
 
-    btnOpenLogin?.addEventListener("click", () => {
-        loginModal?.classList.remove("hidden");
-        document.getElementById("login-email")?.focus();
+    function mostrarFeedback(elemento, mensagem, erro = false) {
+        elemento.dataset.error = String(erro);
+        elemento.textContent = mensagem;
+    }
+
+    function abrirConta(cadastro = false) {
+        title.textContent = cadastro ? "Cadastro de advogado" : "Entrar na conta";
+        loginForm.hidden = cadastro;
+        registerForm.hidden = !cadastro;
+        if (!accountDialog.open) accountDialog.showModal();
+        (cadastro ? registerForm.elements.nome : loginEmail).focus();
+    }
+
+    document.getElementById("btn-open-login").addEventListener("click", () => abrirConta());
+    document.getElementById("btn-open-register").addEventListener("click", () => abrirConta(true));
+    document.getElementById("btn-switch-to-register").addEventListener("click", () => abrirConta(true));
+    document.getElementById("btn-open-login-from-register").addEventListener("click", () => abrirConta());
+    document.getElementById("btn-close-login").addEventListener("click", () => accountDialog.close());
+    accountDialog.addEventListener("close", () => {
+        registerForm.elements.senha.value = "";
     });
 
-    btnCloseLogin?.addEventListener("click", () => {
-        loginModal?.classList.add("hidden");
-    });
-
-    loginForm?.addEventListener("submit", async (e) => {
+    registerForm.addEventListener("submit", async (e) => {
         e.preventDefault();
-        const email = document.getElementById("login-email")?.value.trim() || "";
-        const senha = document.getElementById("login-senha")?.value || "";
-
-        if (feedback) {
-            feedback.style.background = "var(--color-navy-subtle)";
-            feedback.style.color = "var(--color-navy)";
-            feedback.textContent = "Verificando credenciais do advogado...";
-            feedback.classList.remove("hidden");
+        if (registerSubmit.disabled) return;
+        const payload = Object.fromEntries(new FormData(registerForm));
+        registerSubmit.disabled = true;
+        mostrarFeedback(registerFeedback, "Criando conta…");
+        try {
+            const usuario = await registerAdvogado(payload);
+            registerForm.reset();
+            mostrarFeedback(registerFeedback, "");
+            if (accountDialog.open && registerForm.hidden) {
+                showToast("Conta criada. Entre com o e-mail cadastrado.");
+                return;
+            }
+            loginEmail.value = usuario.email;
+            loginSenha.value = "";
+            if (accountDialog.open) abrirConta();
+            mostrarFeedback(loginFeedback, "Conta criada. Entre com sua senha.");
+            if (!accountDialog.open) showToast("Conta criada. Acesse sua conta para entrar.");
+        } catch (err) {
+            const mensagem = err instanceof TypeError
+                ? "Não foi possível conectar ao servidor. Tente novamente."
+                : err.message;
+            mostrarFeedback(registerFeedback, mensagem, true);
+        } finally {
+            registerSubmit.disabled = false;
         }
+    });
+
+    loginForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        if (loginSubmit.disabled) return;
+        const email = loginEmail.value.trim();
+        const senha = loginSenha.value;
+        loginSubmit.disabled = true;
+        mostrarFeedback(loginFeedback, "Verificando credenciais do advogado…");
 
         try {
             const res = await loginAdvogado(email, senha);
@@ -1201,26 +1245,19 @@ function configurarModais() {
 
             const nameEl = document.getElementById("sidebar-user-name");
             const oabEl = document.getElementById("sidebar-user-oab");
+            const avatar = document.querySelector(".lawyer-avatar");
             if (nameEl) nameEl.textContent = res.usuario.nome;
             if (oabEl) oabEl.textContent = `OAB ${res.usuario.oab}`;
-
-            if (feedback) {
-                feedback.style.background = "var(--color-sage-subtle)";
-                feedback.style.color = "#2F4F44";
-                feedback.textContent = `Sessão autenticada para ${res.usuario.nome}.`;
-            }
-
+            if (avatar) avatar.textContent = res.usuario.nome.split(/\s+/).slice(0, 2)
+                .map((parte) => [...parte][0]).join("").toUpperCase();
+            loginSenha.value = "";
+            mostrarFeedback(loginFeedback, "");
             showToast(`Bem-vindo(a), ${res.usuario.nome}.`);
-            setTimeout(() => {
-                loginModal?.classList.add("hidden");
-                feedback?.classList.add("hidden");
-            }, 700);
+            if (accountDialog.open && !loginForm.hidden) accountDialog.close();
         } catch (err) {
-            if (feedback) {
-                feedback.style.background = "var(--status-error-bg)";
-                feedback.style.color = "var(--status-error-fg)";
-                feedback.textContent = err.message || "Não foi possível autenticar com as credenciais informadas.";
-            }
+            mostrarFeedback(loginFeedback, err.message || "Não foi possível autenticar com as credenciais informadas.", true);
+        } finally {
+            loginSubmit.disabled = false;
         }
     });
 
@@ -1442,9 +1479,8 @@ function initApp() {
 
     // Atalho global Escape para fechar janelas sobrepostas
     window.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") {
+        if (e.key === "Escape" && !document.getElementById("login-modal").open) {
             fecharDrawerProcesso();
-            document.getElementById("login-modal")?.classList.add("hidden");
             document.getElementById("methodology-modal")?.classList.add("hidden");
         }
     });

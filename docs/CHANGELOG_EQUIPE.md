@@ -240,3 +240,11 @@ Toda nova modificação deve seguir o modelo abaixo:
   - Nunca persistir autor, réu ou resumo sem passar por `AnonimizadorLGPD` (RN-01).
   - O `PUT` é substituição completa: o front-end deve reenviar todos os campos (pode reenviar os nomes já mascarados retornados pelo `GET`).
   - `origem_ingestao = "MANUAL"` identifica processos cadastrados por este fluxo.
+
+### [2026-11-19] - Cadastro de advogados
+
+- **Branch e integrante** `FrontEnd/Ygor` · Ygor Vasconcelos.
+- **Escopo** EAP 1.3.2 e 1.3.3. Cadastro de conta integrado ao fluxo de autenticação.
+- **Mudanças** A interface abre o cadastro a partir de **Criar conta**. A API valida e persiste os dados e o login reaproveita o e-mail confirmado.
+- **Verificação** Execute `$env:PYTHONPATH="backend"; python -m pytest backend/tests/test_api_contracts.py -k cadastro_advogado` com as dependências instaladas.
+- **Detalhes** [Contrato do cadastro e instruções de uso](./membros/ygor-vasconcelos/REGISTER_ADVICE.md).

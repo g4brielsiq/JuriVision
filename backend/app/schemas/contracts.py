@@ -5,6 +5,9 @@ Rastreabilidade:
 - MODELING.md: RNF-01 (Adequação Funcional — Completude e Correção Funcional), RF-01 a RF-09
 """
 from datetime import date
+from email.errors import HeaderParseError
+from email.headerregistry import Address
+import re
 from typing import List, Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
@@ -16,11 +19,64 @@ class LoginRequest(BaseModel):
     email: str = Field(..., examples=["advogado@escritorio.com"])
     senha: str = Field(..., min_length=4, examples=["senhaSegura123"])
 
+class RegisterRequest(BaseModel):
+    nome: str = Field(min_length=2, max_length=150, examples=["Ana Pereira"])
+    email: str = Field(max_length=150, examples=["ana@escritorio.com"])
+    senha: str = Field(min_length=8, max_length=128, repr=False)
+    numero_oab: str = Field(max_length=50, examples=["54321/AL"])
+
+    @field_validator("nome", "email", mode="before")
+    @classmethod
+    def aparar_espacos(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+    @field_validator("nome")
+    @classmethod
+    def validar_nome(cls, value: str) -> str:
+        if re.search(r"[\x00-\x1f\x7f]", value):
+            raise ValueError("O nome contém caracteres inválidos.")
+        return value
+
+    @field_validator("email")
+    @classmethod
+    def normalizar_email(cls, value: str) -> str:
+        try:
+            endereco = Address(addr_spec=value)
+        except (ValueError, HeaderParseError):
+            raise ValueError("Informe um e-mail válido.") from None
+        if endereco.addr_spec != value or not re.fullmatch(
+            r"[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?"
+            r"(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+",
+            endereco.domain,
+        ):
+            raise ValueError("Informe um e-mail válido.")
+        return value.lower()
+
+    @field_validator("senha")
+    @classmethod
+    def validar_senha(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Informe uma senha com pelo menos 8 caracteres.")
+        return value
+
+    @field_validator("numero_oab")
+    @classmethod
+    def normalizar_oab(cls, value: str) -> str:
+        inscricao = re.fullmatch(r"([0-9]+) */ *([a-zA-Z]{2})", value.strip())
+        ufs = "AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO".split()
+        if not inscricao or inscricao[2].upper() not in ufs:
+            raise ValueError("Informe a OAB no formato número/UF, como 54321/AL.")
+        return f"{inscricao[1]}/{inscricao[2].upper()}"
+
 
 class UsuarioProfileSchema(BaseModel):
     id: str
     nome: str
     oab: str
+
+
+class RegisterResponse(UsuarioProfileSchema):
+    email: str
 
 
 class LoginResponse(BaseModel):

@@ -26,6 +26,8 @@ Diante da ausência de contribuições práticas por parte de integrantes previs
 | **Victor Samyr** | Engenharia de Back-end, Arquitetura & Governança de Dados | EAP 1.3.1 (Armazenamento), EAP 1.3.2 (API Core), EAP 1.4.1 (Barreira LGPD) | [`victor-samyr/CHANGELOG.md`](./victor-samyr/CHANGELOG.md) |
 | **Gabriel Damião** | Engenharia de Back-end, Integração DataJud & Demonstração | EAP 1.3.2 (API REST), EAP 1.4.2 (Integração DataJud), EAP 1.5.2 (Deploy) | [`gabriel-damiao/CHANGELOG.md`](./gabriel-damiao/CHANGELOG.md) |
 | **Lucas Gabriel** | Responsável Técnico, Engenharia Front-end, Dados & IA | EAP 1.1/1.2 (Gerência/Requisitos), EAP 1.3.3 (UI/UX), EAP 1.4.3 (Gemini/NLP), EAP 1.5.1 (Acessibilidade) | [`lucas-gabriel/CHANGELOG.md`](./lucas-gabriel/CHANGELOG.md) |
+| **Emanuele Vitória** | Front-end e UI/UX | EAP 1.3.3 (Interface Web Front-end), RNF-04/RNF-09 (Usabilidade e Acessibilidade) | [`emanuele-vitoria/CHANGELOG.md`](./emanuele-vitoria/CHANGELOG.md) |
+| **Ygor Vasconcelos** |  [`ygor-vasconcelos/CHANGELOG.md`](./ygor-vasconcelos/CHANGELOG.md) |
 
 ---
 

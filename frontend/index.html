@@ -138,6 +138,9 @@
                         Conta
                     </button>
                 </div>
+                <button type="button" id="btn-open-register" class="btn btn-secondary btn-sm">
+                    Criar conta
+                </button>
             </div>
         </aside>
 
@@ -1009,53 +1012,72 @@
     <!-- ================================================================
          MODAL DE AUTENTICAÇÃO DO ADVOGADO (RF-01)
          ================================================================ -->
-    <div
-        id="login-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="login-modal-title"
-        class="modal-backdrop hidden"
-    >
-        <div class="modal-dialog">
-            <div class="modal-header">
-                <h2 id="login-modal-title" class="serif-heading" style="font-size: 19px; font-weight: 600; color: var(--color-navy);">
-                    Identificação Profissional do Advogado
-                </h2>
-                <button type="button" id="btn-close-login" class="btn btn-ghost btn-sm" aria-label="Fechar janela de autenticação">
-                    Fechar
-                </button>
-            </div>
-            <form id="login-form" class="modal-body">
-                <p style="font-size: var(--text-xs); color: var(--text-secondary);">
-                    Acesse sua conta para sincronizar pesquisas salvas, coleções de decisões e emissão de relatórios analíticos.
-                </p>
-                <div class="field-group">
-                    <label for="login-email" class="field-label">E-mail profissional</label>
-                    <input
-                        id="login-email"
-                        type="email"
-                        required
-                        value="advogado@escritorio.com"
-                        class="control-input"
-                    >
-                </div>
-                <div class="field-group">
-                    <label for="login-senha" class="field-label">Senha de acesso</label>
-                    <input
-                        id="login-senha"
-                        type="password"
-                        required
-                        value="senhaSegura123"
-                        class="control-input"
-                    >
-                </div>
-                <div id="login-feedback" role="status" class="hidden" style="font-size: var(--text-xs); padding: 10px; border-radius: var(--radius-control);"></div>
-                <button type="submit" class="btn btn-primary" style="width: 100%;">
-                    Autenticar sessão
-                </button>
-            </form>
+    <dialog id="login-modal" class="modal-dialog account-dialog" aria-labelledby="login-modal-title">
+        <div class="modal-header">
+            <h2 id="login-modal-title" class="serif-heading">
+                Entrar na conta
+            </h2>
+            <button type="button" id="btn-close-login" class="btn btn-ghost btn-sm" aria-label="Fechar janela de conta">
+                Fechar
+            </button>
         </div>
-    </div>
+        <form id="login-form" class="modal-body">
+            <div class="field-group">
+                <label for="login-email" class="field-label">E-mail profissional</label>
+                <input
+                    id="login-email"
+                    type="email"
+                    autocomplete="username"
+                    required
+                    value="advogado@escritorio.com"
+                    class="control-input"
+                >
+            </div>
+            <div class="field-group">
+                <label for="login-senha" class="field-label">Senha de acesso</label>
+                <input
+                    id="login-senha"
+                    type="password"
+                    autocomplete="current-password"
+                    required
+                    value="senhaSegura123"
+                    class="control-input"
+                >
+            </div>
+            <p id="login-feedback" role="status" class="account-feedback"></p>
+            <button type="submit" class="btn btn-primary">
+                Entrar
+            </button>
+            <button type="button" id="btn-switch-to-register" class="btn btn-secondary">Criar conta</button>
+        </form>
+        <form id="register-form" class="modal-body" method="post" hidden>
+            <div class="field-group">
+                <label for="reg-nome" class="field-label">Nome completo</label>
+                <input id="reg-nome" name="nome" class="control-input" type="text" autocomplete="name"
+                    required minlength="2" maxlength="150">
+            </div>
+            <div class="field-group">
+                <label for="reg-email" class="field-label">E-mail profissional</label>
+                <input id="reg-email" name="email" class="control-input" type="email" autocomplete="email"
+                    required maxlength="150">
+            </div>
+            <div class="field-group">
+                <label for="reg-oab" class="field-label">Número da OAB</label>
+                <input id="reg-oab" name="numero_oab" class="control-input" type="text" autocapitalize="characters"
+                    spellcheck="false" required maxlength="50" aria-describedby="reg-oab-help">
+                <small id="reg-oab-help" class="account-hint">Use o formato número/UF, como 54321/AL.</small>
+            </div>
+            <div class="field-group">
+                <label for="reg-senha" class="field-label">Senha</label>
+                <input id="reg-senha" name="senha" class="control-input" type="password" autocomplete="new-password"
+                    required minlength="8" maxlength="128" aria-describedby="reg-senha-help">
+                <small id="reg-senha-help" class="account-hint">Use pelo menos 8 caracteres.</small>
+            </div>
+            <p id="register-feedback" role="status" class="account-feedback"></p>
+            <button type="submit" class="btn btn-primary">Cadastrar</button>
+            <button type="button" id="btn-open-login-from-register" class="btn btn-secondary">Já tenho conta</button>
+        </form>
+    </dialog>
 
     <!-- ================================================================
          MODAL DE AJUDA E METODOLOGIA (Seção 7.1 item 6 e Seção 21.3)
