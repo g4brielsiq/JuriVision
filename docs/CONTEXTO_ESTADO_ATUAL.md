@@ -59,7 +59,9 @@ O projeto superou a fase de *scaffolding* e possui uma **aplicação funcional d
   * `POST /api/v1/auth/login`: Autenticação do advogado com retorno de token JWT e perfil OAB.
   * `GET /api/v1/dashboard/metricas`: Métricas agregadas de jurimetria, taxas de êxito e volume por tema.
   * `GET /api/v1/processos`: Consulta paginada com busca textual e filtros dinâmicos por tema, magistrado e resultado.
-  * `GET /api/v1/processos/{id}`: Detalhe completo de um processo higienizado e sua análise.
+  * `GET /api/v1/processos/{id}`: Detalhes higienizados e análise do processo, incluindo resultado e data do julgamento para preencher a edição.
+  * `POST /api/v1/processos` e `PUT /api/v1/processos/{id}`: Cadastro manual e edição completa de julgados. Ambos reaplicam o anonimizador às partes e à síntese antes de gravar.
+  * `POST /api/v1/processos/anonimizacao/previa`: Prévia das partes e da síntese com a mesma rotina de anonimização usada no salvamento, sem persistir o rascunho.
   * `POST /api/v1/processos/upload-pdf`: Upload multipart de petição PDF, validação binária `%PDF-`, extração, anonimização LGPD e inferência heurística.
   * `POST /api/v1/processos/upload-csv`: Ingestão em lote de decisões em planilha CSV.
   * `GET /api/v1/relatorios/processo/{id}/pdf`: Geração dinâmica de relatório analítico em stream binário `application/pdf`.
@@ -73,14 +75,16 @@ O projeto superou a fase de *scaffolding* e possui uma **aplicação funcional d
   * Câmara de Pesquisa de Precedentes e Jurisprudência em primeiro plano.
   * Cartões Documentais de Decisão e visualização alternativa em Tabela Comparativa.
   * Folha Individual de Leitura de Decisão (largura ideal de 65–75 caracteres).
+  * Formulário de cadastro e edição aberto em um modal, acessível pelas ações **Cadastrar julgado** na pesquisa e **Editar julgado** na leitura da decisão. A prévia é atualizada durante o preenchimento.
   * Painel de Análise Jurimétrica com gráficos (Chart.js) contendo denominadores explícitos e filtros interativos por clique.
   * Modal acessível de Análise de Petição (Dropzone nativa acessível para PDF/CSV).
 * **Acessibilidade e Usabilidade:** 100% aderente a **W3C WCAG 2.2 Nível AA** e **WAI-ARIA 1.2** (navegação por teclado com setas nas abas, contraste certificado, tabelas acessíveis ocultas para leitores de tela em cada gráfico).
 
 ### Suíte de Testes Automatizados (ISO/IEC/IEEE 29119)
-* **Status:** **11 testes automatizados em Pytest — 100% de aprovação (11 passed)**.
+* **Verificação do formulário de julgados:** build do frontend e quatro testes estáticos de acessibilidade aprovados. O fluxo do formulário foi exercitado com requisições simuladas e a persistência foi conferida diretamente com SQLite. A execução da suíte HTTP completa ficou pendente no ambiente da entrega.
 * **Cobertura:**
   * Casos de Teste `CT-01` a `CT-09` (Autenticação JWT, Upload PDF, Injeção CSV, Barreira LGPD, Métricas, Filtros, Relatório PDF).
+  * Casos de Teste `CT-10` a `CT-13` em `backend/tests/test_cadastro_edicao.py` (cadastro, validação, CNJ duplicado e edição). O arquivo também verifica que a prévia produz a mesma anonimização da edição e preserva o registro até o salvamento.
   * Verificações de acessibilidade e design tokens (`RNF-04`, `RNF-09`, `RNF-10`).
 
 ---

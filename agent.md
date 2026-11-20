@@ -139,6 +139,8 @@ Para permitir que o desenvolvimento ocorra em múltiplos chats/sessões sem perd
    - **Milestone M4 (Homologação Integrada Docker e Revisão Final):** Validação completa de containers e preparação de Pull Request para `main`.
 
 ### 6.3 Plano de Trabalho Imediato (Fase 3 — Implementação Certificada)
+- **Cadastro e edição manual de julgados (RF-08 / RN-01):** modal acessível pela pesquisa e pelo leitor da decisão, com prévia de anonimização durante o preenchimento. A prévia e a gravação compartilham o anonimizador do back-end. A consulta de detalhes fornece resultado e data de julgamento para a edição.
+
 1. **Passo 1 — Auditoria e Adequação de UX/UI e Acessibilidade (ISO 9241, WCAG 2.2 AA, Nielsen e Leis de UX): CONCLUÍDO (Milestone M1).**
    - Auditoria concluída sobre `frontend/index.html` e `frontend/`; requisitos `RNF-04`, `RNF-09`, `RNF-10` e Seção 2.4 incorporados em `docs/MODELING.md`.
 2. **Passo 2 — Implementação Certificada do Back-end Core (`backend/`) com Isolamento de IA e Suíte de Testes (`CT-01` a `CT-09`): CONCLUÍDO (Milestone M2).**
@@ -158,3 +160,6 @@ Para permitir que o desenvolvimento ocorra em múltiplos chats/sessões sem perd
    - Branch `feat/backend-core-arquitetura` publicada com sucesso em `origin/feat/backend-core-arquitetura` (`https://github.com/g4brielsiq/JuriVision/tree/feat/backend-core-arquitetura`).
 6. **Próximo Passo Opcional (Milestone M4 — Evolução Interna do Container `ai_engine/` e Homologação Final):**
    - Implementar o servidor HTTP interno (`FastAPI` na porta `8001` expondo `POST /internal/v1/analyze`) dentro de `ai_engine/worker.py` com suporte plugável a `AI_PROVIDER=local|gemini|openai`, ou abrir Pull Request da branch `feat/backend-core-arquitetura` para `main`.
+7. **Cadastro de advogados (`FrontEnd/Ygor`).** Formulário integrado a `POST /api/v1/auth/register`, com login explícito após o cadastro. O contrato e os passos de verificação estão em [REGISTER_ADVICE.md](./docs/membros/ygor-vasconcelos/REGISTER_ADVICE.md).
+   - **Checagem de regressão (2026-11-19):** baseline `8847430` com 30 testes aprovados e versão com cadastro com 32 aprovados, usando SQLite isolado e integrações HTTP simuladas sem proxy. Build do frontend aprovado. A execução com o proxy do ambiente apresentou as mesmas duas falhas de testes simulados do Gemini nas duas versões.
+   - **Retomada:** consultar a arquitetura, a modelagem e a gestão antes de alterar contratos ou requisitos. Conferir o estado implementado nas rotas, nos testes e no changelog da equipe. Preservar a anonimização local (RN-01), o fallback heurístico (ADR-002), a compatibilidade PostgreSQL/SQLite (ADR-003) e o design editorial acessível.

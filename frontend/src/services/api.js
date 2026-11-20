@@ -93,6 +93,32 @@ export async function loginAdvogado(email, senha) {
     return data;
 }
 
+export async function registerAdvogado(payload) {
+    const res = await fetch(`${getApiBaseUrl()}/api/v1/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        const mensagens = {
+            nome: "Informe um nome entre 2 e 150 caracteres.",
+            email: "Informe um e-mail válido de até 150 caracteres.",
+            numero_oab: "Informe a OAB no formato número/UF, como 54321/AL.",
+            senha: "Informe uma senha entre 8 e 128 caracteres.",
+        };
+        const detail = data.detail;
+        const campos = Array.isArray(detail)
+            ? [...new Set(detail.map((error) => error.loc?.[1]))]
+            : [];
+        const validacao = campos.map((campo) => mensagens[campo]).filter(Boolean).join(" ");
+        throw new Error(
+            (typeof detail === "string" && detail) || validacao || "Não foi possível criar a conta. Tente novamente.",
+        );
+    }
+    return data;
+}
+
 export async function fetchDashboardMetricas() {
     const res = await fetch(`${getApiBaseUrl()}/api/v1/dashboard/metricas`, {
         headers: { ...getAuthHeader() },
@@ -155,6 +181,31 @@ export async function fetchProcessoDetalhes(idProcesso) {
         throw new Error(data.detail || `Processo ${idProcesso} não encontrado.`);
     }
     return data;
+}
+
+export async function salvarProcesso(payload, idProcesso) {
+    const caminho = idProcesso ? `/${encodeURIComponent(idProcesso)}` : "";
+    const res = await fetch(`${getApiBaseUrl()}/api/v1/processos${caminho}`, {
+        method: idProcesso ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeader() },
+        body: JSON.stringify(payload),
+    });
+    if (res.status === 409) throw new Error("Já existe uma decisão com esse número CNJ.");
+    if (res.status === 404) throw new Error("A decisão não está mais disponível para edição.");
+    if (res.status === 422) throw new Error("Revise os campos e o formato do número CNJ.");
+    if (!res.ok) throw new Error("Não foi possível salvar a decisão. Tente novamente.");
+    return res.json();
+}
+
+export async function preverAnonimizacao(payload, signal) {
+    const res = await fetch(`${getApiBaseUrl()}/api/v1/processos/anonimizacao/previa`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeader() },
+        body: JSON.stringify(payload),
+        signal,
+    });
+    if (!res.ok) throw new Error("Não foi possível atualizar a prévia.");
+    return res.json();
 }
 
 export function getRelatorioPdfUrl(idProcesso) {

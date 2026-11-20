@@ -12,10 +12,13 @@ Rastreabilidade Bidirecional (docs/MODELING.md — Seção 7):
 - CT-09: RF-09 (Exportação de Relatório Estratégico em PDF binário %PDF-1.4)
 """
 import io
+from uuid import uuid4
 from fastapi.testclient import TestClient
 import pytest
 
+from app.core.database import SessionLocal
 from app.main import app, init_db_and_seed
+from app.models.entities import Usuario
 from app.routers.relatorios import _build_pdf_document
 
 
@@ -44,6 +47,50 @@ def test_ct01_autenticacao_jwt_sucesso_e_falha(client: TestClient):
         json={"email": "advogado@escritorio.com", "senha": "senhaIncorreta999"},
     )
     assert resp_fail.status_code == 401
+
+
+def test_cadastro_advogado_persiste_conta_e_permite_login(client: TestClient):
+    registro = uuid4()
+    email = f"advogada-{registro.hex}@example.com"
+    oab = f"{registro.int}/AL"
+    senha = "Senha de teste 123"
+    payload = {
+        "nome": "  Ana Pereira  ",
+        "email": f" {email.upper()} ",
+        "senha": senha,
+        "numero_oab": f" {registro.int} / al ",
+    }
+    cadastro = client.post("/api/v1/auth/register", json=payload)
+    assert cadastro.status_code == 201
+    usuario = cadastro.json()
+    assert usuario == {"id": usuario["id"], "nome": "Ana Pereira", "email": email, "oab": oab}
+
+    with SessionLocal() as db:
+        assert db.get(Usuario, usuario["id"]).senha_hash != senha
+
+    login = client.post("/api/v1/auth/login", json={"email": email, "senha": senha})
+    assert login.status_code == 200
+    assert login.json()["access_token"]
+    assert login.json()["usuario"]["id"] == usuario["id"]
+
+    email_repetido = client.post("/api/v1/auth/register", json={**payload, "numero_oab": "77777/AL"})
+    assert email_repetido.status_code == 409
+    assert email_repetido.json()["detail"] == "E-mail já cadastrado."
+
+    oab_repetida = client.post("/api/v1/auth/register", json={**payload, "email": f"outra-{email}"})
+    assert oab_repetida.status_code == 409
+    assert oab_repetida.json()["detail"] == "Número OAB já cadastrado."
+
+
+def test_cadastro_advogado_valida_campos_sem_expor_senha(client: TestClient):
+    senha_invalida = "abc1234"
+    cadastro = client.post(
+        "/api/v1/auth/register",
+        json={"nome": "   ", "email": "sem-arroba", "senha": senha_invalida, "numero_oab": "12345/XX"},
+    )
+    assert cadastro.status_code == 422
+    assert {erro["loc"][-1] for erro in cadastro.json()["detail"]} == {"nome", "email", "senha", "numero_oab"}
+    assert senha_invalida not in cadastro.text
 
 
 def test_ct02_ct04_ct05_ct06_upload_pdf_barreira_lgpd_e_predicao(client: TestClient):
