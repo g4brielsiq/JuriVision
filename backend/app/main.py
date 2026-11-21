@@ -6,8 +6,11 @@ Rastreabilidade:
 """
 from contextlib import asynccontextmanager
 import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.core.database import Base, SessionLocal, engine
@@ -61,6 +64,18 @@ app.include_router(auth.router)
 app.include_router(dashboard.router)
 app.include_router(processos.router)
 app.include_router(relatorios.router)
+
+
+@app.exception_handler(RequestValidationError)
+async def handle_request_validation(request: Request, exc: RequestValidationError):
+    if request.scope.get("endpoint") is auth.register_advogado:
+        # Os erros do Pydantic podem incluir a senha ou o corpo original.
+        errors = [
+            {key: error[key] for key in ("loc", "msg", "type")}
+            for error in exc.errors()
+        ]
+        return JSONResponse(status_code=422, content={"detail": errors})
+    return await request_validation_exception_handler(request, exc)
 
 
 @app.get("/health", tags=["Healthcheck"])

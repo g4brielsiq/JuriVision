@@ -240,3 +240,29 @@ Toda nova modificação deve seguir o modelo abaixo:
   - Nunca persistir autor, réu ou resumo sem passar por `AnonimizadorLGPD` (RN-01).
   - O `PUT` é substituição completa: o front-end deve reenviar todos os campos (pode reenviar os nomes já mascarados retornados pelo `GET`).
   - `origem_ingestao = "MANUAL"` identifica processos cadastrados por este fluxo.
+
+### [2026-11-19] — Cadastro de Advogados e Interface de Cadastro/Edição de Julgados com Prévia LGPD
+- **Branch:** `FrontEnd/Ygor`
+- **Autor / Dupla:** Ygor Vasconcelos
+- **Pacote da EAP / Requisitos:** EAP 1.3.2 (API REST), EAP 1.3.3 (Interface Web Front-end), EAP 1.4.1 (Anonimização LGPD), RF-01, RF-08, RN-01
+- **Resumo da Mudança:**
+  1. **Cadastro de advogados (`POST /api/v1/auth/register`):** validação/normalização de e-mail e OAB (`número/UF`), hash de senha, tratamento de conflitos `409`, proteção contra exposição de senha em erros `422` e formulário integrado à janela de conta (`Criar conta`).
+  2. **Interface de cadastro e edição de julgados (`frontend/src/components/julgado-form.js`):** modal acessível integrado a `POST /api/v1/processos` e `PUT /api/v1/processos/{id_processo}`, com retorno de `resultado` e `data_julgamento` em `GET /api/v1/processos/{id_processo}` (`ProcessoDetalhesResponse`) e escape HTML (`escapeHtml`) contra XSS na listagem.
+  3. **Prévia de anonimização LGPD em tempo real (`POST /api/v1/processos/anonimizacao/previa`):** aplica a mesma rotina de `AnonimizadorLGPD` usada no salvamento durante a digitação (com *debounce* e `AbortController`), sem persistir rascunhos.
+- **Como Testar / Executar Localmente:**
+  - PowerShell: `$env:PYTHONPATH="backend"; pytest backend/tests/ -v` (**33 testes aprovados**).
+  - Front-end: `cd frontend; npm run build`.
+- **Detalhes:** [Contrato do cadastro de advogados](./membros/ygor-vasconcelos/REGISTER_ADVICE.md) e [Seção 3.6 do README](../README.md#36-cadastro-e-edição-de-julgados).
+
+---
+
+### [2026-11-21] — Reformulação do Shell Global e Pesquisa de Precedentes (Guia de Estilo v2)
+- **Branch:** `feat/frontend-design-system-v2`
+- **Autor / Dupla:** Victor Samyr
+- **Pacote da EAP / Requisitos:** EAP 1.2.2 (Código-Fonte Interface Web), EAP 1.5.1 (Garantia de Qualidade / Acessibilidade), RNF-04, RNF-09, RNF-10
+- **Resumo da Mudança:**
+  1. **Guia de Estilo v2 (`docs/DESIGN_SYSTEM_V2.md`):** formalização da estética *Repertório Jurídico Contemporâneo*, com paleta neutra quente (`#F6F4EF`, `#EFECE5`, `#DFDBD2`, `#C9C3B8`) e tipografia `Source Serif 4` + `IBM Plex Sans` + `JetBrains Mono`.
+  2. **Shell global e Pesquisa de Precedentes (`frontend/index.html`, `frontend/src/components/design-tokens.css`, `frontend/src/app.js`):** sidebar clara e silenciosa (`236px`), remoção de estilos *inline*, busca principal inline, painel DataJud com tokens semânticos, fichas jurídicas contínuas com filetes de `1px` e integração com os modais de cadastro/edição de julgados e cadastro de advogados.
+- **Como Testar / Executar Localmente:**
+  - PowerShell: `$env:PYTHONPATH="backend"; pytest backend/tests/ -v` (**33 testes aprovados**).
+  - Front-end: `cd frontend; npm run build`.

@@ -25,3 +25,11 @@
   - Tratamento defensivo no `GeminiAIAdapter` para remoção automática de markdown fences em respostas JSON do LLM.
   - Consolidação da governança da equipe ativa e reestruturação dos diários de bordo para avaliação acadêmica.
 - **Status:** Entregue com 100% dos testes aprovados no pytest (19 de 19 testes).
+
+### [2026-11-21] — Reformulação do Shell Global e Pesquisa de Precedentes (Guia de Estilo v2)
+- **Branch de Atuação:** `feat/frontend-design-system-v2`
+- **Atividades Realizadas:**
+  - Especificação do Guia de Estilo v2 (`docs/DESIGN_SYSTEM_V2.md` — *Repertório Jurídico Contemporâneo*), calibrando tokens para neutros quentes (`#F6F4EF`, `#EFECE5`, `#DFDBD2`, `#C9C3B8`) e substituindo `Inter` por `IBM Plex Sans`.
+  - Refatoração do shell global (`frontend/index.html` e `frontend/src/components/design-tokens.css`): sidebar clara (`236px`), remoção do monograma e estilos *inline*, cabeçalho enxuto (`48px`) e fichas de decisão contínuas sem caixas redundantes.
+  - Integração e compatibilização do Guia v2 com os modais de cadastro/edição de julgados e cadastro de advogados da branch `dev` (PR #9).
+- **Status:** Build de produção do frontend aprovado (`npm run build`) e **33 de 33 testes automatizados** aprovados no pytest.

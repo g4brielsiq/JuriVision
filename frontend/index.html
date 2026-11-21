@@ -123,6 +123,9 @@
                         Conta
                     </button>
                 </div>
+                <button type="button" id="btn-open-register" class="btn btn-secondary btn-sm">
+                    Criar conta
+                </button>
             </div>
         </aside>
 
@@ -318,6 +321,7 @@
                                     Tabela
                                 </button>
                             </div>
+                            <button type="button" id="btn-novo-julgado" class="btn btn-primary">Cadastrar julgado</button>
                         </div>
                     </div>
 
@@ -920,7 +924,8 @@
                     <span class="badge-editorial badge-lgpd">TJAL · LGPD</span>
                 </div>
 
-                <div class="reader-topbar-group">
+                <div class="reader-topbar-group julgado-acoes">
+                    <button type="button" id="btn-editar-julgado" class="btn btn-primary btn-sm">Editar julgado</button>
                     <button type="button" id="btn-drawer-copy-ref" class="btn btn-secondary btn-sm">
                         Copiar referência
                     </button>
@@ -1005,55 +1010,140 @@
     </aside>
 
     <!-- ================================================================
-         MODAL DE AUTENTICAÇÃO DO ADVOGADO (RF-01)
+         MODAL DE CADASTRO E EDIÇÃO DE JULGADOS E CONTA DO ADVOGADO (RF-01 / RF-08)
          ================================================================ -->
-    <div
-        id="login-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="login-modal-title"
-        class="modal-backdrop hidden"
-    >
-        <div class="modal-dialog">
-            <div class="modal-header">
-                <h2 id="login-modal-title" class="serif-heading modal-title">
-                    Identificação Profissional do Advogado
-                </h2>
-                <button type="button" id="btn-close-login" class="btn btn-ghost btn-sm" aria-label="Fechar janela de autenticação">
-                    Fechar
-                </button>
-            </div>
-            <form id="login-form" class="modal-body">
-                <p class="modal-intro">
-                    Acesse sua conta para sincronizar pesquisas salvas, coleções de decisões e emissão de relatórios analíticos.
-                </p>
-                <div class="field-group">
-                    <label for="login-email" class="field-label">E-mail profissional</label>
-                    <input
-                        id="login-email"
-                        type="email"
-                        required
-                        value="advogado@escritorio.com"
-                        class="control-input"
-                    >
-                </div>
-                <div class="field-group">
-                    <label for="login-senha" class="field-label">Senha de acesso</label>
-                    <input
-                        id="login-senha"
-                        type="password"
-                        required
-                        value="senhaSegura123"
-                        class="control-input"
-                    >
-                </div>
-                <div id="login-feedback" role="status" class="login-feedback hidden"></div>
-                <button type="submit" class="btn btn-primary btn-block">
-                    Autenticar sessão
-                </button>
-            </form>
+    <dialog id="julgado-modal" class="modal-dialog account-dialog julgado-dialog" aria-labelledby="julgado-titulo">
+        <div class="modal-header">
+            <h2 id="julgado-titulo" class="serif-heading modal-title">Cadastrar julgado</h2>
         </div>
-    </div>
+        <form id="julgado-form" class="modal-body" method="post" autocomplete="off">
+            <div class="julgado-campos">
+                <div class="field-group">
+                    <label class="field-label" for="julgado-numero_processo">Número CNJ</label>
+                    <input class="control-input" id="julgado-numero_processo" name="numero_processo" required pattern="[0-9]{7}-[0-9]{2}\.[0-9]{4}\.[0-9]\.[0-9]{2}\.[0-9]{4}" placeholder="0801234-56.2025.8.02.0001" autofocus>
+                </div>
+                <div class="field-group">
+                    <label class="field-label" for="julgado-tema">Assunto</label>
+                    <input class="control-input" id="julgado-tema" name="tema" required minlength="2" maxlength="120">
+                </div>
+                <div class="field-group">
+                    <label class="field-label" for="julgado-magistrado">Magistrado(a)</label>
+                    <input class="control-input" id="julgado-magistrado" name="magistrado" required minlength="2" maxlength="150">
+                </div>
+                <div class="field-group">
+                    <label class="field-label" for="julgado-comarca">Órgão julgador (opcional)</label>
+                    <input class="control-input" id="julgado-comarca" name="comarca" minlength="2" maxlength="150">
+                </div>
+                <div class="field-group">
+                    <label class="field-label" for="julgado-autor">Autor(a)</label>
+                    <input class="control-input" id="julgado-autor" name="autor" required minlength="2" maxlength="200">
+                </div>
+                <div class="field-group">
+                    <label class="field-label" for="julgado-reu">Réu/Ré</label>
+                    <input class="control-input" id="julgado-reu" name="reu" required minlength="2" maxlength="200">
+                </div>
+                <div class="field-group">
+                    <label class="field-label" for="julgado-data_julgamento">Data do julgamento (opcional)</label>
+                    <input class="control-input" id="julgado-data_julgamento" name="data_julgamento" type="date">
+                </div>
+                <div class="field-group">
+                    <label class="field-label" for="julgado-resultado">Resultado</label>
+                    <select class="control-select" id="julgado-resultado" name="resultado" required>
+                        <option value="Em Analise">Em análise</option>
+                        <option>Procedente</option>
+                        <option>Improcedente</option>
+                        <option>Acordo</option>
+                    </select>
+                </div>
+            </div>
+            <div class="field-group">
+                <label class="field-label" for="julgado-resumo">Ementa ou síntese</label>
+                <textarea class="control-input" id="julgado-resumo" name="resumo" rows="4" required minlength="10"></textarea>
+            </div>
+            <section class="julgado-previa" aria-labelledby="julgado-previa-titulo">
+                <h3 id="julgado-previa-titulo">Prévia de anonimização</h3>
+                <p class="account-hint">A prévia é atualizada pelo servidor enquanto você digita, sem gravar o rascunho.</p>
+                <p id="julgado-previa-status" class="account-hint" role="status"></p>
+                <div id="julgado-previa-conteudo" hidden>
+                    <p><strong>Autor(a)</strong> <span id="julgado-previa-autor"></span></p>
+                    <p><strong>Réu/Ré</strong> <span id="julgado-previa-reu"></span></p>
+                    <p id="julgado-previa-resumo"></p>
+                </div>
+            </section>
+            <p id="julgado-erro" class="account-feedback" data-error="true" role="alert"></p>
+            <div class="julgado-acoes">
+                <button type="button" id="btn-cancelar-julgado" class="btn btn-secondary">Cancelar</button>
+                <button type="submit" id="btn-salvar-julgado" class="btn btn-primary">Salvar julgado</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog id="login-modal" class="modal-dialog account-dialog" aria-labelledby="login-modal-title">
+        <div class="modal-header">
+            <h2 id="login-modal-title" class="serif-heading">
+                Entrar na conta
+            </h2>
+            <button type="button" id="btn-close-login" class="btn btn-ghost btn-sm" aria-label="Fechar janela de conta">
+                Fechar
+            </button>
+        </div>
+        <form id="login-form" class="modal-body">
+            <div class="field-group">
+                <label for="login-email" class="field-label">E-mail profissional</label>
+                <input
+                    id="login-email"
+                    type="email"
+                    autocomplete="username"
+                    required
+                    value="advogado@escritorio.com"
+                    class="control-input"
+                >
+            </div>
+            <div class="field-group">
+                <label for="login-senha" class="field-label">Senha de acesso</label>
+                <input
+                    id="login-senha"
+                    type="password"
+                    autocomplete="current-password"
+                    required
+                    value="senhaSegura123"
+                    class="control-input"
+                >
+            </div>
+            <p id="login-feedback" role="status" class="account-feedback"></p>
+            <button type="submit" class="btn btn-primary">
+                Entrar
+            </button>
+            <button type="button" id="btn-switch-to-register" class="btn btn-secondary">Criar conta</button>
+        </form>
+        <form id="register-form" class="modal-body" method="post" hidden>
+            <div class="field-group">
+                <label for="reg-nome" class="field-label">Nome completo</label>
+                <input id="reg-nome" name="nome" class="control-input" type="text" autocomplete="name"
+                    required minlength="2" maxlength="150">
+            </div>
+            <div class="field-group">
+                <label for="reg-email" class="field-label">E-mail profissional</label>
+                <input id="reg-email" name="email" class="control-input" type="email" autocomplete="email"
+                    required maxlength="150">
+            </div>
+            <div class="field-group">
+                <label for="reg-oab" class="field-label">Número da OAB</label>
+                <input id="reg-oab" name="numero_oab" class="control-input" type="text" autocapitalize="characters"
+                    spellcheck="false" required maxlength="50" aria-describedby="reg-oab-help">
+                <small id="reg-oab-help" class="account-hint">Use o formato número/UF, como 54321/AL.</small>
+            </div>
+            <div class="field-group">
+                <label for="reg-senha" class="field-label">Senha</label>
+                <input id="reg-senha" name="senha" class="control-input" type="password" autocomplete="new-password"
+                    required minlength="8" maxlength="128" aria-describedby="reg-senha-help">
+                <small id="reg-senha-help" class="account-hint">Use pelo menos 8 caracteres.</small>
+            </div>
+            <p id="register-feedback" role="status" class="account-feedback"></p>
+            <button type="submit" class="btn btn-primary">Cadastrar</button>
+            <button type="button" id="btn-open-login-from-register" class="btn btn-secondary">Já tenho conta</button>
+        </form>
+    </dialog>
 
     <!-- ================================================================
          MODAL DE AJUDA E METODOLOGIA (Seção 7.1 item 6 e Seção 21.3)
