@@ -1,69 +1,73 @@
 /* ==========================================================================
    JuriVision — Plataforma de Pesquisa Jurisprudencial e Jurimetria (UFAL)
    Arquivo: src/components/design-tokens.css
-   Direção Estética: Legal Editorial + Legal Intelligence
-   Referência: Guia de UI/UX e Direção Visual — Plataforma de Jurimetria para Advocacia
+   Direção Estética: Guia de Estilo v2 — Repertório Jurídico Contemporâneo
+   Referência: docs/DESIGN_SYSTEM_V2.md
    Normas: ISO 9241-110/112, W3C WCAG 2.2 AA (ISO/IEC 40500), WAI-ARIA 1.2
    ========================================================================== */
 
 :root {
-    /* 6.1 Paleta de Cores Oficial — Legal Editorial + Legal Intelligence */
-    --color-navy: #20364A;            /* Azul profundo: navegação, títulos de destaque, botões primários */
+    /* Paleta Calibrada — Superfícies Quentes e Tinta Institucional */
+    --color-navy: #20364A;            /* Ação primária, item ativo, títulos de destaque */
     --color-navy-hover: #162635;      /* Hover do azul profundo */
-    --color-navy-subtle: #EDF2F6;     /* Fundo suave de seleção e destaque institucional */
+    --color-navy-subtle: #EAEFF3;     /* Fundo suave de seleção institucional */
+    --color-navy-subtle-hover: #DDE6EC;
 
-    --bg-ivory: #F6F4EF;              /* Fundo principal marfim editorial */
-    --bg-surface: #FFFFFF;            /* Superfície predominante: cartões de decisão, leitura e painéis */
-    --bg-auxiliary: #F3F5F6;          /* Fundo auxiliar cinza muito claro: filtros e escopo metodológico */
-    --bg-hover: #EAECEF;
+    --bg-ivory: #F6F4EF;              /* Canvas principal marfim editorial */
+    --bg-surface: #FFFFFF;            /* Folhas de leitura, formulários e superfícies elevadas */
+    --bg-auxiliary: #EFECE5;          /* Papel/pedra quente: sidebar clara e cabeçalhos de tabela */
+    --bg-hover: #E7E3DA;
+    --bg-nav-active: #E5E0D6;
 
-    --color-sage: #58796D;            /* Verde acinzentado discreto: ênfase analítica moderada */
-    --color-sage-subtle: #EFF5F2;
-    --color-sage-border: #C5D9D1;
+    /* Acentos Comedidos (uso estritamente funcional) */
+    --color-sage: #3F6356;            /* Favorável / procedente */
+    --color-sage-subtle: #EEF4F1;
+    --color-sage-border: #C3D6CE;
 
-    --color-gold: #B29A74;            /* Areia dourada fosca: detalhes editoriais pontuais e biblioteca */
-    --color-gold-subtle: #FAF6EE;
-    --color-gold-border: #E2D5BE;
+    --color-gold: #9A7B4F;            /* Decisão salva / nota metodológica */
+    --color-gold-text: #6E5835;       /* Contraste AA >= 4.5:1 sobre #FFFFFF e #F8F3E8 */
+    --color-gold-subtle: #F8F3E8;
+    --color-gold-border: #E0D3B8;
 
-    /* Tipografia e Contraste Certificado (WCAG 1.4.3 AA >= 4.5:1) */
-    --text-primary: #25313B;          /* Grafite azulado (13.1:1 sobre #FFFFFF) */
-    --text-secondary: #4E5A65;        /* Cinza azulado calibrado (6.8:1 sobre #FFFFFF) */
-    --text-muted: #616E78;            /* Cinza azulado para rótulos auxiliares (5.1:1 sobre #FFFFFF) */
+    /* Tipografia e Contraste Certificado (WCAG 2.2 AA >= 4.5:1) */
+    --text-primary: #1F2933;
+    --text-secondary: #525D68;
+    --text-muted: #636A71;            /* >= 4.5:1 sobre #FFFFFF, #F6F4EF e #EFECE5 */
     --text-on-navy: #FFFFFF;
 
-    /* Bordas e Divisores (Seção 6.4) */
-    --border-default: #E3E6E8;        /* Cinza claro para contornos e separações discretas */
-    --border-strong: #CBD2D8;
+    /* Bordas e Filetes Quentes */
+    --border-default: #DFDBD2;
+    --border-strong: #C9C3B8;
     --border-focus: #20364A;
 
-    /* Estados Semânticos Claros e Sóbrios (Seção 6.1 — nunca usar cor sozinha) */
+    /* Estados Semânticos */
     --status-info-fg: #20364A;
-    --status-info-bg: #EDF2F6;
-    --status-info-border: #C6D6E3;
+    --status-info-bg: #EAEFF3;
+    --status-info-border: #C5D2DD;
 
     --status-warn-fg: #8A5311;
-    --status-warn-bg: #FCF6EC;
-    --status-warn-border: #E8D0A9;
+    --status-warn-bg: #F8F3E8;
+    --status-warn-border: #E0D3B8;
 
-    --status-error-fg: #9E2A2B;
-    --status-error-bg: #FDF2F2;
-    --status-error-border: #EBC4C4;
+    --status-error-fg: #942628;
+    --status-error-bg: #FCF1F1;
+    --status-error-border: #E8C1C2;
 
-    /* 6.2 Combinação Tipográfica (Source Serif 4 + Inter) */
+    /* Tipografia (Source Serif 4 + IBM Plex Sans + JetBrains Mono) */
     --font-serif: "Source Serif 4", Georgia, Cambria, "Times New Roman", serif;
-    --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
 
-    /* Hierarquia Tipográfica do Guia (Seção 6.2) */
-    --text-xs: 12px;                  /* Rótulos auxiliares e legendas */
-    --text-sm: 13.5px;                /* Metadados: tribunal, data, relator, identificadores */
-    --text-base: 15px;                /* Texto principal de interface e controles */
-    --text-doc: 16.5px;               /* Texto de leitura de decisões e ementas */
-    --text-card-title: 17.5px;        /* Título de card / agrupamento */
-    --text-section-title: 21px;       /* Título de seção e painéis */
-    --text-page-title: 29px;          /* Título de página principal */
+    /* Hierarquia Tipográfica */
+    --text-xs: 12px;
+    --text-sm: 13.5px;
+    --text-base: 15px;
+    --text-doc: 16.5px;
+    --text-card-title: 17.5px;
+    --text-section-title: 21px;
+    --text-page-title: 29px;
 
-    /* 6.3 Escala de Espaçamento (4, 8, 12, 16, 20, 24, 32, 40, 48, 64 px) */
+    /* Escala de Espaçamento */
     --space-1: 4px;
     --space-2: 8px;
     --space-3: 12px;
@@ -74,18 +78,18 @@
     --space-10: 40px;
     --space-12: 48px;
 
-    /* 6.4 Raios de Borda e Elevação Discreta */
-    --radius-control: 7px;            /* 6–10 px em campos e botões */
-    --radius-card: 11px;              /* 10–14 px em cards documentais e painéis */
+    /* Raios de Borda Contidos */
+    --radius-control: 6px;
+    --radius-card: 8px;
     --radius-pill: 999px;
 
     /* Ergonomia e Acessibilidade (WCAG 2.5.8 & Lei de Fitts) */
-    --sidebar-width: 264px;
+    --sidebar-width: 236px;
     --touch-target-min: 44px;
 
-    /* Sombras exclusivas para sobreposição real (Seção 6.4) */
-    --shadow-subtle: 0 1px 3px rgba(32, 54, 74, 0.04);
-    --shadow-overlay: 0 18px 42px rgba(32, 54, 74, 0.16), 0 2px 8px rgba(32, 54, 74, 0.08);
+    /* Elevação Contida */
+    --shadow-subtle: 0 1px 2px rgba(31, 41, 51, 0.04);
+    --shadow-overlay: 0 18px 42px rgba(31, 41, 51, 0.14), 0 2px 8px rgba(31, 41, 51, 0.06);
 
     --transition-base: 150ms ease;
 }
@@ -214,7 +218,7 @@ a {
 }
 
 /* ==========================================================================
-   3. ARQUITETURA DE NAVEGAÇÃO (Seção 7 — Barra Lateral Persistente + Área Editorial)
+   3. ARQUITETURA DE NAVEGAÇÃO (Sidebar Clara e Silenciosa — Guia v2)
    ========================================================================== */
 .app-shell {
     display: grid;
@@ -228,68 +232,34 @@ a {
     height: 100vh;
     display: flex;
     flex-direction: column;
-    background: var(--color-navy);
-    border-right: 1px solid rgba(255, 255, 255, 0.08);
-    padding: var(--space-6) var(--space-4);
+    background: var(--bg-auxiliary);
+    border-right: 1px solid var(--border-default);
+    padding: var(--space-6) var(--space-3) var(--space-4);
     overflow-y: auto;
-    color: var(--text-on-navy);
+    color: var(--text-primary);
 }
 
 .sidebar-brand {
-    padding: 0 var(--space-2) var(--space-5);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    padding: 0 var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--border-default);
     margin-bottom: var(--space-5);
-}
-
-.brand-lockup {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-}
-
-.brand-monogram {
-    width: 34px;
-    height: 34px;
-    border-radius: var(--radius-control);
-    background: var(--color-navy);
-    color: var(--text-on-navy);
-    font-family: var(--font-serif);
-    font-size: 19px;
-    font-weight: 700;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-bottom: 2px solid var(--color-gold);
-    flex-shrink: 0;
 }
 
 .brand-title {
     font-family: var(--font-serif);
-    font-size: 20px;
+    font-size: 21px;
     font-weight: 600;
     color: var(--color-navy);
     line-height: 1.15;
+    letter-spacing: -0.01em;
 }
 
 .brand-subtitle {
     display: block;
-    font-size: var(--text-xs);
+    font-family: var(--font-sans);
+    font-size: 11.5px;
     color: var(--text-secondary);
-    margin-top: 2px;
-}
-
-.sidebar .brand-monogram {
-    background: var(--color-gold);
-    color: var(--color-navy);
-    border-bottom: 2px solid rgba(255, 255, 255, 0.4);
-}
-
-.sidebar .brand-title {
-    color: #FFFFFF;
-}
-
-.sidebar .brand-subtitle {
-    color: rgba(255, 255, 255, 0.65);
+    margin-top: 3px;
 }
 
 .sidebar-nav {
@@ -306,24 +276,24 @@ a {
 }
 
 .nav-section-title {
-    padding: 0 var(--space-3) var(--space-2);
-    font-size: var(--text-xs);
+    padding: 0 var(--space-3) var(--space-1);
+    font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: rgba(255, 255, 255, 0.48);
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
 }
 
 .nav-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--space-3);
-    min-height: 42px;
+    gap: var(--space-2);
+    min-height: 40px;
     padding: var(--space-2) var(--space-3);
     border-radius: var(--radius-control);
-    color: rgba(255, 255, 255, 0.78);
-    font-size: var(--text-base);
+    color: var(--text-primary);
+    font-size: var(--text-sm);
     font-weight: 500;
     text-align: left;
     transition: background-color var(--transition-base), color var(--transition-base);
@@ -332,101 +302,82 @@ a {
 .nav-item-label {
     display: flex;
     align-items: center;
-    gap: var(--space-3);
+    gap: var(--space-2);
+    min-width: 0;
 }
 
 .nav-item svg,
 .icon {
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
     flex-shrink: 0;
-    color: currentColor;
+    color: var(--text-secondary);
 }
 
 .nav-item:hover {
-    background: rgba(255, 255, 255, 0.09);
-    color: #FFFFFF;
+    background: var(--bg-hover);
+    color: var(--color-navy);
+}
+
+.nav-item:hover svg {
+    color: var(--color-navy);
 }
 
 .nav-item.active {
-    background: rgba(255, 255, 255, 0.16);
-    color: #FFFFFF;
-    font-weight: 600;
-    box-shadow: inset 3px 0 0 var(--color-gold);
-}
-
-.nav-badge {
-    font-size: var(--text-xs);
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-    padding: 2px 8px;
-    border-radius: var(--radius-pill);
-    background: rgba(255, 255, 255, 0.12);
-    color: rgba(255, 255, 255, 0.85);
-}
-
-.nav-item.active .nav-badge {
-    background: var(--color-gold);
+    background: var(--bg-nav-active);
     color: var(--color-navy);
-    font-weight: 700;
+    font-weight: 600;
 }
 
-.sidebar-saved-box {
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: var(--radius-card);
-    padding: var(--space-3) var(--space-4);
+.nav-item.active svg {
+    color: var(--color-navy);
+}
+
+.nav-count {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.nav-item.active .nav-count {
+    color: var(--color-navy);
+    font-weight: 600;
+}
+
+.sidebar-corpus-note {
+    margin-top: auto;
+    padding: var(--space-4) var(--space-3) 0;
     display: flex;
     flex-direction: column;
-    gap: var(--space-2);
-}
-
-.sidebar-saved-title {
-    font-size: var(--text-xs);
-    font-weight: 600;
-    color: #FFFFFF;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+    gap: 2px;
 }
 
 .sidebar-saved-desc {
     font-size: var(--text-xs);
-    color: rgba(255, 255, 255, 0.75);
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.sidebar-corpus-sub {
+    font-size: 11.5px;
+    color: var(--text-muted);
 }
 
 .sidebar-footer {
-    margin-top: auto;
-    padding-top: var(--space-4);
-    border-top: 1px solid rgba(255, 255, 255, 0.12);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
+    margin-top: var(--space-4);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border-default);
 }
 
 .lawyer-profile {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--space-3);
-    padding: var(--space-2);
-    border-radius: var(--radius-control);
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.lawyer-avatar {
-    width: 34px;
-    height: 34px;
-    border-radius: var(--radius-control);
-    background: var(--color-gold);
-    color: var(--color-navy);
-    font-weight: 700;
-    font-size: var(--text-sm);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
 }
 
 .lawyer-info {
@@ -436,8 +387,9 @@ a {
 
 .lawyer-info strong {
     display: block;
-    font-size: var(--text-sm);
-    color: #FFFFFF;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--text-primary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -445,24 +397,12 @@ a {
 
 .lawyer-info span {
     display: block;
-    font-size: var(--text-xs);
-    color: rgba(255, 255, 255, 0.65);
-}
-
-.lawyer-profile .btn-secondary {
-    background: transparent;
-    border-color: rgba(255, 255, 255, 0.22);
-    color: #FFFFFF;
-}
-
-.lawyer-profile .btn-secondary:hover {
-    background: rgba(255, 255, 255, 0.12);
-    border-color: rgba(255, 255, 255, 0.4);
-    color: #FFFFFF;
+    font-size: 11.5px;
+    color: var(--text-muted);
 }
 
 /* ==========================================================================
-   4. CABEÇALHO CONTEXTUAL E ÁREA DE CONTEÚDO (Seção 7.2)
+   4. CABEÇALHO CONTEXTUAL E ÁREA DE CONTEÚDO
    ========================================================================== */
 .main-workspace {
     display: flex;
@@ -472,9 +412,10 @@ a {
 }
 
 .context-header {
-    background: var(--bg-surface);
+    background: var(--bg-ivory);
     border-bottom: 1px solid var(--border-default);
-    padding: var(--space-4) var(--space-8);
+    min-height: 48px;
+    padding: var(--space-2) var(--space-8);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -486,8 +427,8 @@ a {
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-size: var(--text-sm);
-    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    color: var(--text-muted);
     flex-wrap: wrap;
 }
 
@@ -501,6 +442,14 @@ a {
     align-items: center;
     gap: var(--space-3);
     flex-wrap: wrap;
+}
+
+.status-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
 }
 
 .tab-panel {
@@ -555,6 +504,13 @@ a {
     max-width: 72ch;
 }
 
+.page-intro-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
 /* ==========================================================================
    5. BOTÕES, CAMPOS E ELEMENTOS DE FORMULÁRIO (Seção 22)
    ========================================================================== */
@@ -606,7 +562,7 @@ a {
 }
 
 .btn-subtle:hover {
-    background: #DFE8F0;
+    background: var(--color-navy-subtle-hover);
 }
 
 .btn-ghost {
@@ -623,6 +579,64 @@ a {
     min-height: 34px;
     padding: 0 var(--space-3);
     font-size: var(--text-xs);
+}
+
+.btn-block {
+    width: 100%;
+}
+
+.text-right {
+    text-align: right;
+}
+
+.btn-text-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 32px;
+    padding: 4px 6px;
+    border-radius: var(--radius-control);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    color: var(--color-navy);
+    transition: background-color var(--transition-base), color var(--transition-base);
+}
+
+.btn-text-action svg {
+    width: 15px;
+    height: 15px;
+    flex-shrink: 0;
+}
+
+.btn-text-action:hover {
+    background: var(--bg-hover);
+    color: var(--color-navy-hover);
+}
+
+.btn-text-action.btn-text-muted {
+    color: var(--text-secondary);
+}
+
+.btn-text-action.is-saved {
+    color: var(--color-gold-text);
+    font-weight: 600;
+}
+
+.btn-read-decision {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-strong);
+    color: var(--color-navy);
+    font-weight: 600;
+    min-height: 34px;
+    padding: 0 var(--space-3);
+    font-size: var(--text-xs);
+    border-radius: var(--radius-control);
+}
+
+.btn-read-decision:hover {
+    background: var(--color-navy);
+    border-color: var(--color-navy);
+    color: var(--text-on-navy);
 }
 
 .control-input,
@@ -656,15 +670,13 @@ a {
 }
 
 /* ==========================================================================
-   6. PESQUISA JURISPRUDENCIAL E FILTROS PROGRESSIVOS (Seções 9, 10 e 11)
+   6. PESQUISA JURISPRUDENCIAL E FILTROS PROGRESSIVOS (Guia v2 — Tela-Âncora)
    ========================================================================== */
 .search-chamber {
     background: var(--bg-surface);
     border: 1px solid var(--border-default);
-    border-top: 3px solid var(--color-navy);
     border-radius: var(--radius-card);
-    padding: var(--space-6);
-    box-shadow: var(--shadow-subtle);
+    padding: var(--space-5);
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
@@ -672,13 +684,13 @@ a {
 
 .primary-search-row {
     display: flex;
-    gap: var(--space-3);
+    gap: var(--space-2);
     align-items: stretch;
-    flex-wrap: wrap;
 }
 
 .search-input-wrapper {
     flex: 1 1 380px;
+    min-width: 0;
     position: relative;
     display: flex;
     align-items: center;
@@ -686,68 +698,165 @@ a {
 
 .search-input-wrapper svg {
     position: absolute;
-    left: var(--space-4);
-    width: 18px;
-    height: 18px;
+    left: var(--space-3);
+    width: 17px;
+    height: 17px;
     color: var(--text-muted);
     pointer-events: none;
 }
 
 .search-input-large {
     width: 100%;
-    min-height: 48px;
-    padding: 0 var(--space-4) 0 44px;
+    min-height: var(--touch-target-min);
+    padding: 0 var(--space-4) 0 40px;
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-control);
     font-size: var(--text-base);
     background: var(--bg-surface);
     color: var(--text-primary);
+    transition: border-color var(--transition-base);
+}
+
+.search-input-large:hover {
+    border-color: var(--color-navy);
+}
+
+.btn-search-submit {
+    min-height: var(--touch-target-min);
+    padding: 0 var(--space-5);
+    flex-shrink: 0;
 }
 
 .search-filters-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: var(--space-4);
-    padding-top: var(--space-4);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--space-3);
+    padding-top: var(--space-3);
     border-top: 1px solid var(--border-default);
 }
 
-.search-actions-row {
+.search-filters-grid .field-label {
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.search-filters-grid .control-select {
+    min-height: 38px;
+    font-size: var(--text-sm);
+}
+
+.search-secondary-bar {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: var(--space-3);
     flex-wrap: wrap;
-    margin-top: var(--space-4);
-    padding-top: var(--space-4);
-    border-top: 1px solid var(--border-default);
 }
 
-.recent-searches-bar {
+/* Painel de Retorno da Consulta Oficial ao DataJud (CNJ) */
+.datajud-panel {
+    background: var(--bg-ivory);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-card);
+    padding: var(--space-4) var(--space-5);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+
+.datajud-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
+.datajud-meta-badges {
     display: flex;
     align-items: center;
     gap: var(--space-2);
     flex-wrap: wrap;
+}
+
+.datajud-tribunal-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: var(--radius-control);
+    background: var(--color-navy);
+    color: var(--text-on-navy);
+    font-family: var(--font-mono);
     font-size: var(--text-xs);
+    font-weight: 600;
+}
+
+.datajud-source {
+    font-size: var(--text-xs);
+    font-weight: 500;
     color: var(--text-secondary);
 }
 
-.recent-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 10px;
-    background: var(--bg-auxiliary);
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-pill);
-    font-size: var(--text-xs);
-    color: var(--text-primary);
-    transition: background-color var(--transition-base), border-color var(--transition-base);
+.datajud-title {
+    font-family: var(--font-serif);
+    font-size: 19px;
+    font-weight: 600;
+    color: var(--color-navy);
+    line-height: 1.25;
 }
 
-.recent-chip:hover {
-    background: var(--color-navy-subtle);
-    border-color: var(--color-navy);
-    color: var(--color-navy);
+.datajud-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: var(--space-3);
+    font-size: var(--text-sm);
+}
+
+.datajud-field {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.datajud-field-label {
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--text-muted);
+}
+
+.datajud-field-value {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.datajud-movements {
+    border-top: 1px solid var(--border-default);
+    padding-top: var(--space-3);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.datajud-movements-heading {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.datajud-movements-list {
+    padding-left: var(--space-4);
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.datajud-status {
+    font-size: var(--text-xs);
+    font-style: italic;
+    color: var(--text-muted);
 }
 
 .active-filters-strip {
@@ -755,137 +864,191 @@ a {
     align-items: center;
     gap: var(--space-2);
     flex-wrap: wrap;
-    padding: var(--space-3) var(--space-4);
-    background: var(--bg-auxiliary);
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-control);
-    font-size: var(--text-sm);
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    font-size: var(--text-xs);
+}
+
+.active-filters-label {
+    font-weight: 500;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+}
+
+.dynamic-filter-chips {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
 }
 
 .filter-chip {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 3px 10px;
+    padding: 3px 9px;
     border-radius: var(--radius-control);
     background: var(--bg-surface);
-    border: 1px solid var(--border-strong);
+    border: 1px solid var(--border-default);
     font-size: var(--text-xs);
     font-weight: 500;
     color: var(--color-navy);
+    transition: border-color var(--transition-base), background-color var(--transition-base);
+}
+
+.filter-chip:hover {
+    background: var(--bg-auxiliary);
+    border-color: var(--border-strong);
 }
 
 /* ==========================================================================
-   7. RESULTADOS E CARTÕES DOCUMENTAIS DE DECISÃO (Seção 11.4 e 11.5)
+   7. RESULTADOS E FICHAS DOCUMENTAIS DE DECISÃO (Guia v2 — Repertório Jurídico)
    ========================================================================== */
 .results-scope-toolbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--space-4);
-    padding: var(--space-4) var(--space-5);
-    background: var(--bg-surface);
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-card);
+    padding: var(--space-1) 0;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    flex-wrap: wrap;
+}
+
+.scope-summary-text {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
     flex-wrap: wrap;
 }
 
 .scope-summary-text strong {
     color: var(--color-navy);
     font-weight: 600;
+    font-size: var(--text-sm);
 }
 
-.scope-summary-sub {
-    display: block;
+.scope-origin-meta {
     font-size: var(--text-xs);
-    color: var(--text-secondary);
-    margin-top: 2px;
+    color: var(--text-muted);
+}
+
+.results-view-wrap {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
+.results-view-toggle {
+    width: auto;
+    min-width: 172px;
 }
 
 .decisions-list {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-card);
     display: flex;
     flex-direction: column;
-    gap: var(--space-4);
+    gap: 0;
+    overflow: hidden;
 }
 
 .decision-card {
-    background: var(--bg-surface);
-    border: 1px solid var(--border-default);
-    border-left: 3px solid var(--color-navy);
-    border-radius: var(--radius-card);
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--border-default);
+    border-radius: 0;
     padding: var(--space-5) var(--space-6);
-    box-shadow: var(--shadow-subtle);
     display: flex;
     flex-direction: column;
-    gap: var(--space-3);
-    transition: border-color var(--transition-base), box-shadow var(--transition-base);
+    gap: var(--space-2);
+    transition: background-color var(--transition-base);
+}
+
+.decision-card:last-child {
+    border-bottom: none;
 }
 
 .decision-card:hover {
-    border-color: var(--color-navy);
-    box-shadow: 0 4px 12px rgba(32, 54, 74, 0.06);
+    background: #FCFBF9;
 }
 
 .decision-card-header {
     display: flex;
-    align-items: flex-start;
+    align-items: baseline;
     justify-content: space-between;
     gap: var(--space-4);
     flex-wrap: wrap;
-    padding-bottom: var(--space-2);
-    border-bottom: 1px solid var(--border-default);
 }
 
-.decision-court-line {
-    font-size: var(--text-sm);
-    font-weight: 600;
-    color: var(--color-navy);
+.decision-meta-line {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
+    gap: 6px;
     flex-wrap: wrap;
-}
-
-.decision-process-meta {
-    margin-top: 3px;
     font-size: var(--text-xs);
-    color: var(--text-muted);
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    flex-wrap: wrap;
+    color: var(--text-secondary);
 }
 
-.decision-subject-row {
+.decision-meta-sep {
+    color: var(--border-strong);
+}
+
+.decision-cnj {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-navy);
+}
+
+.decision-date {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+}
+
+.decision-badges {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
+    gap: 6px;
     flex-wrap: wrap;
+    flex-shrink: 0;
 }
 
 .decision-subject-title {
     font-family: var(--font-serif);
-    font-size: 18px;
+    font-size: 19px;
     font-weight: 600;
-    color: var(--text-primary);
+    color: var(--color-navy);
+    line-height: 1.3;
+    letter-spacing: -0.01em;
 }
 
 .decision-excerpt-box {
-    background: var(--bg-auxiliary);
-    border-left: 2px solid var(--color-gold);
-    padding: var(--space-3) var(--space-4);
-    border-radius: 0 var(--radius-control) var(--radius-control) 0;
+    background: transparent;
+    border: none;
+    padding: 0;
+    border-radius: 0;
 }
 
-.excerpt-provenance-tag {
-    display: inline-block;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    color: var(--text-secondary);
-    margin-bottom: var(--space-1);
+.decision-excerpt {
+    font-size: var(--text-base);
+    line-height: 1.6;
+    max-width: 72ch;
+    color: var(--text-primary);
+    text-align: left;
+}
+
+.decision-parties {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
 }
 
 .decision-card-footer {
@@ -893,24 +1056,45 @@ a {
     align-items: center;
     justify-content: space-between;
     gap: var(--space-4);
-    padding-top: var(--space-2);
-    border-top: 1px solid var(--border-default);
+    margin-top: var(--space-2);
     flex-wrap: wrap;
 }
 
 .decision-actions-group {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
+    gap: var(--space-3);
     flex-wrap: wrap;
 }
 
-/* Badges Documentais Sóbrios (Seção 14.3 e 21.1 — sem semáforo vibrante) */
+.decisions-empty-state {
+    padding: var(--space-8) var(--space-6);
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.decisions-empty-title {
+    font-family: var(--font-serif);
+    font-size: 19px;
+    font-weight: 600;
+    color: var(--color-navy);
+}
+
+.decisions-empty-text {
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    max-width: 54ch;
+}
+
+/* Badges Documentais Sóbrios */
 .badge-editorial {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 3px 10px;
+    padding: 2px 9px;
     border-radius: var(--radius-control);
     font-size: var(--text-xs);
     font-weight: 600;
@@ -922,13 +1106,13 @@ a {
 .badge-favorable {
     background: var(--color-sage-subtle);
     border-color: var(--color-sage-border);
-    color: #2F4F44;
+    color: var(--color-sage);
 }
 
 .badge-unfavorable {
-    background: var(--bg-auxiliary);
-    border-color: var(--border-strong);
-    color: var(--text-secondary);
+    background: var(--status-error-bg);
+    border-color: var(--status-error-border);
+    color: var(--status-error-fg);
 }
 
 .badge-lgpd {
@@ -940,7 +1124,7 @@ a {
 .badge-saved {
     background: var(--color-gold-subtle);
     border-color: var(--color-gold-border);
-    color: #6E5835;
+    color: var(--color-gold-text);
 }
 
 .dot {
@@ -952,8 +1136,8 @@ a {
 }
 
 .dot-success { background: var(--color-sage); }
-.dot-warning { background: #B27B2E; }
-.dot-danger  { background: #9E2A2B; }
+.dot-warning { background: var(--color-gold); }
+.dot-danger  { background: var(--status-error-fg); }
 .dot-neutral { background: var(--text-muted); }
 
 /* ==========================================================================
@@ -1158,18 +1342,57 @@ a {
     background: var(--bg-ivory);
 }
 
+.table-empty-cell {
+    padding: var(--space-8);
+    text-align: center;
+    color: var(--text-secondary);
+}
+
+.table-proc-cnj {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-navy);
+}
+
+.table-proc-date,
+.table-proc-court {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+}
+
+.table-proc-subject {
+    font-weight: 500;
+}
+
+.table-actions-cell {
+    text-align: right;
+    white-space: nowrap;
+}
+
 .table-pagination-bar {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--space-4);
-    padding: var(--space-4) var(--space-5);
-    background: var(--bg-surface);
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-card);
+    padding: var(--space-1) 0;
+    background: transparent;
+    border: none;
+    border-radius: 0;
     font-size: var(--text-sm);
     color: var(--text-secondary);
     flex-wrap: wrap;
+}
+
+.pagination-info {
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.pagination-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
 }
 
 /* ==========================================================================
@@ -1469,7 +1692,6 @@ a {
     max-height: 90vh;
     background: var(--bg-surface);
     border: 1px solid var(--border-default);
-    border-top: 4px solid var(--color-navy);
     border-radius: var(--radius-card);
     box-shadow: var(--shadow-overlay);
     display: flex;
@@ -1488,12 +1710,40 @@ a {
     flex-wrap: wrap;
 }
 
+.reader-topbar-group {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
 .reader-body {
     padding: var(--space-6) var(--space-8);
     overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: var(--space-6);
+}
+
+.reader-doc-header {
+    padding-bottom: var(--space-4);
+    border-bottom: 1px solid var(--border-default);
+}
+
+.reader-doc-title {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--color-navy);
+}
+
+.reader-doc-subtitle {
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    margin-top: 2px;
+}
+
+.meta-value-sage {
+    color: var(--color-sage);
 }
 
 .reader-footer {
@@ -1507,15 +1757,30 @@ a {
     flex-wrap: wrap;
 }
 
+.reader-footer-note {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+}
+
+.reader-footer-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
 .modal-dialog {
     width: 100%;
     max-width: 480px;
     background: var(--bg-surface);
     border: 1px solid var(--border-default);
-    border-top: 4px solid var(--color-navy);
     border-radius: var(--radius-card);
     box-shadow: var(--shadow-overlay);
     overflow: hidden;
+}
+
+.modal-dialog-wide {
+    max-width: 640px;
 }
 
 .modal-header {
@@ -1526,11 +1791,43 @@ a {
     justify-content: space-between;
 }
 
+.modal-title {
+    font-size: 19px;
+    font-weight: 600;
+    color: var(--color-navy);
+}
+
 .modal-body {
     padding: var(--space-6);
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
+}
+
+.modal-intro {
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+}
+
+.modal-body-prose {
+    line-height: 1.6;
+    font-size: var(--text-sm);
+    color: var(--text-primary);
+}
+
+.modal-prose-heading {
+    color: var(--color-navy);
+}
+
+.modal-prose-text {
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+.login-feedback {
+    font-size: var(--text-xs);
+    padding: 10px;
+    border-radius: var(--radius-control);
 }
 
 /* Toast de confirmação discreto (Seção 18.5 e 22.5) */
@@ -1610,6 +1907,22 @@ a {
     }
 
     .context-header {
-        padding: var(--space-4) var(--space-5);
+        padding: var(--space-2) var(--space-5);
+    }
+}
+
+@media (max-width: 900px) {
+    .search-filters-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 600px) {
+    .primary-search-row {
+        flex-direction: column;
+    }
+
+    .search-filters-grid {
+        grid-template-columns: 1fr;
     }
 }
