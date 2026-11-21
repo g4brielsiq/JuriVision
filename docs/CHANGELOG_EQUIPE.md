@@ -241,10 +241,15 @@ Toda nova modificação deve seguir o modelo abaixo:
   - O `PUT` é substituição completa: o front-end deve reenviar todos os campos (pode reenviar os nomes já mascarados retornados pelo `GET`).
   - `origem_ingestao = "MANUAL"` identifica processos cadastrados por este fluxo.
 
-### [2026-11-19] - Cadastro de advogados
-
-- **Branch e integrante** `FrontEnd/Ygor` · Ygor Vasconcelos.
-- **Escopo** EAP 1.3.2 e 1.3.3. Cadastro de conta integrado ao fluxo de autenticação.
-- **Mudanças** A interface abre o cadastro a partir de **Criar conta**. A API valida e persiste os dados e o login reaproveita o e-mail confirmado.
-- **Verificação** Execute `$env:PYTHONPATH="backend"; python -m pytest backend/tests/test_api_contracts.py -k cadastro_advogado` com as dependências instaladas.
-- **Detalhes** [Contrato do cadastro e instruções de uso](./membros/ygor-vasconcelos/REGISTER_ADVICE.md).
+### [2026-11-19] — Cadastro de Advogados e Interface de Cadastro/Edição de Julgados com Prévia LGPD
+- **Branch:** `FrontEnd/Ygor`
+- **Autor / Dupla:** Ygor Vasconcelos
+- **Pacote da EAP / Requisitos:** EAP 1.3.2 (API REST), EAP 1.3.3 (Interface Web Front-end), EAP 1.4.1 (Anonimização LGPD), RF-01, RF-08, RN-01
+- **Resumo da Mudança:**
+  1. **Cadastro de advogados (`POST /api/v1/auth/register`):** validação/normalização de e-mail e OAB (`número/UF`), hash de senha, tratamento de conflitos `409`, proteção contra exposição de senha em erros `422` e formulário integrado à janela de conta (`Criar conta`).
+  2. **Interface de cadastro e edição de julgados (`frontend/src/components/julgado-form.js`):** modal acessível integrado a `POST /api/v1/processos` e `PUT /api/v1/processos/{id_processo}`, com retorno de `resultado` e `data_julgamento` em `GET /api/v1/processos/{id_processo}` (`ProcessoDetalhesResponse`) e escape HTML (`escapeHtml`) contra XSS na listagem.
+  3. **Prévia de anonimização LGPD em tempo real (`POST /api/v1/processos/anonimizacao/previa`):** aplica a mesma rotina de `AnonimizadorLGPD` usada no salvamento durante a digitação (com *debounce* e `AbortController`), sem persistir rascunhos.
+- **Como Testar / Executar Localmente:**
+  - PowerShell: `$env:PYTHONPATH="backend"; pytest backend/tests/ -v` (**33 testes aprovados**).
+  - Front-end: `cd frontend; npm run build`.
+- **Detalhes:** [Contrato do cadastro de advogados](./membros/ygor-vasconcelos/REGISTER_ADVICE.md) e [Seção 3.6 do README](../README.md#36-cadastro-e-edição-de-julgados).

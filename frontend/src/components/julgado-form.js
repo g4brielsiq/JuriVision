@@ -4,6 +4,7 @@ export function configurarFormularioJulgado({ obterDetalhes, aoSalvar }) {
     const porId = (id) => document.getElementById(id);
     const modal = porId("julgado-modal");
     const form = porId("julgado-form");
+    if (!modal || !form) return;
     const erro = porId("julgado-erro");
     const previaStatus = porId("julgado-previa-status");
     const previaConteudo = porId("julgado-previa-conteudo");
@@ -79,12 +80,12 @@ export function configurarFormularioJulgado({ obterDetalhes, aoSalvar }) {
         atualizarPrevia();
     }
 
-    porId("btn-novo-julgado").addEventListener("click", () => abrir());
-    porId("btn-editar-julgado").addEventListener("click", () => {
+    porId("btn-novo-julgado")?.addEventListener("click", () => abrir());
+    porId("btn-editar-julgado")?.addEventListener("click", () => {
         const detalhes = obterDetalhes();
         if (detalhes) abrir(detalhes);
     });
-    botaoCancelar.addEventListener("click", () => modal.close());
+    botaoCancelar?.addEventListener("click", () => modal.close());
     modal.addEventListener("cancel", (event) => {
         if (salvando) event.preventDefault();
     });

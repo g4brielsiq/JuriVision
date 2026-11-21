@@ -1200,13 +1200,13 @@ function configurarModais() {
         (cadastro ? registerForm.elements.nome : loginEmail).focus();
     }
 
-    document.getElementById("btn-open-login").addEventListener("click", () => abrirConta());
-    document.getElementById("btn-open-register").addEventListener("click", () => abrirConta(true));
-    document.getElementById("btn-switch-to-register").addEventListener("click", () => abrirConta(true));
-    document.getElementById("btn-open-login-from-register").addEventListener("click", () => abrirConta());
-    document.getElementById("btn-close-login").addEventListener("click", () => accountDialog.close());
-    accountDialog.addEventListener("close", () => {
-        registerForm.elements.senha.value = "";
+    document.getElementById("btn-open-login")?.addEventListener("click", () => abrirConta());
+    document.getElementById("btn-open-register")?.addEventListener("click", () => abrirConta(true));
+    document.getElementById("btn-switch-to-register")?.addEventListener("click", () => abrirConta(true));
+    document.getElementById("btn-open-login-from-register")?.addEventListener("click", () => abrirConta());
+    document.getElementById("btn-close-login")?.addEventListener("click", () => accountDialog?.close());
+    accountDialog?.addEventListener("close", () => {
+        if (registerForm?.elements?.senha) registerForm.elements.senha.value = "";
     });
 
     registerForm.addEventListener("submit", async (e) => {

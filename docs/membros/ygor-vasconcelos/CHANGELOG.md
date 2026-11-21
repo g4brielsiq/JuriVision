@@ -31,5 +31,5 @@
 - **Branch:** `FrontEnd/Ygor`
 - A pesquisa ganhou a ação **Cadastrar julgado**, integrada ao `POST /api/v1/processos`. A leitura da decisão ganhou a ação **Editar julgado**, integrada ao `PUT /api/v1/processos/{id}`. O formulário de edição recupera os dados salvos, incluindo resultado e data do julgamento.
 - A prévia é atualizada ao editar as partes ou a síntese. O novo endpoint usa a mesma rotina de anonimização do salvamento e processa o rascunho sem gravá-lo.
-- **Verificação:** build do frontend, quatro testes estáticos de acessibilidade, integração do formulário com requisições simuladas e verificação direta da persistência com SQLite. A suíte HTTP completa ficou pendente neste ambiente.
+- **Verificação:** suíte completa do backend e contratos HTTP aprovada com **33 testes (`33 passed` no `pytest`)**, quatro testes estáticos de acessibilidade aprovados e build de produção do frontend (`npm run build`) validado sem erros.
 - O fluxo e o exemplo fictício para teste estão no [README](../../../README.md#36-cadastro-e-edição-de-julgados).
