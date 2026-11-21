@@ -28,6 +28,9 @@ from app.schemas.contracts import (
     MetadadosExtraidosSchema,
     PartesAnonimizadasSchema,
     ProcessoCadastroRequest,
+    ProcessoDetalhesResponse,
+    ProcessoAnonimizacaoRequest,
+    ProcessoAnonimizacaoResponse,
     ProcessoListItemSchema,
     ProcessoListResponse,
     ProcessoUploadResponse,
@@ -482,21 +485,38 @@ def _estimar_analise_preditiva(db: Session, payload: ProcessoCadastroRequest, ig
     }
 
 
-def _aplicar_cadastro(db: Session, proc: Processo, payload: ProcessoCadastroRequest) -> None:
-    """Aplica os campos do payload ao processo, passando partes e resumo pela barreira LGPD (RN-01)."""
-    autor_anon, autor_masked = AnonimizadorLGPD.mask_party_name(payload.autor)
-    reu_anon, reu_masked = AnonimizadorLGPD.mask_party_name(payload.reu)
+def _anonimizar_cadastro(autor: str, reu: str, resumo: str) -> ProcessoAnonimizacaoResponse:
+    autor_anon, autor_masked = AnonimizadorLGPD.mask_party_name(autor)
+    reu_anon, reu_masked = AnonimizadorLGPD.mask_party_name(reu)
     resumo_limpo, cpfs_masked, names_masked = AnonimizadorLGPD.sanitize_text(
-        payload.resumo, known_natural_names=[payload.autor, payload.reu]
+        resumo, known_natural_names=[autor, reu]
+    )
+    return ProcessoAnonimizacaoResponse(
+        partes_anonimizadas=PartesAnonimizadasSchema(autor=autor_anon, reu=reu_anon),
+        resumo=resumo_limpo,
+        auditoria_lgpd=AuditoriaLGPDSchema(
+            total_cpfs_mascarados=cpfs_masked,
+            total_nomes_mascarados=names_masked + int(autor_masked) + int(reu_masked),
+        ),
     )
 
+
+@router.post("/anonimizacao/previa", response_model=ProcessoAnonimizacaoResponse)
+def prever_anonimizacao(payload: ProcessoAnonimizacaoRequest) -> ProcessoAnonimizacaoResponse:
+    """Executa a mesma higienização do cadastro sem persistir o rascunho."""
+    return _anonimizar_cadastro(payload.autor.strip(), payload.reu.strip(), payload.resumo.strip())
+
+
+def _aplicar_cadastro(db: Session, proc: Processo, payload: ProcessoCadastroRequest) -> None:
+    """Aplica os campos do payload ao processo, passando partes e resumo pela barreira LGPD (RN-01)."""
+    anonimizacao = _anonimizar_cadastro(payload.autor, payload.reu, payload.resumo)
     proc.numero_processo = payload.numero_processo
     proc.tema = payload.tema
     proc.magistrado = payload.magistrado
     proc.comarca = payload.comarca
-    proc.autor_anonimizado = autor_anon
-    proc.reu_anonimizado = reu_anon
-    proc.resumo_nlp = resumo_limpo
+    proc.autor_anonimizado = anonimizacao.partes_anonimizadas.autor
+    proc.reu_anonimizado = anonimizacao.partes_anonimizadas.reu
+    proc.resumo_nlp = anonimizacao.resumo
     proc.resultado_historico = payload.resultado
     proc.data_julgamento = payload.data_julgamento
     proc.status = "PROCESSADO"
@@ -513,9 +533,7 @@ def _aplicar_cadastro(db: Session, proc: Processo, payload: ProcessoCadastroRequ
     proc.logs_lgpd.append(
         LogAuditoriaLGPD(
             id_processo=proc.id_processo,
-            total_cpfs_mascarados=cpfs_masked,
-            total_nomes_mascarados=names_masked + int(autor_masked) + int(reu_masked),
-            texto_higienizado_verificado=True,
+            **anonimizacao.auditoria_lgpd.model_dump(),
         )
     )
 
@@ -531,11 +549,11 @@ def _garantir_numero_unico(db: Session, numero_processo: str, ignorar_id: Option
         )
 
 
-@router.post("", response_model=ProcessoUploadResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=ProcessoDetalhesResponse, status_code=status.HTTP_201_CREATED)
 def cadastrar_processo(
     payload: ProcessoCadastroRequest,
     db: Session = Depends(get_db),
-) -> ProcessoUploadResponse:
+) -> ProcessoDetalhesResponse:
     """
     Cadastra manualmente um processo na Base de Conhecimento (RF-08).
     Partes e resumo são anonimizados antes da persistência (RN-01). Retorna 409 se o número CNJ já existir.
@@ -557,12 +575,12 @@ def cadastrar_processo(
     return obter_detalhes_processo(proc.id_processo, db)
 
 
-@router.put("/{id_processo}", response_model=ProcessoUploadResponse, status_code=status.HTTP_200_OK)
+@router.put("/{id_processo}", response_model=ProcessoDetalhesResponse, status_code=status.HTTP_200_OK)
 def editar_processo(
     id_processo: str,
     payload: ProcessoCadastroRequest,
     db: Session = Depends(get_db),
-) -> ProcessoUploadResponse:
+) -> ProcessoDetalhesResponse:
     """
     Edita (substituição completa dos campos editáveis) um processo existente (RF-08).
     Nomes já mascarados (com '***') são preservados; novos nomes passam pela barreira LGPD (RN-01).
@@ -594,11 +612,11 @@ async def consultar_processo_datajud(
     return await DataJudClient.consultar_processo(numero_processo=numero_processo, db=db)
 
 
-@router.get("/{id_processo}", response_model=ProcessoUploadResponse, status_code=status.HTTP_200_OK)
+@router.get("/{id_processo}", response_model=ProcessoDetalhesResponse, status_code=status.HTTP_200_OK)
 def obter_detalhes_processo(
     id_processo: str,
     db: Session = Depends(get_db),
-) -> ProcessoUploadResponse:
+) -> ProcessoDetalhesResponse:
     """Retorna os metadados higienizados, resumo NLP e parecer preditivo de um processo específico."""
     proc = db.query(Processo).filter(Processo.id_processo == id_processo).first()
     if not proc:
@@ -610,10 +628,12 @@ def obter_detalhes_processo(
     pred = proc.analise_preditiva
     ultimo_log = proc.logs_lgpd[-1] if proc.logs_lgpd else None
 
-    return ProcessoUploadResponse(
+    return ProcessoDetalhesResponse(
         id_processo=proc.id_processo,
         arquivo_nome=proc.arquivo_nome,
         status=proc.status,
+        resultado=proc.resultado_historico,
+        data_julgamento=proc.data_julgamento,
         metadados_extraidos=MetadadosExtraidosSchema(
             numero_processo=proc.numero_processo,
             tema=proc.tema,

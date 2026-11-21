@@ -1533,6 +1533,94 @@ a {
     gap: var(--space-4);
 }
 
+.account-dialog {
+    position: fixed;
+    inset: 0;
+    margin: auto;
+    padding: 0;
+    width: calc(100% - var(--space-6));
+    max-height: calc(100vh - var(--space-6));
+    overflow-y: auto;
+}
+
+.account-dialog::backdrop {
+    background: rgba(32, 54, 74, 0.45);
+}
+
+.account-dialog [hidden] {
+    display: none;
+}
+
+.account-dialog .modal-header {
+    gap: var(--space-3);
+}
+
+.account-dialog .modal-header h2 {
+    color: var(--color-navy);
+    font-size: var(--text-xl);
+    font-weight: 600;
+}
+
+.julgado-dialog {
+    max-width: 760px;
+}
+
+.julgado-campos {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+    gap: var(--space-3);
+}
+
+.julgado-acoes {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.julgado-previa {
+    padding: var(--space-3);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-control);
+    overflow-wrap: anywhere;
+}
+
+.julgado-previa h3 {
+    font-size: var(--text-base);
+}
+
+#julgado-previa-resumo {
+    white-space: pre-wrap;
+    max-height: 10rem;
+    overflow: auto;
+}
+
+#julgado-resumo {
+    resize: vertical;
+}
+
+.account-hint,
+.account-feedback {
+    font-size: var(--text-xs);
+}
+
+.account-hint {
+    color: var(--text-secondary);
+}
+
+.account-feedback:not(:empty) {
+    padding: var(--space-3);
+    border-radius: var(--radius-control);
+    background: var(--color-navy-subtle);
+    color: var(--color-navy);
+}
+
+.account-feedback[data-error="true"] {
+    background: var(--status-error-bg);
+    color: var(--status-error-fg);
+}
+
 /* Toast de confirmação discreto (Seção 18.5 e 22.5) */
 .status-toast {
     position: fixed;

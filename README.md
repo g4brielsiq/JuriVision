@@ -139,6 +139,14 @@ Para rodar os 11 casos de teste automatizados (contratos de API REST, barreira d
 
 ---
 
+### 3.6 Cadastro e edição de julgados
+
+1. Em **Pesquisa de precedentes**, clique em **Cadastrar julgado** e informe o número CNJ, o assunto, o magistrado, as partes e a ementa ou síntese. O órgão julgador e a data do julgamento são opcionais.
+2. Confira a **Prévia de anonimização** enquanto preenche os campos. O servidor aplica às partes e à síntese a mesma rotina usada no salvamento, sem gravar o rascunho.
+3. Clique em **Salvar julgado**. Para alterar um registro, abra a decisão na pesquisa e clique em **Editar julgado**. O formulário recupera os dados salvos, incluindo o resultado e a data, e atualiza a prévia ao alterar as partes ou a síntese.
+
+A prévia deve mascarar o nome da autora e o CPF, preservando a razão social da ré. O contrato das rotas está na seção 8.5.1 da [documentação de arquitetura](./ARCHITECTURE.md#851-cadastro-e-edição-manual-de-processos-rf-08-rn-01).
+
 ## 4. Equipe Epsilon (UFAL)
 
 * **Dupla 1 (Front-end e UI/UX):** Emanuele Vitória e Lucas Gabriel

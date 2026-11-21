@@ -7,6 +7,7 @@
  * - Requisitos Não Funcionais: RNF-04 (ISO 9241-110 & Nielsen), RNF-09 (WCAG 2.2 AA), RNF-10 (Leis de UX & Gestalt)
  */
 
+import { configurarFormularioJulgado } from "./components/julgado-form.js";
 import {
     buildSampleBatchCsvFile,
     buildSamplePetitionPdfFile,
@@ -17,6 +18,7 @@ import {
     fetchProcessos,
     getRelatorioPdfUrl,
     loginAdvogado,
+    registerAdvogado,
     uploadProcessoPdf,
     uploadProcessosCsv,
 } from "./services/api.js";
@@ -331,6 +333,11 @@ async function carregarDashboard() {
     carregarPrecedentesRecentesOverview();
 }
 
+function escapeHtml(value) {
+    const entities = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+    return String(value ?? "").replace(/[&<>"']/g, (character) => entities[character]);
+}
+
 function renderizarMatrizesPrecisao(metricas) {
     const judgeList = document.getElementById("judge-matrix-list");
     if (judgeList) {
@@ -342,7 +349,7 @@ function renderizarMatrizesPrecisao(metricas) {
                 <div class="comparative-bar-row">
                     <div class="comparative-row-top">
                         <div>
-                            <strong style="color: var(--color-navy); font-size: var(--text-sm);">${d.juiz}</strong>
+                            <strong style="color: var(--color-navy); font-size: var(--text-sm);">${escapeHtml(d.juiz)}</strong>
                             <span style="display: block; font-size: var(--text-xs); color: var(--text-muted);">
                                 ${total} julgados (${d.procedentes} fav. / ${d.improcedentes} impr.)
                             </span>
@@ -350,7 +357,7 @@ function renderizarMatrizesPrecisao(metricas) {
                         <div style="text-align: right;">
                             <strong class="tabular-nums" style="color: var(--color-navy); font-size: var(--text-sm);">${favPct}% fav.</strong>
                             <div>
-                                <button type="button" class="btn btn-ghost btn-sm btn-drill-judge" data-judge="${d.juiz}" style="padding: 0 4px; min-height: 22px; font-size: 11px;">
+                                <button type="button" class="btn btn-ghost btn-sm btn-drill-judge" data-judge="${escapeHtml(d.juiz)}" style="padding: 0 4px; min-height: 22px; font-size: 11px;">
                                     Filtrar (${total})
                                 </button>
                             </div>
@@ -387,12 +394,12 @@ function renderizarMatrizesPrecisao(metricas) {
                 <div class="comparative-bar-row">
                     <div class="comparative-row-top">
                         <div>
-                            <strong style="color: var(--color-navy); font-size: var(--text-sm);">${t.tema}</strong>
+                            <strong style="color: var(--color-navy); font-size: var(--text-sm);">${escapeHtml(t.tema)}</strong>
                             <span style="display: block; font-size: var(--text-xs); color: var(--text-muted);">
                                 ${approxCount} julgados (${t.percentual}%)
                             </span>
                         </div>
-                        <button type="button" class="btn btn-ghost btn-sm btn-drill-theme" data-theme="${t.tema}" style="padding: 0 4px; min-height: 22px; font-size: 11px;">
+                        <button type="button" class="btn btn-ghost btn-sm btn-drill-theme" data-theme="${escapeHtml(t.tema)}" style="padding: 0 4px; min-height: 22px; font-size: 11px;">
                             Filtrar (${approxCount})
                         </button>
                     </div>
@@ -506,7 +513,7 @@ function preencherTabelasAcessiveisGraficos(metricas) {
             .map(
                 (item) => `
             <tr>
-                <td>${item.juiz}</td>
+                <td>${escapeHtml(item.juiz)}</td>
                 <td class="tabular-nums">${item.procedentes}</td>
                 <td class="tabular-nums">${item.improcedentes}</td>
             </tr>`
@@ -520,7 +527,7 @@ function preencherTabelasAcessiveisGraficos(metricas) {
             .map(
                 (item) => `
             <tr>
-                <td>${item.tema}</td>
+                <td>${escapeHtml(item.tema)}</td>
                 <td class="tabular-nums">${item.percentual}%</td>
             </tr>`
             )
@@ -547,15 +554,15 @@ async function carregarPrecedentesRecentesOverview() {
 
             return `
             <tr>
-                <td class="font-mono" style="font-weight: 600; color: var(--color-navy);">${item.numero_processo}</td>
-                <td style="font-weight: 500;">${item.tema}</td>
-                <td>${item.magistrado}</td>
-                <td style="color: var(--text-secondary);">${item.partes_anonimizadas}</td>
+                <td class="font-mono" style="font-weight: 600; color: var(--color-navy);">${escapeHtml(item.numero_processo)}</td>
+                <td style="font-weight: 500;">${escapeHtml(item.tema)}</td>
+                <td>${escapeHtml(item.magistrado)}</td>
+                <td style="color: var(--text-secondary);">${escapeHtml(item.partes_anonimizadas)}</td>
                 <td>
-                    <span class="badge-editorial ${badgeClass}">${item.resultado}</span>
+                    <span class="badge-editorial ${badgeClass}">${escapeHtml(item.resultado)}</span>
                 </td>
                 <td style="text-align: right;">
-                    <button type="button" class="btn btn-secondary btn-sm btn-open-dossier-overview" data-proc-id="${item.id_processo}">
+                    <button type="button" class="btn btn-secondary btn-sm btn-open-dossier-overview" data-proc-id="${escapeHtml(item.id_processo)}">
                         Ler decisão
                     </button>
                 </td>
@@ -719,20 +726,20 @@ function renderizarListaDecisoes(itens) {
                     `Decisão judicial proferida nos autos do processo nº ${item.numero_processo} sob relatoria/juízo de ${item.magistrado} (${comarca}), envolvendo ${item.partes_anonimizadas}.`;
 
                 return `
-                <article class="decision-card" data-card-proc-id="${item.id_processo}">
+                <article class="decision-card" data-card-proc-id="${escapeHtml(item.id_processo)}">
                     <div class="decision-card-header">
                         <div>
                             <div class="decision-court-line">
-                                <span>TJAL · ${comarca}</span>
+                                <span>TJAL · ${escapeHtml(comarca)}</span>
                                 <span aria-hidden="true">·</span>
-                                <span class="font-mono">${item.numero_processo}</span>
+                                <span class="font-mono">${escapeHtml(item.numero_processo)}</span>
                             </div>
                             <div class="decision-process-meta">
-                                <span>${item.magistrado}</span>
+                                <span>${escapeHtml(item.magistrado)}</span>
                                 <span aria-hidden="true">·</span>
                                 <span>${dataJulg}</span>
                                 <span aria-hidden="true">·</span>
-                                <span title="Partes com proteção LGPD">${item.partes_anonimizadas}</span>
+                                <span title="Partes com proteção LGPD">${escapeHtml(item.partes_anonimizadas)}</span>
                             </div>
                         </div>
 
@@ -743,36 +750,36 @@ function renderizarListaDecisoes(itens) {
                                     : ""
                             }
                             <span class="badge-editorial ${badgeClass}">
-                                ${item.resultado}
+                                ${escapeHtml(item.resultado)}
                             </span>
                         </div>
                     </div>
 
                     <div class="decision-subject-row">
-                        <h3 class="decision-subject-title">${item.tema}</h3>
+                        <h3 class="decision-subject-title">${escapeHtml(item.tema)}</h3>
                     </div>
 
                     <div class="decision-excerpt-box">
                         <p class="legal-prose" style="font-size: var(--text-base);">
-                            ${sintese}
+                            ${escapeHtml(sintese)}
                         </p>
                     </div>
 
                     <div class="decision-card-footer">
                         <div class="decision-actions-group">
-                            <button type="button" class="btn btn-primary btn-sm btn-inspecionar-proc" data-inspect-id="${item.id_processo}">
+                            <button type="button" class="btn btn-primary btn-sm btn-inspecionar-proc" data-inspect-id="${escapeHtml(item.id_processo)}">
                                 Abrir decisão
                             </button>
-                            <button type="button" class="btn btn-secondary btn-sm btn-salvar-proc" data-save-id="${item.id_processo}">
+                            <button type="button" class="btn btn-secondary btn-sm btn-salvar-proc" data-save-id="${escapeHtml(item.id_processo)}">
                                 ${isSaved ? "Salva ✓" : "Salvar"}
                             </button>
-                            <button type="button" class="btn btn-secondary btn-sm btn-copiar-ref" data-ref-id="${item.id_processo}">
+                            <button type="button" class="btn btn-secondary btn-sm btn-copiar-ref" data-ref-id="${escapeHtml(item.id_processo)}">
                                 Copiar ref.
                             </button>
                         </div>
 
                         <div class="decision-actions-group">
-                            <button type="button" class="btn btn-ghost btn-sm btn-exportar-pdf" data-pdf-id="${item.id_processo}">
+                            <button type="button" class="btn btn-ghost btn-sm btn-exportar-pdf" data-pdf-id="${escapeHtml(item.id_processo)}">
                                 PDF
                             </button>
                         </div>
@@ -791,27 +798,27 @@ function renderizarListaDecisoes(itens) {
                 const dataJulg = formatarDataJulgamento(item.data_julgamento);
 
                 return `
-                <tr data-row-proc-id="${item.id_processo}">
+                <tr data-row-proc-id="${escapeHtml(item.id_processo)}">
                     <td>
-                        <div class="font-mono" style="font-weight: 600; color: var(--color-navy);">${item.numero_processo}</div>
+                        <div class="font-mono" style="font-weight: 600; color: var(--color-navy);">${escapeHtml(item.numero_processo)}</div>
                         <div style="font-size: var(--text-xs); color: var(--text-muted);">${dataJulg}</div>
                     </td>
-                    <td style="font-weight: 500;">${item.tema}</td>
+                    <td style="font-weight: 500;">${escapeHtml(item.tema)}</td>
                     <td>
-                        <div>${item.magistrado}</div>
-                        <div style="font-size: var(--text-xs); color: var(--text-muted);">${item.comarca || "TJAL"}</div>
+                        <div>${escapeHtml(item.magistrado)}</div>
+                        <div style="font-size: var(--text-xs); color: var(--text-muted);">${escapeHtml(item.comarca || "TJAL")}</div>
                     </td>
                     <td>
-                        <span>${item.partes_anonimizadas}</span>
+                        <span>${escapeHtml(item.partes_anonimizadas)}</span>
                     </td>
                     <td>
-                        <span class="badge-editorial ${badgeClass}">${item.resultado}</span>
+                        <span class="badge-editorial ${badgeClass}">${escapeHtml(item.resultado)}</span>
                     </td>
                     <td style="text-align: right; white-space: nowrap;">
-                        <button type="button" data-inspect-id="${item.id_processo}" class="btn btn-secondary btn-sm btn-inspecionar-proc">
+                        <button type="button" data-inspect-id="${escapeHtml(item.id_processo)}" class="btn btn-secondary btn-sm btn-inspecionar-proc">
                             Abrir
                         </button>
-                        <button type="button" data-pdf-id="${item.id_processo}" class="btn btn-ghost btn-sm btn-exportar-pdf">
+                        <button type="button" data-pdf-id="${escapeHtml(item.id_processo)}" class="btn btn-ghost btn-sm btn-exportar-pdf">
                             PDF
                         </button>
                     </td>
@@ -883,35 +890,40 @@ async function abrirDrawerProcesso(idProcesso) {
 
     try {
         const det = await fetchProcessoDetalhes(idProcesso);
-        state.drawerProcessId = det.id_processo;
-        state.currentDrawerPayload = det;
-        const meta = det.metadados_extraidos;
-        const pred = det.analise_preditiva;
-
-        document.getElementById("drawer-proc-id").textContent = det.id_processo;
-        document.getElementById("drawer-proc-cnj").textContent = `Processo nº ${meta.numero_processo}`;
-        document.getElementById("drawer-proc-tema").textContent = meta.tema;
-        document.getElementById("drawer-proc-juiz").textContent = meta.magistrado;
-        document.getElementById("drawer-proc-comarca").textContent = `TJAL · ${meta.comarca}`;
-        document.getElementById("drawer-proc-autor").textContent = meta.partes_anonimizadas.autor;
-        document.getElementById("drawer-proc-reu").textContent = meta.partes_anonimizadas.reu;
-        document.getElementById("drawer-proc-prob").textContent =
-            `${Math.round(pred.probabilidade_deferimento * 100)}% em ${pred.casos_similares_encontrados || 42} decisões semelhantes`;
-        document.getElementById("drawer-proc-resumo").textContent = det.resumo_nlp;
-        document.getElementById("drawer-proc-tese").textContent = pred.tese_recomendada;
-
-        const saveBtn = document.getElementById("btn-drawer-save");
-        if (saveBtn) {
-            saveBtn.textContent = state.savedDecisions.has(det.id_processo)
-                ? "Salva na biblioteca"
-                : "Salvar decisão";
-        }
-
-        drawer.classList.remove("hidden");
-        announceStatus(`Leitura da decisão aberta para o processo ${meta.numero_processo}.`);
+        exibirDrawerProcesso(det);
     } catch (err) {
         showToast(err.message);
     }
+}
+
+function exibirDrawerProcesso(det) {
+    const drawer = document.getElementById("drawer-processo");
+    state.drawerProcessId = det.id_processo;
+    state.currentDrawerPayload = det;
+    const meta = det.metadados_extraidos;
+    const pred = det.analise_preditiva;
+
+    document.getElementById("drawer-proc-id").textContent = det.id_processo;
+    document.getElementById("drawer-proc-cnj").textContent = `Processo nº ${meta.numero_processo}`;
+    document.getElementById("drawer-proc-tema").textContent = meta.tema;
+    document.getElementById("drawer-proc-juiz").textContent = meta.magistrado;
+    document.getElementById("drawer-proc-comarca").textContent = `TJAL · ${meta.comarca}`;
+    document.getElementById("drawer-proc-autor").textContent = meta.partes_anonimizadas.autor;
+    document.getElementById("drawer-proc-reu").textContent = meta.partes_anonimizadas.reu;
+    document.getElementById("drawer-proc-prob").textContent =
+        `${Math.round(pred.probabilidade_deferimento * 100)}% em ${pred.casos_similares_encontrados || 42} decisões semelhantes`;
+    document.getElementById("drawer-proc-resumo").textContent = det.resumo_nlp;
+    document.getElementById("drawer-proc-tese").textContent = pred.tese_recomendada;
+
+    const saveBtn = document.getElementById("btn-drawer-save");
+    if (saveBtn) {
+        saveBtn.textContent = state.savedDecisions.has(det.id_processo)
+            ? "Salva na biblioteca"
+            : "Salvar decisão";
+    }
+
+    drawer.classList.remove("hidden");
+    announceStatus(`Leitura da decisão aberta para o processo ${meta.numero_processo}.`);
 }
 
 function fecharDrawerProcesso() {
@@ -1164,32 +1176,75 @@ async function dispararConsultaDataJud() {
 }
 
 function configurarModais() {
-    const loginModal = document.getElementById("login-modal");
-    const btnOpenLogin = document.getElementById("btn-open-login");
-    const btnCloseLogin = document.getElementById("btn-close-login");
+    const accountDialog = document.getElementById("login-modal");
+    const title = document.getElementById("login-modal-title");
     const loginForm = document.getElementById("login-form");
-    const feedback = document.getElementById("login-feedback");
+    const loginEmail = document.getElementById("login-email");
+    const loginSenha = document.getElementById("login-senha");
+    const loginFeedback = document.getElementById("login-feedback");
+    const loginSubmit = loginForm.querySelector('[type="submit"]');
+    const registerForm = document.getElementById("register-form");
+    const registerFeedback = document.getElementById("register-feedback");
+    const registerSubmit = registerForm.querySelector('[type="submit"]');
 
-    btnOpenLogin?.addEventListener("click", () => {
-        loginModal?.classList.remove("hidden");
-        document.getElementById("login-email")?.focus();
+    function mostrarFeedback(elemento, mensagem, erro = false) {
+        elemento.dataset.error = String(erro);
+        elemento.textContent = mensagem;
+    }
+
+    function abrirConta(cadastro = false) {
+        title.textContent = cadastro ? "Cadastro de advogado" : "Entrar na conta";
+        loginForm.hidden = cadastro;
+        registerForm.hidden = !cadastro;
+        if (!accountDialog.open) accountDialog.showModal();
+        (cadastro ? registerForm.elements.nome : loginEmail).focus();
+    }
+
+    document.getElementById("btn-open-login")?.addEventListener("click", () => abrirConta());
+    document.getElementById("btn-open-register")?.addEventListener("click", () => abrirConta(true));
+    document.getElementById("btn-switch-to-register")?.addEventListener("click", () => abrirConta(true));
+    document.getElementById("btn-open-login-from-register")?.addEventListener("click", () => abrirConta());
+    document.getElementById("btn-close-login")?.addEventListener("click", () => accountDialog?.close());
+    accountDialog?.addEventListener("close", () => {
+        if (registerForm?.elements?.senha) registerForm.elements.senha.value = "";
     });
 
-    btnCloseLogin?.addEventListener("click", () => {
-        loginModal?.classList.add("hidden");
-    });
-
-    loginForm?.addEventListener("submit", async (e) => {
+    registerForm.addEventListener("submit", async (e) => {
         e.preventDefault();
-        const email = document.getElementById("login-email")?.value.trim() || "";
-        const senha = document.getElementById("login-senha")?.value || "";
-
-        if (feedback) {
-            feedback.style.background = "var(--color-navy-subtle)";
-            feedback.style.color = "var(--color-navy)";
-            feedback.textContent = "Verificando credenciais do advogado...";
-            feedback.classList.remove("hidden");
+        if (registerSubmit.disabled) return;
+        const payload = Object.fromEntries(new FormData(registerForm));
+        registerSubmit.disabled = true;
+        mostrarFeedback(registerFeedback, "Criando conta…");
+        try {
+            const usuario = await registerAdvogado(payload);
+            registerForm.reset();
+            mostrarFeedback(registerFeedback, "");
+            if (accountDialog.open && registerForm.hidden) {
+                showToast("Conta criada. Entre com o e-mail cadastrado.");
+                return;
+            }
+            loginEmail.value = usuario.email;
+            loginSenha.value = "";
+            if (accountDialog.open) abrirConta();
+            mostrarFeedback(loginFeedback, "Conta criada. Entre com sua senha.");
+            if (!accountDialog.open) showToast("Conta criada. Acesse sua conta para entrar.");
+        } catch (err) {
+            const mensagem = err instanceof TypeError
+                ? "Não foi possível conectar ao servidor. Tente novamente."
+                : err.message;
+            mostrarFeedback(registerFeedback, mensagem, true);
+        } finally {
+            registerSubmit.disabled = false;
         }
+    });
+
+    loginForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        if (loginSubmit.disabled) return;
+        const email = loginEmail.value.trim();
+        const senha = loginSenha.value;
+        loginSubmit.disabled = true;
+        mostrarFeedback(loginFeedback, "Verificando credenciais do advogado…");
 
         try {
             const res = await loginAdvogado(email, senha);
@@ -1201,26 +1256,19 @@ function configurarModais() {
 
             const nameEl = document.getElementById("sidebar-user-name");
             const oabEl = document.getElementById("sidebar-user-oab");
+            const avatar = document.querySelector(".lawyer-avatar");
             if (nameEl) nameEl.textContent = res.usuario.nome;
             if (oabEl) oabEl.textContent = `OAB ${res.usuario.oab}`;
-
-            if (feedback) {
-                feedback.style.background = "var(--color-sage-subtle)";
-                feedback.style.color = "#2F4F44";
-                feedback.textContent = `Sessão autenticada para ${res.usuario.nome}.`;
-            }
-
+            if (avatar) avatar.textContent = res.usuario.nome.split(/\s+/).slice(0, 2)
+                .map((parte) => [...parte][0]).join("").toUpperCase();
+            loginSenha.value = "";
+            mostrarFeedback(loginFeedback, "");
             showToast(`Bem-vindo(a), ${res.usuario.nome}.`);
-            setTimeout(() => {
-                loginModal?.classList.add("hidden");
-                feedback?.classList.add("hidden");
-            }, 700);
+            if (accountDialog.open && !loginForm.hidden) accountDialog.close();
         } catch (err) {
-            if (feedback) {
-                feedback.style.background = "var(--status-error-bg)";
-                feedback.style.color = "var(--status-error-fg)";
-                feedback.textContent = err.message || "Não foi possível autenticar com as credenciais informadas.";
-            }
+            mostrarFeedback(loginFeedback, err.message || "Não foi possível autenticar com as credenciais informadas.", true);
+        } finally {
+            loginSubmit.disabled = false;
         }
     });
 
@@ -1435,16 +1483,25 @@ function initApp() {
                 comarca: meta.comarca,
                 magistrado: meta.magistrado,
                 tema: meta.tema,
-                data_julgamento: "2026-10-05",
+                data_julgamento: state.currentDrawerPayload.data_julgamento,
             });
         }
     });
 
+    configurarFormularioJulgado({
+        obterDetalhes: () => state.currentDrawerPayload,
+        aoSalvar: (detalhes, edicao) => {
+            if (edicao) exibirDrawerProcesso(detalhes);
+            carregarBaseConhecimento(edicao ? state.paginaAtual : 1);
+            carregarDashboard();
+            showToast(edicao ? "Julgado atualizado." : "Julgado cadastrado.");
+        },
+    });
+
     // Atalho global Escape para fechar janelas sobrepostas
     window.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") {
+        if (e.key === "Escape" && !document.querySelector("dialog[open]")) {
             fecharDrawerProcesso();
-            document.getElementById("login-modal")?.classList.add("hidden");
             document.getElementById("methodology-modal")?.classList.add("hidden");
         }
     });
