@@ -85,6 +85,27 @@ class LoginResponse(BaseModel):
     usuario: UsuarioProfileSchema
 
 
+PlanoTipo = Literal["FREE", "PRO"]
+
+
+class PlanoAssinaturaStatusResponse(BaseModel):
+    usuario_id: str
+    nome: str
+    plano: PlanoTipo = "FREE"
+    analises_realizadas: int = Field(default=0, ge=0)
+    limite_analises_free: int = Field(default=3, ge=1)
+    analises_restantes: int = Field(default=3, ge=0)
+    recursos_pro_liberados: bool = False
+    lote_csv_liberado: bool = False
+    tese_aprofundada_liberada: bool = False
+    exportacao_pdf_ilimitada: bool = False
+
+
+class PlanoUpgradeRequest(BaseModel):
+    plano: PlanoTipo = Field(default="PRO")
+    codigo_convite: Optional[str] = Field(default="CONAD2026", max_length=60)
+
+
 # ==============================================================================
 # 8.2 Métricas de Jurimetria — Dashboard (RF-07)
 # ==============================================================================

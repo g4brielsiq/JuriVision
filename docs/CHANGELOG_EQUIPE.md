@@ -16,7 +16,7 @@ A tabela abaixo ordena todas as frentes de evolução técnica **da mais simples
 | **3** | **Endurecimento da Barreira LGPD (Regex Expandido & Detecção em Prosa)** | Média | `AnonimizadorLGPD` restrito a CPF, RG rotulado e linha `Autor: Nome`, sem mascarar e-mails, telefones, endereços ou nomes soltos. | `[x] CONCLUÍDA` |
 | **4** | **Motor NLP Local Real e Similaridade Textual (`TF-IDF` / `BM25`)** | Média / Alta | Classificação via 5 `if/else`, resumo pelas 2 primeiras frases, juiz padrão hardcoded (`Dr. Rafael De Amorim`), multiplicador fixo `* 7` e margem fixa `±8%`. | `[x] CONCLUÍDA` |
 | **5** | **RAG Jurídico (Gemini + Precedentes Reais), Cache SHA-256, Extrator PDF e `ai_engine:8001`** | Alta | `ai_engine/worker.py` em `sleep(3600)`, Gemini sem contexto dos julgados do banco e extração restrita a operadores `Tj` simples. | `[x] CONCLUÍDA` |
-| **6** | **Modelo Freemium / Assinaturas, Cache de Demo e Deploy Cloud (CONAD)** | Alta | Plataforma 100% aberta em `localhost` sem planos (`FREE`/`PRO`), cotas de uso ou hospedagem escalável em nuvem. | `[ ] PENDENTE` |
+| **6** | **Modelo Freemium / Assinaturas, Cache de Demo e Deploy Cloud (CONAD)** | Alta | Plataforma 100% aberta em `localhost` sem planos (`FREE`/`PRO`), cotas de uso ou hospedagem escalável em nuvem. | `[x] CONCLUÍDA` |
 
 ---
 
@@ -378,4 +378,25 @@ Toda nova modificação deve seguir o modelo abaixo:
   - `backend/tests/test_etapa5_rag_e_ai_engine.py` - Suíte exaustiva com 6 novos testes cobrindo RAG, cache SHA-256, `ai_engine:8001`, streams PDF e fluxo E2E de upload.
 - **Como Testar / Executar Localmente:**
   - PowerShell: `$env:PYTHONPATH="backend"; .\.venv\Scripts\pytest backend/tests/ -v` (**66 testes aprovados**).
+  - Front-end: `cd frontend; npm run build`.
+
+---
+
+### [2026-11-21] — Etapa 6: Modelo Freemium / Assinaturas (`FREE` vs `PRO`), Controle de Cotas, Paywall CONAD e Deploy Cloud
+- **Branch:** `dev` (`VictorSamyr/JuriVision-Pro`)
+- **Autor / Dupla:** Victor Samyr
+- **Pacote da EAP / Requisitos:** Etapa 6 do Roadmap (6/6 concluídas), RF-01, RF-02, RF-03, RF-09, CONAD Showcase
+- **Resumo da Mudança:**
+  1. **Persistência e Migração Freemium (`entities.py`, `main.py`, `seed.py`, `config.py`):** adicionadas as colunas `plano` (`"FREE"` | `"PRO"`) e `analises_realizadas` na entidade `Usuario`, migração `ALTER TABLE` automática e idempotente para bancos já inicializados e plano `PRO` garantido para o usuário institucional padrão `usr-01`.
+  2. **Contratos e Controle de Cotas (`contracts.py`, `auth.py`, `processos.py`):** criação dos endpoints `GET /api/v1/auth/plano` e `POST /api/v1/auth/plano/upgrade`; enforcement da cota `FREE_PLAN_PDF_LIMIT = 3` em `POST /api/v1/processos/upload-pdf` (retornando `HTTP 402 Payment Required` na 4ª análise) e bloqueio do lote CSV (`POST /api/v1/processos/upload-csv`) para usuários `FREE`.
+  3. **Experiência Freemium e Modal CONAD no Front-end (`api.js`, `index.html`, `design-tokens.css`, `app.js`):** indicador interativo `#plan-status-badge`, ocultação visual com *blur* e CTA `#btn-unlock-thesis-pro` sobre a Tese Estratégica no plano `FREE`, modal `#upgrade-modal` com comparativo `FREE` vs `PRO (Cortesia CONAD 2026)` e abertura automática em respostas `HTTP 402`.
+  4. **Preparação de Deploy Cloud (`Dockerfile`, `render.yaml`, `.env.example`, `main.py`):** suporte a `SERVE_FRONTEND_STATIC=true` montando `frontend/dist` no FastAPI, resolução dinâmica de `VITE_API_BASE_URL` / mesma origem no front-end, `Dockerfile` multi-stage na raiz (Google Cloud Run / Render) e blueprint `render.yaml`.
+- **Arquivos Criados / Modificados:**
+  - `backend/app/core/config.py`, `backend/app/models/entities.py`, `backend/app/core/seed.py`, `backend/app/main.py` - Configurações Freemium/static, colunas na tabela `usuarios`, migração idempotente e mount de SPA.
+  - `backend/app/schemas/contracts.py`, `backend/app/schemas/__init__.py`, `backend/app/routers/auth.py`, `backend/app/routers/processos.py` - Rotas de assinatura e enforcement de cotas `HTTP 402`.
+  - `frontend/src/services/api.js`, `frontend/index.html`, `frontend/src/components/design-tokens.css`, `frontend/src/app.js` - Paywall, blur de tese, badge de cota e modal de upgrade.
+  - `Dockerfile`, `render.yaml`, `.env.example` - Artefatos de deploy em nuvem e novas variáveis de ambiente.
+  - `backend/tests/test_etapa6_freemium_e_cloud.py` - Suíte exaustiva com 6 novos testes cobrindo cotas `FREE`, bloqueios `HTTP 402`, upgrade `PRO`, integração front-end e deploy cloud.
+- **Como Testar / Executar Localmente:**
+  - PowerShell: `$env:PYTHONPATH="backend"; .\.venv\Scripts\pytest backend/tests/ -v` (**72 testes aprovados**).
   - Front-end: `cd frontend; npm run build`.

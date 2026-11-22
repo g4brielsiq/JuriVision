@@ -11,6 +11,15 @@ export function getApiBaseUrl() {
     if (typeof window !== "undefined" && window.__JURIVISION_API_URL__) {
         return window.__JURIVISION_API_URL__;
     }
+    if (import.meta?.env?.VITE_API_BASE_URL) {
+        return import.meta.env.VITE_API_BASE_URL;
+    }
+    if (typeof window !== "undefined" && window.location?.origin && window.location.protocol.startsWith("http")) {
+        const port = window.location.port;
+        if (port !== "5173" && port !== "4173") {
+            return window.location.origin;
+        }
+    }
     return DEFAULT_API_BASE;
 }
 
@@ -156,7 +165,9 @@ export async function uploadProcessoPdf(file) {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-        throw new Error(data.detail || `Erro no processamento do PDF (HTTP ${res.status}).`);
+        const err = new Error(data.detail || `Erro no processamento do PDF (HTTP ${res.status}).`);
+        err.status = res.status;
+        throw err;
     }
     return data;
 }
@@ -171,7 +182,34 @@ export async function uploadProcessosCsv(file) {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-        throw new Error(data.detail || `Erro na importação da planilha CSV (HTTP ${res.status}).`);
+        const err = new Error(data.detail || `Erro na importação da planilha CSV (HTTP ${res.status}).`);
+        err.status = res.status;
+        throw err;
+    }
+    return data;
+}
+
+export async function fetchStatusPlano() {
+    const res = await fetch(`${getApiBaseUrl()}/api/v1/auth/plano`, {
+        headers: { ...getAuthHeader() },
+    });
+    if (!res.ok) {
+        throw new Error(`Erro ao consultar plano (HTTP ${res.status}).`);
+    }
+    return res.json();
+}
+
+export async function atualizarPlanoAssinatura(plano = "PRO", codigoConvite = "CONAD2026") {
+    const res = await fetch(`${getApiBaseUrl()}/api/v1/auth/plano/upgrade`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeader() },
+        body: JSON.stringify({ plano, codigo_convite: codigoConvite }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        const err = new Error(data.detail || `Não foi possível atualizar o plano (HTTP ${res.status}).`);
+        err.status = res.status;
+        throw err;
     }
     return data;
 }

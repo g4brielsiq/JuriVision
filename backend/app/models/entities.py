@@ -33,6 +33,8 @@ class Usuario(Base):
     email: Mapped[str] = mapped_column(String(150), unique=True, index=True, nullable=False)
     senha_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     numero_oab: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    plano: Mapped[str] = mapped_column(String(20), nullable=False, default="FREE")
+    analises_realizadas: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     processos: Mapped[List["Processo"]] = relationship(

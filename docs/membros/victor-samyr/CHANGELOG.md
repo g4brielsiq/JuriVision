@@ -78,3 +78,12 @@
   - Documentação da expansão planejada multi-provedor (Ollama / OpenAI-API via `AIGatewayPort`) na `ADR-002` de `ARCHITECTURE.md`.
   - Criação da suíte `backend/tests/test_etapa5_rag_e_ai_engine.py` com 6 testes exaustivos.
 - **Status:** Build do frontend (`npm run build`) e **66 de 66 testes automatizados** aprovados no pytest.
+
+### [2026-11-21] — Etapa 6 (JuriVision-Pro): Modelo Freemium (`FREE`/`PRO`), Controle de Cotas, Paywall CONAD e Deploy Cloud
+- **Branch de Atuação:** `dev` (`pro` — `VictorSamyr/JuriVision-Pro`)
+- **Atividades Realizadas:**
+  - Adição das colunas `plano` e `analises_realizadas` em `Usuario` (`backend/app/models/entities.py`), migração incremental idempotente em `init_db_and_seed()` (`backend/app/main.py`) e garantia do plano `PRO` para `usr-01` em `backend/app/core/seed.py`.
+  - Criação dos contratos `PlanoAssinaturaStatusResponse` e `PlanoUpgradeRequest` (`contracts.py`), rotas `GET /api/v1/auth/plano` e `POST /api/v1/auth/plano/upgrade` (`auth.py`) e enforcement de cotas (`FREE_PLAN_PDF_LIMIT = 3` com `HTTP 402` no 4º PDF e bloqueio de lote CSV no `FREE`) em `processos.py`.
+  - Implementação completa do fluxo Freemium no front-end (`api.js`, `index.html`, `design-tokens.css`, `app.js`) com badge de plano/cota, blur + CTA de desbloqueio sobre a tese estratégica no `FREE`, modal comparativo `#upgrade-modal` (Cortesia CONAD 2026) e resolução dinâmica de API base em produção.
+  - Criação do `Dockerfile` multi-stage unificado e `render.yaml` na raiz, além da suíte `backend/tests/test_etapa6_freemium_e_cloud.py` com 6 testes exaustivos.
+- **Status:** Build do frontend (`npm run build`) e **72 de 72 testes automatizados** aprovados no pytest (6/6 etapas concluídas).

@@ -16,6 +16,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.ai_gateway import AnonimizadorLGPD, ExtratorDocumental, ai_gateway
+from app.core.config import settings
 from app.core.datajud_client import DataJudClient
 from app.core.database import get_db
 from app.core.nlp_engine import (
@@ -103,9 +104,22 @@ async def upload_processo_pdf(
 ) -> ProcessoUploadResponse:
     """
     Recebe uma petição inicial em PDF (RF-02), valida sua integridade binária (RN-04),
-    aciona o pipeline isolado de IA com barreira LGPD obrigatória (RF-04, RF-05, RF-06)
-    e persiste o processo higienizado no banco de dados vinculado ao usuário autenticado (ADR-003).
+    aplica controle de cotas Freemium (FREE vs PRO), aciona o pipeline isolado de IA com
+    barreira LGPD obrigatória (RF-04, RF-05, RF-06) e persiste o processo higienizado (ADR-003).
     """
+    if current_user is not None:
+        plano_atual = (current_user.plano or "FREE").upper()
+        usadas = int(current_user.analises_realizadas or 0)
+        if plano_atual == "FREE" and usadas >= settings.FREE_PLAN_PDF_LIMIT:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail=(
+                    f"LimitePlanoFree: Você atingiu o limite gratuito de {settings.FREE_PLAN_PDF_LIMIT} "
+                    "análises de petições em PDF no plano FREE. Faça upgrade para o plano JuriVision PRO "
+                    "para análises ilimitadas."
+                ),
+            )
+
     filename = file.filename or "peticao_inicial.pdf"
     if not filename.lower().endswith(".pdf"):
         raise HTTPException(
@@ -207,6 +221,8 @@ async def upload_processo_pdf(
         texto_higienizado_verificado=lgpd.texto_higienizado_verificado,
     )
     db.add(novo_log)
+    if current_user is not None:
+        current_user.analises_realizadas = int(current_user.analises_realizadas or 0) + 1
     db.commit()
 
     return ProcessoUploadResponse(
@@ -229,7 +245,17 @@ async def upload_processos_csv(
     """
     Importa em lote registros estruturados via planilha CSV (RF-03),
     aplicando higienização determinística local LGPD em 100% das linhas antes da persistência (RF-04 / RN-01).
+    Recurso exclusivo do plano PRO quando autenticado.
     """
+    if current_user is not None and (current_user.plano or "FREE").upper() == "FREE":
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=(
+                "RecursoExclusivoPro: A importação em lote via planilha CSV é exclusiva "
+                "para assinantes do plano JuriVision PRO."
+            ),
+        )
+
     owner_id = get_effective_user_id(current_user)
     filename = file.filename or "lote_processos.csv"
     if not filename.lower().endswith(".csv"):

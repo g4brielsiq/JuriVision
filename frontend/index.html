@@ -142,6 +142,14 @@
                 </nav>
 
                 <div class="header-meta-group">
+                    <button
+                        type="button"
+                        id="btn-open-upgrade-modal"
+                        class="plan-badge-btn plan-badge-pro"
+                        aria-label="Gerenciar plano de assinatura e cotas"
+                    >
+                        <span id="plan-status-badge">Plano PRO · Ilimitado</span>
+                    </button>
                     <span id="api-status-badge" class="status-inline" role="status">
                         <span class="dot dot-neutral" aria-hidden="true"></span>
                         <span>Verificando base...</span>
@@ -886,13 +894,28 @@
                                     <h4 class="document-section-title">Tese e Fundamentação Recorrente</h4>
                                     <span class="badge-editorial">Orientação</span>
                                 </div>
-                                <div class="thesis-card">
-                                    <p id="res-tese-recomendada" class="legal-prose" style="font-weight: 500; color: var(--color-navy);">
-                                        Aplicação prioritária do Código de Defesa do Consumidor e súmula sobre danos presumidos por falta de assistência material.
-                                    </p>
-                                    <p id="res-tendencia-juiz" style="font-size: var(--text-xs); color: var(--text-secondary); margin-top: var(--space-1);">
-                                        Histórico de 75% de decisões favoráveis ao consumidor neste padrão fático.
-                                    </p>
+                                <div id="res-thesis-card" class="thesis-card">
+                                    <div class="thesis-blur-target">
+                                        <p id="res-tese-recomendada" class="legal-prose" style="font-weight: 500; color: var(--color-navy);">
+                                            Aplicação prioritária do Código de Defesa do Consumidor e súmula sobre danos presumidos por falta de assistência material.
+                                        </p>
+                                        <p id="res-tendencia-juiz" style="font-size: var(--text-xs); color: var(--text-secondary); margin-top: var(--space-1);">
+                                            Histórico de 75% de decisões favoráveis ao consumidor neste padrão fático.
+                                        </p>
+                                    </div>
+                                    <div id="thesis-pro-lock-banner" class="thesis-pro-lock-banner hidden">
+                                        <div>
+                                            <strong style="font-size: var(--text-xs); color: var(--color-navy); display: block;">
+                                                Tese Estratégica Completa e Precedentes Correlatos — Exclusivo JuriVision PRO
+                                            </strong>
+                                            <span style="font-size: var(--text-xs); color: var(--text-secondary);">
+                                                Desbloqueie o parecer jurídico completo e análises ilimitadas com o plano PRO.
+                                            </span>
+                                        </div>
+                                        <button type="button" id="btn-unlock-thesis-pro" class="btn btn-primary btn-sm">
+                                            Desbloquear Tese Estratégica Completa — Plano PRO
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1145,6 +1168,58 @@
             <button type="submit" class="btn btn-primary">Cadastrar</button>
             <button type="button" id="btn-open-login-from-register" class="btn btn-secondary">Já tenho conta</button>
         </form>
+    </dialog>
+
+    <dialog id="upgrade-modal" class="modal-dialog account-dialog upgrade-dialog" aria-labelledby="upgrade-modal-title">
+        <div class="modal-header">
+            <h2 id="upgrade-modal-title" class="serif-heading modal-title">
+                Planos JuriVision — Edição CONAD 2026
+            </h2>
+            <button type="button" id="btn-close-upgrade" class="btn btn-ghost btn-sm" aria-label="Fechar janela de assinatura e planos">
+                Fechar
+            </button>
+        </div>
+        <div class="modal-body">
+            <p id="upgrade-reason-banner" class="account-feedback hidden" data-error="true" role="alert"></p>
+            <p id="upgrade-quota-summary" class="account-hint">
+                Plano atual: PRO · Análises ilimitadas e exportação completa habilitadas.
+            </p>
+
+            <div class="plans-comparison-grid">
+                <section class="plan-tier-card" aria-label="Plano Gratuito FREE">
+                    <h3 class="plan-tier-title">Plano Gratuito (FREE)</h3>
+                    <p class="account-hint">Ideal para experimentar a plataforma com proteção LGPD.</p>
+                    <ul class="plan-tier-list">
+                        <li>Até 3 análises de petições PDF gratuitas</li>
+                        <li>Pesquisa jurisprudencial e DataJud (CNJ)</li>
+                        <li>Indicadores jurimétricos básicos do acervo</li>
+                        <li>Prévia limitada da tese estratégica</li>
+                    </ul>
+                </section>
+
+                <section class="plan-tier-card plan-tier-card-pro" aria-label="Plano Escritório PRO">
+                    <h3 class="plan-tier-title">Plano Escritório (PRO) · Cortesia CONAD 2026</h3>
+                    <p class="account-hint">Uso completo sem limites para bancas e escritórios.</p>
+                    <ul class="plan-tier-list">
+                        <li>Análises de petições PDF e RAG ilimitadas</li>
+                        <li>Importação em lote de acervos via planilha CSV</li>
+                        <li>Tese Estratégica e precedentes correlatos completos</li>
+                        <li>Exportação ilimitada de relatórios PDF multi-página</li>
+                    </ul>
+                </section>
+            </div>
+
+            <p id="upgrade-feedback" role="status" class="account-feedback"></p>
+
+            <div class="julgado-acoes">
+                <button type="button" id="btn-simulate-free" class="btn btn-secondary btn-sm">
+                    Simular Plano FREE (Demo Paywall)
+                </button>
+                <button type="button" id="btn-activate-pro" class="btn btn-primary btn-sm">
+                    Ativar JuriVision PRO (Cortesia CONAD)
+                </button>
+            </div>
+        </div>
     </dialog>
 
     <!-- ================================================================

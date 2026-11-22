@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: jurivision-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: SERVE_FRONTEND_STATIC
+        value: "true"
+      - key: AI_PROVIDER
+        value: auto
+      - key: FREE_PLAN_PDF_LIMIT
+        value: "3"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: DATAJUD_API_KEY
+        value: cDZHYUpZwHbBoikSmFtUtqQCFlPqzqMV
+
+  - type: pserv
+    name: jurivision-ai-engine
+    runtime: docker
+    dockerContext: ./ai_engine
+    dockerfilePath: ./ai_engine/Dockerfile
+    plan: free
+    envVars:
+      - key: AI_ENGINE_PORT
+        value: "8001"
+      - key: AI_PROVIDER
+        value: auto
+      - key: GEMINI_API_KEY
+        sync: false

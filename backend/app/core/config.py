@@ -48,6 +48,10 @@ class Settings:
     DATAJUD_TIMEOUT_SECONDS: float = float(os.getenv("DATAJUD_TIMEOUT_SECONDS", "3.0"))
     DATAJUD_DEFAULT_ALIAS: str = os.getenv("DATAJUD_DEFAULT_ALIAS", "api_publica_tjal")
 
+    # Modelo de Negócio Freemium e Deploy Cloud (CONAD 2026)
+    FREE_PLAN_PDF_LIMIT: int = int(os.getenv("FREE_PLAN_PDF_LIMIT", "3"))
+    SERVE_FRONTEND_STATIC: bool = os.getenv("SERVE_FRONTEND_STATIC", "false").lower() in ("1", "true", "yes")
+
     @property
     def postgres_url(self) -> str:
         if self.DATABASE_URL_OVERRIDE:

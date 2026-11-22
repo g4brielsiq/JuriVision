@@ -1972,6 +1972,93 @@ a {
     padding: var(--space-1) 0;
 }
 
+/* Modelo Freemium / Assinaturas (Etapa 6 - CONAD) */
+.plan-badge-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 11px;
+    border-radius: var(--radius-control);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    border: 1px solid var(--border-default);
+    cursor: pointer;
+    transition: background-color var(--transition-base), border-color var(--transition-base);
+}
+
+.plan-badge-pro {
+    background: var(--color-gold-subtle);
+    border-color: var(--color-gold-border);
+    color: var(--color-gold-text);
+}
+
+.plan-badge-free {
+    background: var(--bg-auxiliary);
+    border-color: var(--border-strong);
+    color: var(--color-navy);
+}
+
+.thesis-card.is-free-locked .thesis-blur-target {
+    filter: blur(4px);
+    user-select: none;
+    pointer-events: none;
+}
+
+.thesis-pro-lock-banner {
+    margin-top: var(--space-3);
+    padding: var(--space-4);
+    border: 1px dashed var(--color-gold-border);
+    border-radius: var(--radius-control);
+    background: var(--color-gold-subtle);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+}
+
+.upgrade-dialog {
+    max-width: 720px;
+}
+
+.plans-comparison-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: var(--space-4);
+}
+
+.plan-tier-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-card);
+    padding: var(--space-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.plan-tier-card-pro {
+    border-color: var(--color-gold-border);
+    background: var(--color-gold-subtle);
+}
+
+.plan-tier-title {
+    font-family: var(--font-serif);
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--color-navy);
+}
+
+.plan-tier-list {
+    padding-left: var(--space-4);
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    line-height: 1.45;
+}
+
 /* ==========================================================================
    12. RESPONSIVIDADE (Seção 19 — Desktop, Tablet e Celular)
    ========================================================================== */

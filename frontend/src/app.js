@@ -9,6 +9,7 @@
 
 import { configurarFormularioJulgado } from "./components/julgado-form.js";
 import {
+    atualizarPlanoAssinatura,
     buildSampleBatchCsvFile,
     buildSamplePetitionPdfFile,
     checkApiHealth,
@@ -18,6 +19,7 @@ import {
     fetchFiltrosProcessos,
     fetchProcessoDetalhes,
     fetchProcessos,
+    fetchStatusPlano,
     fetchUsuarioAtual,
     getRelatorioPdfUrl,
     loginAdvogado,
@@ -129,6 +131,15 @@ const state = {
     limitePorPagina: 8,
     totalProcessosLista: 0,
     lastLoadedItems: [],
+    planStatus: {
+        plano: "PRO",
+        analises_realizadas: 0,
+        limite_analises_free: 3,
+        analises_restantes: 999999,
+        recursos_pro_liberados: true,
+        lote_csv_liberado: true,
+        tese_aprofundada_liberada: true,
+    },
     chartJuizesInstance: null,
     chartTemasInstance: null,
     toastTimer: null,
@@ -1091,10 +1102,14 @@ export async function processarArquivoPdf(file) {
         showToast(
             `Estudo comparativo concluído para o processo ${resultado.metadados_extraidos.numero_processo}.`
         );
+        carregarStatusPlano();
         carregarFiltrosDinamicos();
         carregarDashboard();
     } catch (err) {
         exibirErroUpload(err.message || "Não foi possível ler o arquivo PDF enviado.");
+        if (err && (err.status === 402 || String(err.message || "").includes("LimitePlanoFree"))) {
+            abrirModalUpgrade(err.message);
+        }
     }
 }
 
@@ -1123,10 +1138,14 @@ export async function processarArquivoCsv(file) {
         document.getElementById("csv-res-lgpd").textContent = String(resCsv.total_entidades_anonimizadas_lgpd);
 
         showToast(`${resCsv.total_importados_com_sucesso} decisões adicionadas ao acervo.`);
+        carregarStatusPlano();
         carregarFiltrosDinamicos();
         carregarDashboard();
     } catch (err) {
         exibirErroUpload(err.message || "Não foi possível importar a planilha CSV.");
+        if (err && (err.status === 402 || String(err.message || "").includes("RecursoExclusivoPro"))) {
+            abrirModalUpgrade(err.message);
+        }
     }
 }
 
@@ -1168,6 +1187,7 @@ export function renderizarResultadoPredicaoPdf(payload) {
     document.getElementById("res-resumo-nlp").textContent = payload.resumo_nlp;
     document.getElementById("res-tese-recomendada").textContent = pred.tese_recomendada;
     document.getElementById("res-tendencia-juiz").textContent = pred.tendencia_juiz;
+    atualizarUIPlano();
 }
 
 /* ==========================================================================
@@ -1367,6 +1387,7 @@ function configurarModais() {
             mostrarFeedback(loginFeedback, "");
             showToast(`Bem-vindo(a), ${res.usuario.nome}.`);
             if (accountDialog.open && !loginForm.hidden) accountDialog.close();
+            carregarStatusPlano();
             carregarFiltrosDinamicos();
             carregarBaseConhecimento(1);
             carregarDashboard();
@@ -1388,6 +1409,7 @@ function configurarModais() {
         atualizarPerfilSidebar(state.currentUser);
         mostrarFeedback(loginFeedback, "");
         if (accountDialog.open) accountDialog.close();
+        carregarStatusPlano();
         carregarFiltrosDinamicos();
         carregarBaseConhecimento(1);
         carregarDashboard();
@@ -1404,6 +1426,133 @@ function configurarModais() {
     });
 }
 
+function atualizarUIPlano() {
+    const status = state.planStatus || {};
+    const isPro = Boolean(status.recursos_pro_liberados || status.plano === "PRO");
+    const utilizadas = Number(status.analises_realizadas ?? 0);
+    const limite = Number(status.limite_analises_free ?? 3);
+
+    const badgeBtn = document.getElementById("btn-open-upgrade-modal");
+    const badgeLabel = document.getElementById("plan-status-badge");
+    if (badgeBtn) {
+        badgeBtn.classList.toggle("plan-badge-pro", isPro);
+        badgeBtn.classList.toggle("plan-badge-free", !isPro);
+    }
+    if (badgeLabel) {
+        badgeLabel.textContent = isPro
+            ? "Plano PRO · Ilimitado"
+            : `Plano FREE · ${utilizadas}/${limite} análises`;
+    }
+
+    const summaryEl = document.getElementById("upgrade-quota-summary");
+    if (summaryEl) {
+        summaryEl.textContent = isPro
+            ? "Plano atual: PRO · Análises de PDF/CSV ilimitadas, Tese Estratégica RAG completa e relatórios PDF habilitados."
+            : `Plano atual: FREE · ${utilizadas} de ${limite} análises gratuitas de PDF utilizadas.`;
+    }
+
+    const thesisCard = document.getElementById("res-thesis-card");
+    const lockBanner = document.getElementById("thesis-pro-lock-banner");
+    const teseLiberada = isPro || Boolean(status.tese_aprofundada_liberada);
+    if (thesisCard) {
+        thesisCard.classList.toggle("is-free-locked", !teseLiberada);
+    }
+    if (lockBanner) {
+        lockBanner.classList.toggle("hidden", teseLiberada);
+    }
+}
+
+async function carregarStatusPlano() {
+    try {
+        const status = await fetchStatusPlano();
+        state.planStatus = status;
+    } catch {
+        // Mantém estado local em modo offline/demo
+    }
+    atualizarUIPlano();
+}
+
+export function abrirModalUpgrade(motivo = "") {
+    const dialog = document.getElementById("upgrade-modal");
+    const reasonEl = document.getElementById("upgrade-reason-banner");
+    const feedbackEl = document.getElementById("upgrade-feedback");
+    if (feedbackEl) feedbackEl.textContent = "";
+    if (reasonEl) {
+        if (motivo) {
+            reasonEl.textContent = motivo;
+            reasonEl.classList.remove("hidden");
+        } else {
+            reasonEl.textContent = "";
+            reasonEl.classList.add("hidden");
+        }
+    }
+    atualizarUIPlano();
+    if (dialog && !dialog.open) {
+        dialog.showModal();
+    }
+}
+
+function configurarModalUpgrade() {
+    const dialog = document.getElementById("upgrade-modal");
+    const feedbackEl = document.getElementById("upgrade-feedback");
+    const btnOpen = document.getElementById("btn-open-upgrade-modal");
+    const btnUnlockThesis = document.getElementById("btn-unlock-thesis-pro");
+    const btnClose = document.getElementById("btn-close-upgrade");
+    const btnActivatePro = document.getElementById("btn-activate-pro");
+    const btnSimulateFree = document.getElementById("btn-simulate-free");
+
+    btnOpen?.addEventListener("click", () => abrirModalUpgrade());
+    btnUnlockThesis?.addEventListener("click", () =>
+        abrirModalUpgrade("Desbloqueie a Tese Estratégica Completa e análises ilimitadas com o plano JuriVision PRO.")
+    );
+    btnClose?.addEventListener("click", () => dialog?.close());
+
+    async function aplicarPlano(targetPlano) {
+        const token = typeof window !== "undefined"
+            ? localStorage.getItem("jurivision_token") || sessionStorage.getItem("jurivision_token")
+            : null;
+        if (!token) {
+            state.planStatus = {
+                ...state.planStatus,
+                plano: targetPlano,
+                recursos_pro_liberados: targetPlano === "PRO",
+                lote_csv_liberado: targetPlano === "PRO",
+                tese_aprofundada_liberada: targetPlano === "PRO",
+                analises_restantes: targetPlano === "PRO" ? 999999 : 3,
+            };
+            atualizarUIPlano();
+            if (feedbackEl) {
+                feedbackEl.dataset.error = "false";
+                feedbackEl.textContent = targetPlano === "PRO"
+                    ? "Modo demonstração PRO ativado (cortesia CONAD 2026)."
+                    : "Modo demonstração FREE ativado para visualizar o paywall. Faça login para persistir cotas.";
+            }
+            return;
+        }
+
+        try {
+            const atualizado = await atualizarPlanoAssinatura(targetPlano, "CONAD2026");
+            state.planStatus = atualizado;
+            atualizarUIPlano();
+            if (feedbackEl) {
+                feedbackEl.dataset.error = "false";
+                feedbackEl.textContent = targetPlano === "PRO"
+                    ? "Plano JuriVision PRO ativado com sucesso (Cortesia CONAD 2026)!"
+                    : "Plano alternado para FREE para demonstração de cotas e paywall.";
+            }
+            showToast(`Plano atualizado para ${targetPlano}.`);
+        } catch (err) {
+            if (feedbackEl) {
+                feedbackEl.dataset.error = "true";
+                feedbackEl.textContent = err.message || "Não foi possível alterar o plano.";
+            }
+        }
+    }
+
+    btnActivatePro?.addEventListener("click", () => aplicarPlano("PRO"));
+    btnSimulateFree?.addEventListener("click", () => aplicarPlano("FREE"));
+}
+
 /* ==========================================================================
    9. Inicialização de Eventos da Aplicação
    ========================================================================== */
@@ -1411,6 +1560,7 @@ async function initApp() {
     updateSavedCounterUI();
     setupTabKeyboardNavigation();
     configurarModais();
+    configurarModalUpgrade();
 
     // Abas principais
     document.getElementById("btn-historico")?.addEventListener("click", () => switchTab("historico"));
@@ -1654,6 +1804,7 @@ async function initApp() {
     });
 
     await restaurarSessaoAutenticada();
+    carregarStatusPlano();
     verificarConectividadeApi();
     carregarFiltrosDinamicos();
     carregarDashboard();
