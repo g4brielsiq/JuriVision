@@ -253,3 +253,16 @@ Toda nova modificação deve seguir o modelo abaixo:
   - PowerShell: `$env:PYTHONPATH="backend"; pytest backend/tests/ -v` (**33 testes aprovados**).
   - Front-end: `cd frontend; npm run build`.
 - **Detalhes:** [Contrato do cadastro de advogados](./membros/ygor-vasconcelos/REGISTER_ADVICE.md) e [Seção 3.6 do README](../README.md#36-cadastro-e-edição-de-julgados).
+
+---
+
+### [2026-11-21] — Reformulação do Shell Global e Pesquisa de Precedentes (Guia de Estilo v2)
+- **Branch:** `feat/frontend-design-system-v2`
+- **Autor / Dupla:** Victor Samyr
+- **Pacote da EAP / Requisitos:** EAP 1.2.2 (Código-Fonte Interface Web), EAP 1.5.1 (Garantia de Qualidade / Acessibilidade), RNF-04, RNF-09, RNF-10
+- **Resumo da Mudança:**
+  1. **Guia de Estilo v2 (`docs/DESIGN_SYSTEM_V2.md`):** formalização da estética *Repertório Jurídico Contemporâneo*, com paleta neutra quente (`#F6F4EF`, `#EFECE5`, `#DFDBD2`, `#C9C3B8`) e tipografia `Source Serif 4` + `IBM Plex Sans` + `JetBrains Mono`.
+  2. **Shell global e Pesquisa de Precedentes (`frontend/index.html`, `frontend/src/components/design-tokens.css`, `frontend/src/app.js`):** sidebar clara e silenciosa (`236px`), remoção de estilos *inline*, busca principal inline, painel DataJud com tokens semânticos, fichas jurídicas contínuas com filetes de `1px` e integração com os modais de cadastro/edição de julgados e cadastro de advogados.
+- **Como Testar / Executar Localmente:**
+  - PowerShell: `$env:PYTHONPATH="backend"; pytest backend/tests/ -v` (**33 testes aprovados**).
+  - Front-end: `cd frontend; npm run build`.

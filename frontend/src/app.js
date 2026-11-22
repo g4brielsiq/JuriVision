@@ -582,6 +582,7 @@ async function carregarPrecedentesRecentesOverview() {
    4. Pesquisa Jurisprudencial, Cartões Documentais e Filtros (Seções 9, 10, 11)
    ========================================================================== */
 function renderizarChipsFiltrosAtivos() {
+    const bar = document.getElementById("active-filters-bar");
     const container = document.getElementById("dynamic-filter-chips");
     if (!container) return;
 
@@ -613,6 +614,10 @@ function renderizarChipsFiltrosAtivos() {
     }
 
     container.innerHTML = chips.join("");
+    if (bar) {
+        bar.classList.toggle("hidden", chips.length === 0);
+    }
+
     container.querySelectorAll("[data-clear-field]").forEach((btn) => {
         btn.addEventListener("click", () => {
             const fieldId = btn.getAttribute("data-clear-field");
@@ -692,11 +697,11 @@ function renderizarListaDecisoes(itens) {
 
     if (!itens || itens.length === 0) {
         const emptyHtml = `
-            <div class="decision-card" style="text-align: center; align-items: center; padding: var(--space-8);">
-                <strong class="serif-heading" style="font-size: 20px; color: var(--color-navy);">
+            <div class="decisions-empty-state">
+                <strong class="decisions-empty-title">
                     Nenhuma decisão foi encontrada com esses critérios
                 </strong>
-                <p style="font-size: var(--text-sm); color: var(--text-secondary); max-width: 54ch;">
+                <p class="decisions-empty-text">
                     Remova um dos filtros ativos ou experimente pesquisar por outro assunto, órgão julgador ou expressão jurídica.
                 </p>
             </div>`;
@@ -704,7 +709,7 @@ function renderizarListaDecisoes(itens) {
         if (tbody) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="6" style="padding: 32px; text-align: center; color: var(--text-secondary);">
+                    <td colspan="6" class="table-empty-cell">
                         Nenhuma decisão foi encontrada com esses critérios. Remova um filtro ou tente uma expressão diferente.
                     </td>
                 </tr>`;
@@ -728,22 +733,17 @@ function renderizarListaDecisoes(itens) {
                 return `
                 <article class="decision-card" data-card-proc-id="${escapeHtml(item.id_processo)}">
                     <div class="decision-card-header">
-                        <div>
-                            <div class="decision-court-line">
-                                <span>TJAL · ${escapeHtml(comarca)}</span>
-                                <span aria-hidden="true">·</span>
-                                <span class="font-mono">${escapeHtml(item.numero_processo)}</span>
-                            </div>
-                            <div class="decision-process-meta">
-                                <span>${escapeHtml(item.magistrado)}</span>
-                                <span aria-hidden="true">·</span>
-                                <span>${dataJulg}</span>
-                                <span aria-hidden="true">·</span>
-                                <span title="Partes com proteção LGPD">${escapeHtml(item.partes_anonimizadas)}</span>
-                            </div>
+                        <div class="decision-meta-line">
+                            <span>TJAL · ${escapeHtml(comarca)}</span>
+                            <span class="decision-meta-sep" aria-hidden="true">·</span>
+                            <span class="decision-cnj">${escapeHtml(item.numero_processo)}</span>
+                            <span class="decision-meta-sep" aria-hidden="true">·</span>
+                            <span>${escapeHtml(item.magistrado)}</span>
+                            <span class="decision-meta-sep" aria-hidden="true">·</span>
+                            <span class="decision-date">${dataJulg}</span>
                         </div>
 
-                        <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                        <div class="decision-badges">
                             ${
                                 isSaved
                                     ? `<span class="badge-editorial badge-saved">Salva</span>`
@@ -755,31 +755,30 @@ function renderizarListaDecisoes(itens) {
                         </div>
                     </div>
 
-                    <div class="decision-subject-row">
-                        <h3 class="decision-subject-title">${escapeHtml(item.tema)}</h3>
-                    </div>
+                    <h3 class="decision-subject-title">${escapeHtml(item.tema)}</h3>
 
-                    <div class="decision-excerpt-box">
-                        <p class="legal-prose" style="font-size: var(--text-base);">
-                            ${escapeHtml(sintese)}
-                        </p>
-                    </div>
+                    <p class="decision-excerpt">
+                        ${escapeHtml(sintese)}
+                    </p>
+                    <p class="decision-parties" title="Partes com proteção LGPD">
+                        Partes: ${escapeHtml(item.partes_anonimizadas)}
+                    </p>
 
                     <div class="decision-card-footer">
                         <div class="decision-actions-group">
-                            <button type="button" class="btn btn-primary btn-sm btn-inspecionar-proc" data-inspect-id="${escapeHtml(item.id_processo)}">
-                                Abrir decisão
+                            <button type="button" class="btn btn-read-decision btn-inspecionar-proc" data-inspect-id="${escapeHtml(item.id_processo)}">
+                                Ler decisão
                             </button>
-                            <button type="button" class="btn btn-secondary btn-sm btn-salvar-proc" data-save-id="${escapeHtml(item.id_processo)}">
+                            <button type="button" class="btn-text-action btn-salvar-proc${isSaved ? " is-saved" : ""}" data-save-id="${escapeHtml(item.id_processo)}">
                                 ${isSaved ? "Salva ✓" : "Salvar"}
                             </button>
-                            <button type="button" class="btn btn-secondary btn-sm btn-copiar-ref" data-ref-id="${escapeHtml(item.id_processo)}">
+                            <button type="button" class="btn-text-action btn-copiar-ref" data-ref-id="${escapeHtml(item.id_processo)}">
                                 Copiar ref.
                             </button>
                         </div>
 
                         <div class="decision-actions-group">
-                            <button type="button" class="btn btn-ghost btn-sm btn-exportar-pdf" data-pdf-id="${escapeHtml(item.id_processo)}">
+                            <button type="button" class="btn-text-action btn-text-muted btn-exportar-pdf" data-pdf-id="${escapeHtml(item.id_processo)}">
                                 PDF
                             </button>
                         </div>
@@ -800,13 +799,13 @@ function renderizarListaDecisoes(itens) {
                 return `
                 <tr data-row-proc-id="${escapeHtml(item.id_processo)}">
                     <td>
-                        <div class="font-mono" style="font-weight: 600; color: var(--color-navy);">${escapeHtml(item.numero_processo)}</div>
-                        <div style="font-size: var(--text-xs); color: var(--text-muted);">${dataJulg}</div>
+                        <div class="table-proc-cnj">${escapeHtml(item.numero_processo)}</div>
+                        <div class="table-proc-date">${dataJulg}</div>
                     </td>
-                    <td style="font-weight: 500;">${escapeHtml(item.tema)}</td>
+                    <td class="table-proc-subject">${escapeHtml(item.tema)}</td>
                     <td>
                         <div>${escapeHtml(item.magistrado)}</div>
-                        <div style="font-size: var(--text-xs); color: var(--text-muted);">${escapeHtml(item.comarca || "TJAL")}</div>
+                        <div class="table-proc-court">${escapeHtml(item.comarca || "TJAL")}</div>
                     </td>
                     <td>
                         <span>${escapeHtml(item.partes_anonimizadas)}</span>
@@ -814,11 +813,11 @@ function renderizarListaDecisoes(itens) {
                     <td>
                         <span class="badge-editorial ${badgeClass}">${escapeHtml(item.resultado)}</span>
                     </td>
-                    <td style="text-align: right; white-space: nowrap;">
-                        <button type="button" data-inspect-id="${escapeHtml(item.id_processo)}" class="btn btn-secondary btn-sm btn-inspecionar-proc">
+                    <td class="table-actions-cell">
+                        <button type="button" data-inspect-id="${escapeHtml(item.id_processo)}" class="btn btn-read-decision btn-inspecionar-proc">
                             Abrir
                         </button>
-                        <button type="button" data-pdf-id="${escapeHtml(item.id_processo)}" class="btn btn-ghost btn-sm btn-exportar-pdf">
+                        <button type="button" data-pdf-id="${escapeHtml(item.id_processo)}" class="btn-text-action btn-text-muted btn-exportar-pdf">
                             PDF
                         </button>
                     </td>
