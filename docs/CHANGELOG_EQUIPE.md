@@ -282,3 +282,19 @@ Toda nova modificação deve seguir o modelo abaixo:
 - **Como Testar / Executar Localmente:**
   - PowerShell: `$env:PYTHONPATH="backend"; pytest backend/tests/ -v` (**37 testes aprovados**).
   - Front-end: `cd frontend; npm run build`.
+
+---
+
+### [2026-11-22] — Coleta Automática em Lote e Sincronização Idempotente via DataJud (Card #27)
+- **Branch:** `feat/datajud-coleta-automatica`
+- **Autor / Dupla:** Lucas Gabriel
+- **Pacote da EAP / Requisitos:** EAP 1.4.2 (Integração com Base de Conhecimento Jurisprudencial), RF-08 (Consulta Jurisprudencial), RNF-05 (Tolerância a Falhas), RNF-06 / RN-01 (Barreira LGPD)
+- **Resumo da Mudança:**
+  1. **Coleta em lote no `DataJudClient` (`backend/app/core/datajud_client.py`):** adicionados `coletar_lote_jurisprudencia()`, `resolve_alias_por_sigla()`, `formatar_numero_cnj()`, `_gerar_lote_fallback_jurisprudencia()` e `extrair_registro_para_acervo()`, permitindo coletar múltiplos processos e jurisprudências por tribunal e assunto na API Pública do DataJud (CNJ) com fallback resiliente.
+  2. **Rotina de sincronização e atualização da base (`POST /api/v1/processos/datajud/sincronizar` em `backend/app/routers/processos.py`):** higieniza partes e ementas coletadas com `AnonimizadorLGPD` (`RN-01`), registra `LogAuditoriaLGPD`, calcula `AnalisePreditiva` sobre a base histórica e atualiza ou insere processos de forma idempotente (`origem_ingestao="DATAJUD"`).
+  3. **Integração Front-end (`frontend/index.html`, `frontend/src/services/api.js`, `frontend/src/app.js`):** adicionada a ação **"Sincronizar lote DataJud"** na barra secundária da Pesquisa de Precedentes (`#panel-historico`), atualizando a listagem e os indicadores do dashboard em tempo real.
+  4. **Testes automatizados (`backend/tests/test_datajud_and_gemini.py`):** adicionados testes de coleta em lote com mock da API externa do CNJ, fallback offline, anonimização LGPD e idempotência de sincronização.
+- **Como Testar / Executar Localmente:**
+  - PowerShell: `$env:PYTHONPATH="backend"; pytest backend/tests/ -v` (**39 testes aprovados**).
+  - Front-end: `cd frontend; npm run build`.
+

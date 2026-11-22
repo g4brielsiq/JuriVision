@@ -19,6 +19,7 @@ import {
     getRelatorioPdfUrl,
     loginAdvogado,
     registerAdvogado,
+    sincronizarLoteDatajud,
     uploadProcessoPdf,
     uploadProcessosCsv,
 } from "./services/api.js";
@@ -1178,6 +1179,31 @@ async function dispararConsultaDataJud() {
     }
 }
 
+async function dispararSincronizacaoDataJud() {
+    const btnSync = document.getElementById("btn-sincronizar-datajud");
+    const temaSelecionado = document.getElementById("filtro-tema")?.value || "";
+
+    if (btnSync) btnSync.disabled = true;
+    showToast("Coletando e sincronizando lote de jurisprudências do DataJud (CNJ)...");
+    announceStatus("Sincronizando lote de jurisprudências do DataJud com a base histórica...");
+
+    try {
+        const res = await sincronizarLoteDatajud({
+            tribunal: "TJAL",
+            tema: temaSelecionado,
+            limite: 3,
+        });
+        await carregarBaseConhecimento(1);
+        carregarDashboard();
+        showToast(res.mensagem || "Base histórica atualizada com lote do DataJud (CNJ).");
+        announceStatus(res.mensagem || "Sincronização do DataJud concluída.");
+    } catch (err) {
+        showToast(`Sincronização DataJud: ${err.message}`);
+    } finally {
+        if (btnSync) btnSync.disabled = false;
+    }
+}
+
 function configurarModais() {
     const accountDialog = document.getElementById("login-modal");
     const title = document.getElementById("login-modal-title");
@@ -1423,8 +1449,9 @@ function initApp() {
 
     // Filtros e paginação na Pesquisa Jurisprudencial (RF-08)
     
-    // Consulta Oficial DataJud (CNJ)
+    // Consulta Oficial e Sincronização em Lote DataJud (CNJ)
     document.getElementById("btn-consultar-datajud")?.addEventListener("click", dispararConsultaDataJud);
+    document.getElementById("btn-sincronizar-datajud")?.addEventListener("click", dispararSincronizacaoDataJud);
     document.getElementById("btn-fechar-datajud")?.addEventListener("click", () => {
         document.getElementById("datajud-result-box")?.classList.add("hidden");
     });

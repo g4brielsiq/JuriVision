@@ -287,3 +287,37 @@ class DataJudProcessoResponse(BaseModel):
     fonte: str = "datajud_api"  # "datajud_api" | "local_cache_fallback"
     sucesso: bool = True
     mensagem: str = "Metadados recuperados com sucesso da API Pública do DataJud."
+
+
+class DataJudSincronizacaoRequest(BaseModel):
+    tribunal: str = Field(
+        default="TJAL",
+        min_length=2,
+        max_length=20,
+        description="Sigla do tribunal para coleta automática (ex.: TJAL, TJSP, TJRJ, TJPE, TRF5)",
+        examples=["TJAL"],
+    )
+    tema: Optional[str] = Field(
+        default=None,
+        max_length=120,
+        description="Filtro opcional de assunto/matéria jurisprudencial para coleta direcionada",
+        examples=["Dano Moral"],
+    )
+    limite: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        description="Quantidade máxima de processos e jurisprudências a coletar no lote",
+    )
+
+
+class DataJudSincronizacaoResponse(BaseModel):
+    tribunal: str
+    fonte: str = "datajud_api"  # "datajud_api" | "local_cache_fallback"
+    total_coletados: int = Field(..., ge=0)
+    novos_inseridos: int = Field(..., ge=0)
+    atualizados: int = Field(..., ge=0)
+    total_entidades_anonimizadas_lgpd: int = Field(default=0, ge=0)
+    mensagem: str
+    itens: List[ProcessoListItemSchema] = []
+

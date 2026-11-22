@@ -258,3 +258,21 @@ export async function consultarProcessoDatajud(numeroProcesso) {
     }
     return data;
 }
+
+export async function sincronizarLoteDatajud({ tribunal = "TJAL", tema = "", limite = 3 } = {}) {
+    const res = await fetch(`${getApiBaseUrl()}/api/v1/processos/datajud/sincronizar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeader() },
+        body: JSON.stringify({
+            tribunal,
+            tema: tema ? tema.trim() : null,
+            limite,
+        }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw new Error(data.detail || `Erro ao sincronizar lote DataJud (HTTP ${res.status}).`);
+    }
+    return data;
+}
+
