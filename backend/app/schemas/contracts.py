@@ -115,12 +115,21 @@ class PartesAnonimizadasSchema(BaseModel):
     reu: str
 
 
+class SecoesPeticaoSchema(BaseModel):
+    dos_fatos: str = Field(default="", description="Narrativa fática extraída da petição inicial")
+    do_direito: str = Field(default="", description="Fundamentação jurídica, teses e dispositivos legais")
+    dos_pedidos: str = Field(default="", description="Pedidos e requerimentos finais formulados")
+    preliminares: Optional[str] = Field(default=None, description="Questões preliminares, se identificadas")
+    cabecalho: Optional[str] = Field(default=None, description="Endereçamento e qualificação inicial das partes")
+
+
 class MetadadosExtraidosSchema(BaseModel):
     numero_processo: str
     tema: str
     magistrado: str
     comarca: str
     partes_anonimizadas: PartesAnonimizadasSchema
+    secoes: Optional[SecoesPeticaoSchema] = None
 
 
 class AnalisePreditivaSchema(BaseModel):
