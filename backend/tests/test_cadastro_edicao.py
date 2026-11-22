@@ -68,6 +68,40 @@ def test_ct10_cadastro_manual_anonimiza_partes_e_resumo(client: TestClient):
     assert lista["total"] == 1
     detalhe = client.get(f"/api/v1/processos/{body['id_processo']}")
     assert detalhe.status_code == 200
+    assert detalhe.json()["resultado"] == payload["resultado"]
+    assert detalhe.json()["data_julgamento"] == payload["data_julgamento"]
+
+
+def test_previa_reaplica_anonimizacao_sem_persistir(client: TestClient):
+    inicial = _payload()
+    criado = client.post("/api/v1/processos", json=inicial).json()
+    id_processo = criado["id_processo"]
+    edicao = {
+        **inicial,
+        "autor": criado["metadados_extraidos"]["partes_anonimizadas"]["autor"],
+        "reu": "José Carlos Pereira",
+        "resumo": "José Carlos Pereira apresentou o RG: 1234567 na audiência.",
+        "resultado": "Acordo",
+        "data_julgamento": None,
+    }
+    previa = client.post(
+        "/api/v1/processos/anonimizacao/previa",
+        json={campo: edicao[campo] for campo in ("autor", "reu", "resumo")},
+    )
+    assert previa.status_code == 200
+    assert "José Carlos Pereira" not in previa.text
+    assert "1234567" not in previa.text
+    caminho = f"/api/v1/processos/{id_processo}"
+    assert client.get(caminho).json() == criado
+
+    resposta = client.put(caminho, json=edicao)
+    assert resposta.status_code == 200
+    salvo = resposta.json()
+    assert salvo["metadados_extraidos"]["partes_anonimizadas"] == previa.json()["partes_anonimizadas"]
+    assert salvo["resumo_nlp"] == previa.json()["resumo"]
+    assert salvo["auditoria_lgpd"] == previa.json()["auditoria_lgpd"]
+    assert salvo["resultado"] == "Acordo"
+    assert salvo["data_julgamento"] is None
 
 
 @pytest.mark.parametrize(
