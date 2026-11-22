@@ -37,6 +37,8 @@ from app.schemas.contracts import (
     ProcessoListResponse,
     ProcessoUploadResponse,
     DataJudProcessoResponse,
+    DataJudSincronizacaoRequest,
+    DataJudSincronizacaoResponse,
 )
 
 router = APIRouter(prefix="/api/v1/processos", tags=["Processos e Base de Conhecimento (RF-02 a RF-08)"])
@@ -797,6 +799,80 @@ def excluir_processo(
     db.delete(proc)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/datajud/sincronizar",
+    response_model=DataJudSincronizacaoResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Coletar e sincronizar lote de processos e jurisprudências via DataJud (CNJ)",
+)
+async def sincronizar_lote_datajud(
+    payload: DataJudSincronizacaoRequest = DataJudSincronizacaoRequest(),
+    db: Session = Depends(get_db),
+    usuario: Optional[Usuario] = Depends(get_optional_current_user),
+) -> DataJudSincronizacaoResponse:
+    """
+    Executa a coleta automática em lote de processos e jurisprudências na API Pública do DataJud (CNJ)
+    (com fallback local resiliente) e atualiza a base histórica de forma idempotente (Card #27 / RF-08 / RN-01).
+    Todos os registros passam pelo AnonimizadorLGPD antes da persistência.
+    """
+    tribunal_sigla = (payload.tribunal or "TJAL").strip().upper()
+    coletados, fonte = await DataJudClient.coletar_lote_jurisprudencia(
+        tribunal=tribunal_sigla,
+        tema=payload.tema,
+        limite=payload.limite,
+    )
+
+    novos_inseridos = 0
+    atualizados = 0
+    total_lgpd = 0
+    itens_sincronizados: list[ProcessoListItemSchema] = []
+
+    for item in coletados:
+        dados_cadastro = DataJudClient.extrair_registro_para_acervo(item)
+        req_cadastro = ProcessoCadastroRequest(**dados_cadastro)
+
+        existing = db.query(Processo).filter(Processo.numero_processo == req_cadastro.numero_processo).first()
+        if existing:
+            proc = existing
+            atualizados += 1
+        else:
+            short_hash = hashlib.sha1(f"{req_cadastro.numero_processo}-{uuid.uuid4()}".encode("utf-8")).hexdigest()[:5]
+            proc = Processo(
+                id_processo=f"proc-{short_hash}",
+                usuario_id=usuario.id if usuario else "usr-01",
+                numero_processo=req_cadastro.numero_processo,
+                arquivo_nome=f"datajud_{tribunal_sigla.lower()}_sync",
+                origem_ingestao="DATAJUD",
+            )
+            db.add(proc)
+            novos_inseridos += 1
+
+        _aplicar_cadastro(db, proc, req_cadastro)
+        db.flush()
+
+        ultimo_log = proc.logs_lgpd[-1] if proc.logs_lgpd else None
+        if ultimo_log:
+            total_lgpd += (ultimo_log.total_cpfs_mascarados or 0) + (ultimo_log.total_nomes_mascarados or 0)
+
+        itens_sincronizados.append(_converter_para_list_item(proc))
+
+    db.commit()
+
+    return DataJudSincronizacaoResponse(
+        tribunal=tribunal_sigla,
+        fonte=fonte,
+        total_coletados=len(coletados),
+        novos_inseridos=novos_inseridos,
+        atualizados=atualizados,
+        total_entidades_anonimizadas_lgpd=total_lgpd,
+        mensagem=(
+            f"Sincronização DataJud ({tribunal_sigla}) concluída: "
+            f"{novos_inseridos} novo(s) processo(s) inserido(s) e {atualizados} atualizado(s) com proteção LGPD."
+        ),
+        itens=itens_sincronizados,
+    )
 
 
 @router.get("/datajud/{numero_processo}", response_model=DataJudProcessoResponse, status_code=status.HTTP_200_OK)
