@@ -246,10 +246,25 @@ class ProcessoCadastroRequest(BaseModel):
 # ==============================================================================
 # 8.7 Contrato Interno Back-end <-> AI Engine (ADR-001 / ADR-002)
 # ==============================================================================
+class PrecedenteSimilarSchema(BaseModel):
+    id_processo: str
+    numero_processo: str
+    tema: str
+    magistrado: str
+    resultado: str
+    similaridade: float
+    prazo_meses: int = 12
+    tese: str = ""
+
+
 class ContextoHistoricoSchema(BaseModel):
     total_casos_similares: int = 42
     taxa_favoravel_juiz: float = 0.72
     tempo_medio_meses: int = 9
+    margem_confianca_calculada: Optional[float] = None
+    tese_precedente_similar: Optional[str] = None
+    magistrado_inferido: Optional[str] = None
+    precedentes_similares: List[PrecedenteSimilarSchema] = []
 
 
 class InternalAnalyzeRequest(BaseModel):

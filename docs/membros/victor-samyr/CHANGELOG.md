@@ -60,3 +60,11 @@
   - Substituição da correspondência de empresas por `CORPORATE_REGEX` com fronteiras de palavra e introdução de `LEGAL_AND_GEO_STOPWORDS` / `GEO_PHRASES` para eliminar falsos positivos em sobrenomes, magistrados e termos jurídicos.
   - Criação de `extract_parties_from_text` integrado ao `LocalDeterministicFallbackAdapter` e da suíte `backend/tests/test_etapa3_barreira_lgpd_expandida.py` com 6 testes exaustivos.
 - **Status:** Build do frontend (`npm run build`) e **54 de 54 testes automatizados** aprovados no pytest.
+
+### [2026-11-21] — Etapa 4 (JuriVision-Pro): Motor NLP Local Real (`TF-IDF` / `BM25`) e Intervalo de Wilson
+- **Branch de Atuação:** `dev` (`pro` — `VictorSamyr/JuriVision-Pro`)
+- **Atividades Realizadas:**
+  - Criação de `backend/app/core/nlp_engine.py` com tokenização jurídica, classificação multi-tema ponderada, extração dinâmica de magistrados/varas, sumarização extrativa por centralidade TF-IDF, ranqueamento híbrido Cosseno TF-IDF + Okapi BM25 e margem de confiança estatística via Intervalo de Wilson.
+  - Integração completa em `LocalDeterministicFallbackAdapter` (`ai_gateway.py`), `ContextoHistoricoSchema` (`contracts.py`) e nos fluxos de PDF, CSV e cadastro manual (`processos.py`), removendo o multiplicador artificial `* 7`, a margem fixa `0.08` e o fallback fixo de juiz.
+  - Criação da suíte `backend/tests/test_etapa4_nlp_e_similaridade.py` com 6 testes exaustivos.
+- **Status:** Build do frontend (`npm run build`) e **60 de 60 testes automatizados** aprovados no pytest.

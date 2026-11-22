@@ -14,7 +14,7 @@ A tabela abaixo ordena todas as frentes de evolução técnica **da mais simples
 | **1** | **Consistência de Pesquisa, Filtros/Ordenação no Servidor, Exclusão Integrada & PDF Multi-página** | Baixa | Filtro de salvos e ordenação apenas em memória na página atual; seletores de assunto/juiz fixos no HTML; listagem sem `resumo_curto`; rota `DELETE` sem UI; PDF restrito a 1 página. | `[x] CONCLUÍDA` |
 | **2** | **Segurança, JWT Obrigatório e Isolamento Multi-usuário** | Baixa / Média | Rotas de upload/leitura sem verificação de Bearer token e gravação fixa em `usuario_id="usr-01"`, misturando documentos de diferentes usuários. | `[x] CONCLUÍDA` |
 | **3** | **Endurecimento da Barreira LGPD (Regex Expandido & Detecção em Prosa)** | Média | `AnonimizadorLGPD` restrito a CPF, RG rotulado e linha `Autor: Nome`, sem mascarar e-mails, telefones, endereços ou nomes soltos. | `[x] CONCLUÍDA` |
-| **4** | **Motor NLP Local Real e Similaridade Textual (`TF-IDF` / `BM25`)** | Média / Alta | Classificação via 5 `if/else`, resumo pelas 2 primeiras frases, juiz padrão hardcoded (`Dr. Rafael De Amorim`), multiplicador fixo `* 7` e margem fixa `±8%`. | `[ ] PENDENTE` |
+| **4** | **Motor NLP Local Real e Similaridade Textual (`TF-IDF` / `BM25`)** | Média / Alta | Classificação via 5 `if/else`, resumo pelas 2 primeiras frases, juiz padrão hardcoded (`Dr. Rafael De Amorim`), multiplicador fixo `* 7` e margem fixa `±8%`. | `[x] CONCLUÍDA` |
 | **5** | **RAG Jurídico (Gemini + Precedentes Reais), OCR e Microsserviço `ai_engine:8001`** | Alta | `ai_engine/worker.py` em `sleep(3600)`, Gemini sem contexto dos julgados do banco e ausência de OCR para PDFs escaneados. | `[ ] PENDENTE` |
 | **6** | **Modelo Freemium / Assinaturas, Cache de Demo e Deploy Cloud (CONAD)** | Alta | Plataforma 100% aberta em `localhost` sem planos (`FREE`/`PRO`), cotas de uso ou hospedagem escalável em nuvem. | `[ ] PENDENTE` |
 
@@ -338,4 +338,22 @@ Toda nova modificação deve seguir o modelo abaixo:
   - `backend/tests/test_etapa3_barreira_lgpd_expandida.py` - Suíte exaustiva com 6 novos testes cobrindo todos os vetores de PII e zero falsos positivos.
 - **Como Testar / Executar Localmente:**
   - PowerShell: `$env:PYTHONPATH="backend"; .\.venv\Scripts\pytest backend/tests/ -v` (**54 testes aprovados**).
+  - Front-end: `cd frontend; npm run build`.
+
+---
+
+### [2026-11-21] — Etapa 4: Motor NLP Local Real (`TF-IDF` / `BM25`), Extração Dinâmica e Intervalo de Wilson
+- **Branch:** `dev` (`VictorSamyr/JuriVision-Pro`)
+- **Autor / Dupla:** Victor Samyr
+- **Pacote da EAP / Requisitos:** Etapa 4 do Roadmap, EAP 1.4.3, RF-05, RF-06, RN-02, RN-03
+- **Resumo da Mudança:**
+  1. **Motor Matemático de NLP (`backend/app/core/nlp_engine.py`):** implementados tokenização com n-gramas jurídicos (`tokenize_legal_text`), classificação multi-tema por pontuação léxica ponderada (`classify_legal_theme` em 7 áreas jurídicas), extração dinâmica de qualquer magistrado e comarca/vara (`extract_court_and_judge`), sumarização extrativa por centralidade TF-IDF ignorando cabeçalhos formais (`summarize_legal_text`), ranqueamento de precedentes por Similaridade de Cosseno TF-IDF + Okapi BM25 (`rank_similar_precedents`) e cálculo de margem estatística real pelo Intervalo de Wilson (`compute_wilson_margin`).
+  2. **Contratos e Fluxos Integrados (`contracts.py`, `ai_gateway.py`, `processos.py`):** `LocalDeterministicFallbackAdapter`, `_compute_historical_context`, `_estimar_analise_preditiva` e importação em lote CSV passaram a cruzar o acervo real visível sem o multiplicador artificial `* 7`, sem margem estática `0.08` e sem o juiz padrão hardcoded `Dr. Rafael De Amorim`.
+- **Arquivos Criados / Modificados:**
+  - `backend/app/core/nlp_engine.py` - Novo motor NLP e estatístico local.
+  - `backend/app/schemas/contracts.py` e `backend/app/schemas/__init__.py` - `PrecedenteSimilarSchema` e expansão retrocompatível de `ContextoHistoricoSchema`.
+  - `backend/app/core/ai_gateway.py` e `backend/app/routers/processos.py` - Integração completa em upload PDF, CSV e cadastro/edição manual.
+  - `backend/tests/test_etapa4_nlp_e_similaridade.py` - Suíte exaustiva com 6 novos testes validando TF-IDF/BM25, extração dinâmica, sumarização, Wilson e fluxos da API.
+- **Como Testar / Executar Localmente:**
+  - PowerShell: `$env:PYTHONPATH="backend"; .\.venv\Scripts\pytest backend/tests/ -v` (**60 testes aprovados**).
   - Front-end: `cd frontend; npm run build`.

@@ -18,6 +18,11 @@ from sqlalchemy.orm import Session
 from app.core.ai_gateway import AnonimizadorLGPD, ExtratorDocumental, ai_gateway
 from app.core.datajud_client import DataJudClient
 from app.core.database import get_db
+from app.core.nlp_engine import (
+    classify_legal_theme,
+    compute_jurimetria_prediction,
+    extract_court_and_judge,
+)
 from app.core.security import (
     PUBLIC_OWNER_ID,
     build_processo_visibility_filter,
@@ -70,50 +75,24 @@ def _compute_historical_context(
     current_user: Optional[Usuario] = None,
 ) -> ContextoHistoricoSchema:
     """
-    Consulta o histórico relacional visível ao usuário (RN-02) para fornecer parâmetros
-    estatísticos reais ao motor preditivo sobre o magistrado e tema correlatos.
+    Consulta os processos visíveis ao usuário (RN-02) e executa ranqueamento real por
+    similaridade textual (TF-IDF + BM25) + Intervalo de Confiança de Wilson.
     """
-    lower = raw_text.lower()
-    if "maria silva" in lower:
-        target_juiz = "Dra. Maria Silva"
-    elif "carlos souza" in lower:
-        target_juiz = "Dr. Carlos Souza"
-    else:
-        target_juiz = "Dr. Rafael De Amorim"
+    sanitized_query, _, _ = AnonimizadorLGPD.sanitize_text(raw_text or "")
+    tema_detectado, _, _ = classify_legal_theme(sanitized_query)
+    magistrado_detectado, _ = extract_court_and_judge(raw_text or "")
 
     vis_filter = build_processo_visibility_filter(current_user)
-    query = db.query(Processo).filter(vis_filter, Processo.magistrado == target_juiz).all()
-    if not query:
-        query = db.query(Processo).filter(vis_filter).all()
+    processes = db.query(Processo).filter(vis_filter).all()
 
-    if not query:
-        return ContextoHistoricoSchema(
-            total_casos_similares=42,
-            taxa_favoravel_juiz=0.75,
-            tempo_medio_meses=9,
-        )
-
-    favoraveis = sum(
-        1
-        for p in query
-        if (p.resultado_historico or "").lower() in ("procedente", "acordo")
-        or (p.analise_preditiva and p.analise_preditiva.probabilidade_deferimento >= 0.5)
+    pred_ctx = compute_jurimetria_prediction(
+        query_text=sanitized_query,
+        processes=processes,
+        target_tema=tema_detectado,
+        target_magistrado=magistrado_detectado,
+        top_k=15,
     )
-    taxa = round(favoraveis / len(query), 2)
-    # Escala estatística representativa da vara + registros persistidos
-    casos_similares = max(len(query) * 7, 15)
-    prazos = [
-        p.analise_preditiva.tempo_estimado_sentenca_meses
-        for p in query
-        if p.analise_preditiva is not None
-    ]
-    tempo_medio = int(round(sum(prazos) / len(prazos))) if prazos else 10
-
-    return ContextoHistoricoSchema(
-        total_casos_similares=casos_similares,
-        taxa_favoravel_juiz=max(min(taxa, 0.92), 0.25),
-        tempo_medio_meses=tempo_medio,
-    )
+    return ContextoHistoricoSchema(**pred_ctx)
 
 
 @router.post("/upload-pdf", response_model=ProcessoUploadResponse, status_code=status.HTTP_200_OK)
@@ -294,6 +273,7 @@ async def upload_processos_csv(
     lidos = 0
     importados = 0
     anonimizados = 0
+    visible_processes = db.query(Processo).filter(build_processo_visibility_filter(current_user)).all()
 
     for row in reader:
         lidos += 1
@@ -321,7 +301,24 @@ async def upload_processos_csv(
             dt_julg = date.today()
 
         resultado = norm_row.get("resultado") or "Procedente"
-        prob = 0.76 if resultado.lower() in ("procedente", "acordo") else 0.38
+        tema_row = norm_row.get("tema") or "Dano Moral"
+        mag_row = norm_row.get("magistrado") or "Magistrado não especificado"
+        comarca_row = norm_row.get("comarca") or "Juízo Cível Competente"
+        resumo_row = clean_resumo or "Resumo importado via lote CSV e higienizado."
+
+        pred_ctx = compute_jurimetria_prediction(
+            query_text=f"{tema_row} {mag_row} {comarca_row} {resumo_row}",
+            processes=visible_processes,
+            target_tema=tema_row,
+            target_magistrado=mag_row,
+            top_k=15,
+        )
+        if resultado.lower() in ("procedente", "acordo"):
+            prob = 0.76
+        elif resultado.lower() == "improcedente":
+            prob = 0.38
+        else:
+            prob = pred_ctx["taxa_favoravel_juiz"]
 
         existing = db.query(Processo).filter(Processo.numero_processo == num_proc).first()
         if existing:
@@ -331,12 +328,12 @@ async def upload_processos_csv(
                     detail=f"O processo '{num_proc}' pertence de forma privada a outro usuário.",
                 )
             proc_id = existing.id_processo
-            existing.tema = norm_row.get("tema") or "Dano Moral"
-            existing.magistrado = norm_row.get("magistrado") or "Dr. Rafael De Amorim"
-            existing.comarca = norm_row.get("comarca") or "1ª Vara Cível de Maceió"
+            existing.tema = tema_row
+            existing.magistrado = mag_row
+            existing.comarca = comarca_row
             existing.autor_anonimizado = autor_anon
             existing.reu_anonimizado = reu_anon
-            existing.resumo_nlp = clean_resumo or "Resumo importado via lote CSV e higienizado."
+            existing.resumo_nlp = resumo_row
             existing.resultado_historico = resultado
             existing.data_julgamento = dt_julg
         else:
@@ -349,30 +346,40 @@ async def upload_processos_csv(
                 arquivo_nome=filename,
                 origem_ingestao="CSV",
                 status="PROCESSADO",
-                tema=norm_row.get("tema") or "Dano Moral",
-                magistrado=norm_row.get("magistrado") or "Dr. Rafael De Amorim",
-                comarca=norm_row.get("comarca") or "1ª Vara Cível de Maceió",
+                tema=tema_row,
+                magistrado=mag_row,
+                comarca=comarca_row,
                 autor_anonimizado=autor_anon,
                 reu_anonimizado=reu_anon,
-                resumo_nlp=clean_resumo or "Resumo importado via lote CSV e higienizado.",
+                resumo_nlp=resumo_row,
                 resultado_historico=resultado,
                 data_julgamento=dt_julg,
             )
             db.add(proc_obj)
             db.flush()
 
+            _, default_tese, _ = classify_legal_theme(f"{tema_row} {resumo_row}")
+            tese_csv = pred_ctx["tese_precedente_similar"] or default_tese
+            sim_count = pred_ctx["total_casos_similares"]
+            margem_csv = pred_ctx["margem_confianca_calculada"]
+            prazo_csv = pred_ctx["tempo_medio_meses"]
+
             db.add(
                 AnalisePreditiva(
                     id_processo=proc_id,
                     probabilidade_deferimento=prob,
-                    margem_confianca=0.08,
-                    tempo_estimado_sentenca_meses=11,
-                    casos_similares_encontrados=35,
-                    tese_recomendada="Jurisprudência dominante aplicável ao tema importado em lote.",
-                    tendencia_juiz=f"Histórico consolidado para {proc_obj.magistrado}.",
+                    margem_confianca=margem_csv,
+                    tempo_estimado_sentenca_meses=prazo_csv,
+                    casos_similares_encontrados=sim_count,
+                    tese_recomendada=tese_csv,
+                    tendencia_juiz=(
+                        f"Comparação estatística com {sim_count} precedente(s) similar(es) para "
+                        f"{proc_obj.magistrado} (margem ±{int(round(margem_csv * 100))}%)."
+                    ),
                     provedor_ia_utilizado="local_heuristic",
                 )
             )
+            visible_processes.append(proc_obj)
 
         db.add(
             LogAuditoriaLGPD(
@@ -515,44 +522,49 @@ def _estimar_analise_preditiva(
     current_user: Optional[Usuario] = None,
 ) -> dict:
     """
-    Estima os campos de AnalisePreditiva para um processo cadastrado manualmente, usando apenas
-    dados reais da base visíveis ao usuário: processos do mesmo tema e do mesmo magistrado.
-    Não há modelo treinado aqui: os valores são heurísticos e o provedor é registrado como 'local_heuristic'.
+    Estima os campos de AnalisePreditiva para um processo cadastrado manualmente, usando
+    similaridade textual real (TF-IDF + BM25) e Intervalo de Confiança de Wilson sobre o acervo visível.
     """
     base = db.query(Processo).filter(build_processo_visibility_filter(current_user))
     if ignorar_id:
         base = base.filter(Processo.id_processo != ignorar_id)
 
-    mesmo_tema = base.filter(func.lower(Processo.tema) == payload.tema.lower()).all()
-    mesmo_juiz = base.filter(func.lower(Processo.magistrado) == payload.magistrado.lower()).all()
+    candidatos = base.all()
+    sanitized_resumo, _, _ = AnonimizadorLGPD.sanitize_text(payload.resumo)
+    query_txt = f"{payload.tema} {payload.magistrado} {payload.comarca} {sanitized_resumo}"
+    pred_ctx = compute_jurimetria_prediction(
+        query_text=query_txt,
+        processes=candidatos,
+        target_tema=payload.tema,
+        target_magistrado=payload.magistrado,
+        top_k=15,
+    )
 
     resultado = payload.resultado.lower()
     if resultado in RESULTADOS_FAVORAVEIS:
-        probabilidade = 0.76  # mesma convenção da importação CSV para processos já decididos
+        probabilidade = 0.76
     elif resultado == "improcedente":
         probabilidade = 0.38
     else:
-        decididos = [
-            p for p in (mesmo_juiz or mesmo_tema)
-            if (p.resultado_historico or "").lower() in RESULTADOS_FAVORAVEIS + ("improcedente",)
-        ]
-        if decididos:
-            favoraveis = sum(1 for p in decididos if p.resultado_historico.lower() in RESULTADOS_FAVORAVEIS)
-            probabilidade = round(favoraveis / len(decididos), 2)
-        else:
-            probabilidade = 0.5
-        probabilidade = max(min(probabilidade, 0.92), 0.08)
+        probabilidade = pred_ctx["taxa_favoravel_juiz"]
 
-    prazos = [p.analise_preditiva.tempo_estimado_sentenca_meses for p in mesmo_tema if p.analise_preditiva]
-    tempo = int(round(sum(prazos) / len(prazos))) if prazos else 12
+    similares = pred_ctx["total_casos_similares"]
+    margem = pred_ctx["margem_confianca_calculada"]
+    tempo = pred_ctx["tempo_medio_meses"]
+    tese = pred_ctx["tese_precedente_similar"] or (
+        f"Análise comparativa baseada em {similares} precedente(s) similar(es) ao tema '{payload.tema}' no acervo."
+    )
 
     return {
         "probabilidade_deferimento": probabilidade,
-        "margem_confianca": 0.08,
+        "margem_confianca": margem,
         "tempo_estimado_sentenca_meses": max(tempo, 1),
-        "casos_similares_encontrados": len(mesmo_tema),
-        "tese_recomendada": f"Estimativa heurística a partir de {len(mesmo_tema)} processo(s) do tema '{payload.tema}' na base.",
-        "tendencia_juiz": f"Baseado em {len(mesmo_juiz)} processo(s) de {payload.magistrado} na base.",
+        "casos_similares_encontrados": similares,
+        "tese_recomendada": tese,
+        "tendencia_juiz": (
+            f"Baseado em {similares} precedente(s) similar(es) (margem ±{int(round(margem * 100))}% "
+            f"para {payload.magistrado})."
+        ),
         "provedor_ia_utilizado": "local_heuristic",
     }
 

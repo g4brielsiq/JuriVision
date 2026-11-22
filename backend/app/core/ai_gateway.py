@@ -16,6 +16,12 @@ import httpx
 from pypdf import PdfReader
 
 from app.core.config import settings
+from app.core.nlp_engine import (
+    classify_legal_theme,
+    compute_wilson_margin,
+    extract_court_and_judge,
+    summarize_legal_text,
+)
 from app.schemas.contracts import (
     AnalisePreditivaSchema,
     AuditoriaLGPDSchema,
@@ -669,7 +675,6 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
 
     def analyze_document(self, request: InternalAnalyzeRequest) -> InternalAnalyzeResponse:
         raw_text = request.texto_bruto or ""
-        lower_text = raw_text.lower()
 
         # 1. Extração de Número CNJ (ou geração determinística baseada no hash do documento)
         cnj_match = CNJ_REGEX.search(raw_text)
@@ -681,53 +686,14 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
             dv = int(digest[7:9], 16) % 90 + 10
             numero_processo = f"{seq:07d}-{dv:02d}.2026.8.02.0001"
 
-        # 2. Classificação Heurística de Tema e Tese Recomendada
-        if any(k in lower_text for k in ("voo", "aérea", "aerea", "bagagem", "passageiro", "aeroporto", "cancelamento")):
-            tema = "Atraso de Voo / Indenização"
-            tese_recomendada = (
-                "Aplicação prioritária do Código de Defesa do Consumidor (art. 14 do CDC) e jurisprudência "
-                "consolidada sobre dano moral in re ipsa por falha na prestação de assistência material ao passageiro."
-            )
-            default_reu = "Companhia Aérea Linhas Brasil S.A."
-        elif any(k in lower_text for k in ("trabalh", "clt", "horas extras", "rescisa", "rescisão", "fgts", "empregad")):
-            tema = "Direito Trabalhista"
-            tese_recomendada = (
-                "Inversão do ônus da prova quanto aos controles de jornada (Súmula 338 do TST) e "
-                "reconhecimento de verbas rescisórias incontroversas."
-            )
-            default_reu = "Tech Softwares e Serviços LTDA"
-        elif any(k in lower_text for k in ("saúde", "saude", "unimed", "hospital", "cirurgia", "tratamento", "home care", "plano")):
-            tema = "Plano de Saúde"
-            tese_recomendada = (
-                "Abusividade de negativa de cobertura de tratamento prescrito por médico assistente "
-                "(Súmula 102 do TJ e CDC)."
-            )
-            default_reu = "Operadora Unimed Saúde S.A."
-        elif any(k in lower_text for k in ("tribut", "icms", "iss", "fisco", "execução fiscal", "imposto")):
-            tema = "Tributário"
-            tese_recomendada = (
-                "Observância estrita aos princípios da anterioridade e legalidade tributária, com "
-                "afastamento de exigência fiscal sobre base de cálculo indevida."
-            )
-            default_reu = "Fazenda Pública Estadual"
-        else:
-            tema = "Dano Moral"
-            tese_recomendada = (
-                "Responsabilidade civil objetiva do fornecedor de serviços (art. 14 do CDC) e "
-                "configuração de falha na prestação do serviço com dever de indenizar."
-            )
-            default_reu = "Instituição Financeira Bradesco S.A."
+        # 2. Classificação Multi-Tema por Pontuação Léxica Ponderada
+        tema, tese_recomendada, default_reu = classify_legal_theme(raw_text)
 
-        # 3. Identificação de Magistrado e Comarca
-        if "maria silva" in lower_text:
-            magistrado = "Dra. Maria Silva"
-        elif "carlos souza" in lower_text:
-            magistrado = "Dr. Carlos Souza"
-        else:
-            magistrado = "Dr. Rafael De Amorim"
-
-        comarca_match = re.search(r"(?i)(\d+ª\s+Vara\s+[A-Za-zÀ-ú\s]{3,35})", raw_text)
-        comarca = comarca_match.group(1).strip() if comarca_match else "1ª Vara Cível de Maceió"
+        # 3. Extração Dinâmica de Magistrado e Comarca/Vara (sem lista hardcoded)
+        ctx = request.contexto_historico
+        magistrado_doc, comarca_doc = extract_court_and_judge(raw_text)
+        magistrado = magistrado_doc or ctx.magistrado_inferido or "Magistrado não especificado"
+        comarca = comarca_doc or "Juízo Cível Competente"
 
         # 4. Identificação de Partes e Barreira Obrigatória LGPD (RN-01 / RF-04)
         raw_autor, raw_reu = AnonimizadorLGPD.extract_parties_from_text(raw_text, default_reu)
@@ -749,40 +715,44 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
             (1 if autor_masked else 0) + (1 if reu_masked else 0),
         )
 
-        # 5. Sumarização Factual Extrativa sobre Texto 100% Higienizado (RF-05)
-        clean_sentences = [
-            s.strip()
-            for s in re.split(r"(?<=[.!?])\s+|\n+", sanitized_text)
-            if len(s.strip()) > 20
-        ]
-        if clean_sentences:
-            excerpt = " ".join(clean_sentences[:2])
-            if len(excerpt) > 360:
-                excerpt = excerpt[:357] + "..."
-            resumo_nlp = (
-                f"Síntese processual higienizada ({tema}): {excerpt}"
-            )
-        else:
-            resumo_nlp = (
-                f"Ação judicial vinculada ao tema '{tema}' tramitando perante a {comarca}, "
-                f"tendo como partes {autor_anon} em face de {reu_anon}, submetida à análise preditiva."
-            )
+        # 5. Sumarização Factual Extrativa por Centralidade TF-IDF (RF-05)
+        fallback_summary = (
+            f"Ação judicial vinculada ao tema '{tema}' tramitando perante {comarca}, "
+            f"tendo como partes {autor_anon} em face de {reu_anon}, submetida à análise preditiva."
+        )
+        resumo_nlp = summarize_legal_text(sanitized_text, tema, fallback_summary)
 
-        # Garantia extra pós-sumarização de que nenhum CPF/RG escapou
+        # Garantia extra pós-sumarização de que nenhum PII escapou
         resumo_nlp, extra_cpf, _ = AnonimizadorLGPD.sanitize_text(resumo_nlp)
         cpf_rg_count += extra_cpf
 
-        # 6. Cálculo Preditivo Baseado em Evidência Histórica (RF-06 / RN-02)
-        ctx = request.contexto_historico
+        # 6. Cálculo Preditivo Ponderado e Margem de Confiança Estatística de Wilson (RF-06 / RN-02)
         prob = round(min(max(ctx.taxa_favoravel_juiz, 0.15), 0.95), 2)
-        casos_similares = max(ctx.total_casos_similares, 12)
-        tempo_meses = max(ctx.tempo_medio_meses, 6)
+        casos_similares = max(int(ctx.total_casos_similares), 0)
+        tempo_meses = max(int(ctx.tempo_medio_meses), 1)
+        margem = (
+            round(float(ctx.margem_confianca_calculada), 2)
+            if ctx.margem_confianca_calculada is not None
+            else compute_wilson_margin(prob, casos_similares)
+        )
+        tese_final = (
+            ctx.tese_precedente_similar
+            if (ctx.tese_precedente_similar and casos_similares >= 1)
+            else tese_recomendada
+        )
         percentual_juiz = int(round(prob * 100))
 
-        tendencia_juiz = (
-            f"O(A) magistrado(a) {magistrado} apresenta histórico de {percentual_juiz}% de decisões "
-            f"favoráveis (procedentes/acordos) em demandas similares de {tema} na base analisada."
-        )
+        if casos_similares > 0:
+            tendencia_juiz = (
+                f"Estimativa baseada em {casos_similares} precedente(s) similar(es) no acervo "
+                f"(taxa ponderada de {percentual_juiz}% favorável, margem ±{int(round(margem * 100))}% "
+                f"para {magistrado} em {tema})."
+            )
+        else:
+            tendencia_juiz = (
+                f"Sem precedentes similares suficientes no acervo atual para {magistrado} em {tema}; "
+                f"aplicado baseline inicial de {percentual_juiz}% (±{int(round(margem * 100))}%)."
+            )
 
         return InternalAnalyzeResponse(
             metadados_extraidos=MetadadosExtraidosSchema(
@@ -798,10 +768,10 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
             resumo_nlp=resumo_nlp,
             analise_preditiva=AnalisePreditivaSchema(
                 probabilidade_deferimento=prob,
-                margem_confianca=0.08,
+                margem_confianca=margem,
                 tempo_estimado_sentenca_meses=tempo_meses,
                 casos_similares_encontrados=casos_similares,
-                tese_recomendada=tese_recomendada,
+                tese_recomendada=tese_final,
                 tendencia_juiz=tendencia_juiz,
                 provedor_ia="local_heuristic",
             ),
