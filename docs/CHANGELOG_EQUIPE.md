@@ -266,3 +266,19 @@ Toda nova modificação deve seguir o modelo abaixo:
 - **Como Testar / Executar Localmente:**
   - PowerShell: `$env:PYTHONPATH="backend"; pytest backend/tests/ -v` (**33 testes aprovados**).
   - Front-end: `cd frontend; npm run build`.
+
+---
+
+### [2026-11-22] — Refinamentos de Precisão Jurídica, Autenticação JWT, Exclusão e Isolamento de Testes
+- **Branch:** `feat/sprint2-backend-precisao-testes`
+- **Autor / Dupla:** Lucas Gabriel e Pedro Henrique (com revisão da Equipe Epsilon)
+- **Pacote da EAP / Requisitos:** EAP 1.3.2 (API REST), EAP 1.4.3 (Predição / Similares), EAP 1.5.1 (Garantia de Qualidade), RF-01, RF-06, RF-08, RN-02
+- **Resumo da Mudança:**
+  1. **Isolamento do banco de testes (`backend/tests/conftest.py`):** redireciona `engine` e `SessionLocal` para um SQLite temporário isolado por sessão durante o `pytest`, mantendo `jurivision_local.sqlite3` intacto.
+  2. **Mecanismo real de processos semelhantes (`GET /api/v1/processos/{id_processo}/similares` e `_buscar_processos_similares_reais`):** elimina multiplicadores artificiais (`* 7`, `35` e `42`) e pontua precedentes reais da base por correspondência de tema, magistrado, comarca e vocabulário da ementa.
+  3. **Transparência de estimativa na interface (`frontend/src/app.js` e `frontend/index.html`):** remove fallbacks `|| 42` e identifica explicitamente quando o cálculo decorre de estimativa heurística local (`local_heuristic`) vs. análise por IA (`gemini`).
+  4. **Filtros de `comarca` e `tribunal` (`GET /api/v1/processos`):** adiciona filtragem explícita por vara/comarca e sigla/código CNJ do tribunal.
+  5. **Validação de JWT + rota de exclusão (`GET /api/v1/auth/me` e `DELETE /api/v1/processos/{id_processo}`):** rejeita tokens JWT inválidos/adulterados com `HTTP 401`, vincula o advogado autenticado aos processos criados e incorpora o endpoint de exclusão em cascata (`HTTP 204` / `404`).
+- **Como Testar / Executar Localmente:**
+  - PowerShell: `$env:PYTHONPATH="backend"; pytest backend/tests/ -v` (**37 testes aprovados**).
+  - Front-end: `cd frontend; npm run build`.

@@ -9,7 +9,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.models.entities import AnalisePreditiva, Processo
+from app.core.security import get_optional_current_user
+from app.models.entities import AnalisePreditiva, Processo, Usuario
 from app.schemas.contracts import (
     DashboardMetricasResponse,
     DecisaoJuizSchema,
@@ -20,7 +21,10 @@ router = APIRouter(prefix="/api/v1/dashboard", tags=["Dashboard de Jurimetria (R
 
 
 @router.get("/metricas", response_model=DashboardMetricasResponse)
-def obter_metricas_dashboard(db: Session = Depends(get_db)) -> DashboardMetricasResponse:
+def obter_metricas_dashboard(
+    db: Session = Depends(get_db),
+    _usuario: Usuario | None = Depends(get_optional_current_user),
+) -> DashboardMetricasResponse:
     """
     Consolida em tempo real os indicadores globais de jurimetria a partir dos processos
     higienizados persistidos no banco relacional (RF-07 / UC-05).
