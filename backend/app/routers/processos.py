@@ -18,7 +18,15 @@ from sqlalchemy.orm import Session
 from app.core.ai_gateway import AnonimizadorLGPD, ExtratorDocumental, ai_gateway
 from app.core.datajud_client import DataJudClient
 from app.core.database import get_db
-from app.models.entities import AnalisePreditiva, LogAuditoriaLGPD, Processo
+from app.core.security import (
+    PUBLIC_OWNER_ID,
+    build_processo_visibility_filter,
+    can_read_processo,
+    ensure_can_modify_processo,
+    get_effective_user_id,
+    get_optional_current_user,
+)
+from app.models.entities import AnalisePreditiva, LogAuditoriaLGPD, Processo, Usuario
 from app.schemas.contracts import (
     AnalisePreditivaSchema,
     AuditoriaLGPDSchema,
@@ -56,10 +64,14 @@ MAX_PDF_SIZE_BYTES = 15 * 1024 * 1024  # 15 MB (RN-04 / SEC-05)
 MAX_CSV_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB (RN-04 / SEC-05)
 
 
-def _compute_historical_context(db: Session, raw_text: str) -> ContextoHistoricoSchema:
+def _compute_historical_context(
+    db: Session,
+    raw_text: str,
+    current_user: Optional[Usuario] = None,
+) -> ContextoHistoricoSchema:
     """
-    Consulta o histórico relacional (RN-02) para fornecer parâmetros estatísticos reais
-    ao motor preditivo sobre o magistrado e tema correlatos.
+    Consulta o histórico relacional visível ao usuário (RN-02) para fornecer parâmetros
+    estatísticos reais ao motor preditivo sobre o magistrado e tema correlatos.
     """
     lower = raw_text.lower()
     if "maria silva" in lower:
@@ -69,9 +81,10 @@ def _compute_historical_context(db: Session, raw_text: str) -> ContextoHistorico
     else:
         target_juiz = "Dr. Rafael De Amorim"
 
-    query = db.query(Processo).filter(Processo.magistrado == target_juiz).all()
+    vis_filter = build_processo_visibility_filter(current_user)
+    query = db.query(Processo).filter(vis_filter, Processo.magistrado == target_juiz).all()
     if not query:
-        query = db.query(Processo).all()
+        query = db.query(Processo).filter(vis_filter).all()
 
     if not query:
         return ContextoHistoricoSchema(
@@ -107,11 +120,12 @@ def _compute_historical_context(db: Session, raw_text: str) -> ContextoHistorico
 async def upload_processo_pdf(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
 ) -> ProcessoUploadResponse:
     """
     Recebe uma petição inicial em PDF (RF-02), valida sua integridade binária (RN-04),
     aciona o pipeline isolado de IA com barreira LGPD obrigatória (RF-04, RF-05, RF-06)
-    e persiste o processo higienizado no banco de dados (ADR-003).
+    e persiste o processo higienizado no banco de dados vinculado ao usuário autenticado (ADR-003).
     """
     filename = file.filename or "peticao_inicial.pdf"
     if not filename.lower().endswith(".pdf"):
@@ -134,7 +148,7 @@ async def upload_processo_pdf(
             detail=f"ErroProcessamento (RN-04): {str(exc)}",
         ) from exc
 
-    contexto = _compute_historical_context(db, raw_text)
+    contexto = _compute_historical_context(db, raw_text, current_user=current_user)
     ai_result = ai_gateway.analyze_document(
         InternalAnalyzeRequest(
             arquivo_nome=filename,
@@ -146,10 +160,16 @@ async def upload_processo_pdf(
     meta = ai_result.metadados_extraidos
     pred = ai_result.analise_preditiva
     lgpd = ai_result.auditoria_lgpd
+    owner_id = get_effective_user_id(current_user)
 
-    # Verifica se já existe processo com o mesmo número CNJ para operação idempotente
+    # Verifica se já existe processo com o mesmo número CNJ para operação idempotente e respeita isolamento
     existing = db.query(Processo).filter(Processo.numero_processo == meta.numero_processo).first()
     if existing:
+        if existing.usuario_id not in (None, PUBLIC_OWNER_ID, owner_id):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Já existe um processo privado registrado com este número CNJ por outro usuário.",
+            )
         proc_id = existing.id_processo
         existing.arquivo_nome = filename
         existing.status = "PROCESSADO"
@@ -172,7 +192,7 @@ async def upload_processo_pdf(
         proc_id = f"proc-{short_hash}"
         novo_proc = Processo(
             id_processo=proc_id,
-            usuario_id="usr-01",
+            usuario_id=owner_id,
             numero_processo=meta.numero_processo,
             arquivo_nome=filename,
             origem_ingestao="PDF",
@@ -225,11 +245,13 @@ async def upload_processo_pdf(
 async def upload_processos_csv(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
 ) -> CSVUploadResponse:
     """
     Importa em lote registros estruturados via planilha CSV (RF-03),
     aplicando higienização determinística local LGPD em 100% das linhas antes da persistência (RF-04 / RN-01).
     """
+    owner_id = get_effective_user_id(current_user)
     filename = file.filename or "lote_processos.csv"
     if not filename.lower().endswith(".csv"):
         raise HTTPException(
@@ -303,6 +325,11 @@ async def upload_processos_csv(
 
         existing = db.query(Processo).filter(Processo.numero_processo == num_proc).first()
         if existing:
+            if existing.usuario_id not in (None, PUBLIC_OWNER_ID, owner_id):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"O processo '{num_proc}' pertence de forma privada a outro usuário.",
+                )
             proc_id = existing.id_processo
             existing.tema = norm_row.get("tema") or "Dano Moral"
             existing.magistrado = norm_row.get("magistrado") or "Dr. Rafael De Amorim"
@@ -317,7 +344,7 @@ async def upload_processos_csv(
             proc_id = f"proc-{short_hash}"
             proc_obj = Processo(
                 id_processo=proc_id,
-                usuario_id="usr-01",
+                usuario_id=owner_id,
                 numero_processo=num_proc,
                 arquivo_nome=filename,
                 origem_ingestao="CSV",
@@ -388,11 +415,12 @@ def listar_processos(
     pagina: int = Query(default=1, ge=1, description="Página atual"),
     limite: int = Query(default=10, ge=1, le=100, description="Itens por página"),
     db: Session = Depends(get_db),
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
 ) -> ProcessoListResponse:
     """
-    Lista e filtra processos higienizados na Base de Conhecimento com paginação (RF-08 / UC-06 / UC-07).
+    Lista e filtra processos higienizados visíveis na Base de Conhecimento com paginação (RF-08 / UC-06 / UC-07).
     """
-    query = db.query(Processo)
+    query = db.query(Processo).filter(build_processo_visibility_filter(current_user))
 
     if ids is not None:
         id_list = [item.strip() for item in ids.split(",") if item.strip()]
@@ -458,11 +486,17 @@ def listar_processos(
 
 
 @router.get("/filtros", response_model=FiltrosDisponiveisResponse, status_code=status.HTTP_200_OK)
-def obter_filtros_disponiveis(db: Session = Depends(get_db)) -> FiltrosDisponiveisResponse:
-    """Retorna as listas distintas e ordenadas de temas, magistrados e comarcas existentes no acervo."""
-    temas = sorted({r[0] for r in db.query(Processo.tema).distinct().all() if r[0]})
-    magistrados = sorted({r[0] for r in db.query(Processo.magistrado).distinct().all() if r[0]})
-    comarcas = sorted({r[0] for r in db.query(Processo.comarca).distinct().all() if r[0]})
+def obter_filtros_disponiveis(
+    db: Session = Depends(get_db),
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
+) -> FiltrosDisponiveisResponse:
+    """Retorna as listas distintas e ordenadas de temas, magistrados e comarcas visíveis ao usuário."""
+    vis_filter = build_processo_visibility_filter(current_user)
+    temas = sorted({r[0] for r in db.query(Processo.tema).filter(vis_filter).distinct().all() if r[0]})
+    magistrados = sorted(
+        {r[0] for r in db.query(Processo.magistrado).filter(vis_filter).distinct().all() if r[0]}
+    )
+    comarcas = sorted({r[0] for r in db.query(Processo.comarca).filter(vis_filter).distinct().all() if r[0]})
     return FiltrosDisponiveisResponse(temas=temas, magistrados=magistrados, comarcas=comarcas)
 
 
@@ -474,13 +508,18 @@ def obter_filtros_disponiveis(db: Session = Depends(get_db)) -> FiltrosDisponive
 RESULTADOS_FAVORAVEIS = ("procedente", "acordo")
 
 
-def _estimar_analise_preditiva(db: Session, payload: ProcessoCadastroRequest, ignorar_id: Optional[str] = None) -> dict:
+def _estimar_analise_preditiva(
+    db: Session,
+    payload: ProcessoCadastroRequest,
+    ignorar_id: Optional[str] = None,
+    current_user: Optional[Usuario] = None,
+) -> dict:
     """
     Estima os campos de AnalisePreditiva para um processo cadastrado manualmente, usando apenas
-    dados reais da base: processos do mesmo tema e do mesmo magistrado já persistidos.
+    dados reais da base visíveis ao usuário: processos do mesmo tema e do mesmo magistrado.
     Não há modelo treinado aqui: os valores são heurísticos e o provedor é registrado como 'local_heuristic'.
     """
-    base = db.query(Processo)
+    base = db.query(Processo).filter(build_processo_visibility_filter(current_user))
     if ignorar_id:
         base = base.filter(Processo.id_processo != ignorar_id)
 
@@ -540,7 +579,12 @@ def prever_anonimizacao(payload: ProcessoAnonimizacaoRequest) -> ProcessoAnonimi
     return _anonimizar_cadastro(payload.autor.strip(), payload.reu.strip(), payload.resumo.strip())
 
 
-def _aplicar_cadastro(db: Session, proc: Processo, payload: ProcessoCadastroRequest) -> None:
+def _aplicar_cadastro(
+    db: Session,
+    proc: Processo,
+    payload: ProcessoCadastroRequest,
+    current_user: Optional[Usuario] = None,
+) -> None:
     """Aplica os campos do payload ao processo, passando partes e resumo pela barreira LGPD (RN-01)."""
     anonimizacao = _anonimizar_cadastro(payload.autor, payload.reu, payload.resumo)
     proc.numero_processo = payload.numero_processo
@@ -556,7 +600,9 @@ def _aplicar_cadastro(db: Session, proc: Processo, payload: ProcessoCadastroRequ
 
     # no_autoflush: evita gravar o processo ainda incompleto enquanto a base é consultada
     with db.no_autoflush:
-        estimativa = _estimar_analise_preditiva(db, payload, ignorar_id=proc.id_processo)
+        estimativa = _estimar_analise_preditiva(
+            db, payload, ignorar_id=proc.id_processo, current_user=current_user
+        )
     if proc.analise_preditiva:
         for campo, valor in estimativa.items():
             setattr(proc.analise_preditiva, campo, valor)
@@ -586,6 +632,7 @@ def _garantir_numero_unico(db: Session, numero_processo: str, ignorar_id: Option
 def cadastrar_processo(
     payload: ProcessoCadastroRequest,
     db: Session = Depends(get_db),
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
 ) -> ProcessoDetalhesResponse:
     """
     Cadastra manualmente um processo na Base de Conhecimento (RF-08).
@@ -596,16 +643,16 @@ def cadastrar_processo(
     short_hash = hashlib.sha1(f"{payload.numero_processo}-{uuid.uuid4()}".encode("utf-8")).hexdigest()[:5]
     proc = Processo(
         id_processo=f"proc-{short_hash}",
-        usuario_id="usr-01",
+        usuario_id=get_effective_user_id(current_user),
         numero_processo=payload.numero_processo,
         arquivo_nome="cadastro_manual",
         origem_ingestao="MANUAL",
     )
     db.add(proc)
-    _aplicar_cadastro(db, proc, payload)
+    _aplicar_cadastro(db, proc, payload, current_user=current_user)
     db.commit()
 
-    return obter_detalhes_processo(proc.id_processo, db)
+    return obter_detalhes_processo(proc.id_processo, db, current_user)
 
 
 @router.put("/{id_processo}", response_model=ProcessoDetalhesResponse, status_code=status.HTTP_200_OK)
@@ -613,11 +660,12 @@ def editar_processo(
     id_processo: str,
     payload: ProcessoCadastroRequest,
     db: Session = Depends(get_db),
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
 ) -> ProcessoDetalhesResponse:
     """
     Edita (substituição completa dos campos editáveis) um processo existente (RF-08).
     Nomes já mascarados (com '***') são preservados; novos nomes passam pela barreira LGPD (RN-01).
-    Retorna 404 se o processo não existir e 409 se o novo número CNJ pertencer a outro processo.
+    Retorna 404 se o processo não existir/não for visível, 403 se for acervo público externo e 409 se CNJ duplicado.
     """
     proc = db.query(Processo).filter(Processo.id_processo == id_processo).first()
     if not proc:
@@ -625,12 +673,13 @@ def editar_processo(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Processo '{id_processo}' não encontrado na base de conhecimento.",
         )
+    ensure_can_modify_processo(proc, current_user)
     _garantir_numero_unico(db, payload.numero_processo, ignorar_id=id_processo)
 
-    _aplicar_cadastro(db, proc, payload)
+    _aplicar_cadastro(db, proc, payload, current_user=current_user)
     db.commit()
 
-    return obter_detalhes_processo(proc.id_processo, db)
+    return obter_detalhes_processo(proc.id_processo, db, current_user)
 
 
 @router.delete(
@@ -641,11 +690,15 @@ def editar_processo(
     description=(
         "Remove definitivamente um processo da base de conhecimento pelo seu ID. "
         "As entidades associadas (análise preditiva e logs de auditoria LGPD) são excluídas "
-        "automaticamente em cascata. Retorna HTTP 204 em caso de sucesso ou HTTP 404 se não encontrado."
+        "automaticamente em cascata. Retorna HTTP 204 em caso de sucesso, HTTP 403 para acervo público "
+        "por conta externa ou HTTP 404 se não encontrado."
     ),
     responses={
         status.HTTP_204_NO_CONTENT: {
             "description": "Processo e registros vinculados excluídos com sucesso.",
+        },
+        status.HTTP_403_FORBIDDEN: {
+            "description": "Acervo público protegido contra exclusão por contas externas.",
         },
         status.HTTP_404_NOT_FOUND: {
             "description": "Processo não encontrado na base de conhecimento.",
@@ -655,6 +708,7 @@ def editar_processo(
 def excluir_processo(
     id_processo: str,
     db: Session = Depends(get_db),
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
 ) -> Response:
     """
     Exclui um processo judicial da Base de Conhecimento (RF-08).
@@ -666,6 +720,7 @@ def excluir_processo(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Processo '{id_processo}' não encontrado na base de conhecimento.",
         )
+    ensure_can_modify_processo(proc, current_user)
 
     db.delete(proc)
     db.commit()
@@ -688,10 +743,11 @@ async def consultar_processo_datajud(
 def obter_detalhes_processo(
     id_processo: str,
     db: Session = Depends(get_db),
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
 ) -> ProcessoDetalhesResponse:
     """Retorna os metadados higienizados, resumo NLP e parecer preditivo de um processo específico."""
     proc = db.query(Processo).filter(Processo.id_processo == id_processo).first()
-    if not proc:
+    if not proc or not can_read_processo(proc, current_user):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Processo '{id_processo}' não encontrado na base de conhecimento.",

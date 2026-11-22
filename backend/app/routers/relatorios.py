@@ -5,12 +5,14 @@ Rastreabilidade:
 - MODELING.md: RF-09 (Exportação de Relatório Estratégico em PDF), UC-08, CT-09
 """
 import textwrap
+from typing import Optional
 import unicodedata
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.models.entities import Processo
+from app.core.security import can_read_processo, get_optional_current_user
+from app.models.entities import Processo, Usuario
 
 router = APIRouter(prefix="/api/v1/relatorios", tags=["Relatórios Estratégicos PDF (RF-09)"])
 
@@ -104,13 +106,14 @@ def _build_pdf_document(lines: list[str]) -> bytes:
 def exportar_relatorio_processo_pdf(
     id_processo: str,
     db: Session = Depends(get_db),
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
 ) -> Response:
     """
     Gera e exporta o relatório estratégico consolidado em formato PDF (RF-09 / UC-08 / CT-09).
-    Retorna HTTP 404 caso o ID do processo não exista na base.
+    Retorna HTTP 404 caso o ID do processo não exista ou não seja visível ao usuário atual.
     """
     proc = db.query(Processo).filter(Processo.id_processo == id_processo).first()
-    if not proc:
+    if not proc or not can_read_processo(proc, current_user):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Processo '{id_processo}' não encontrado para geração de relatório.",

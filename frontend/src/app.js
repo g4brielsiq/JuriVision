@@ -18,8 +18,10 @@ import {
     fetchFiltrosProcessos,
     fetchProcessoDetalhes,
     fetchProcessos,
+    fetchUsuarioAtual,
     getRelatorioPdfUrl,
     loginAdvogado,
+    logoutAdvogado,
     registerAdvogado,
     uploadProcessoPdf,
     uploadProcessosCsv,
@@ -1245,6 +1247,42 @@ async function dispararConsultaDataJud() {
     }
 }
 
+function atualizarPerfilSidebar(usuario) {
+    if (!usuario) return;
+    const nameEl = document.getElementById("sidebar-user-name");
+    const oabEl = document.getElementById("sidebar-user-oab");
+    const avatar = document.querySelector(".lawyer-avatar");
+    if (nameEl) nameEl.textContent = usuario.nome;
+    if (oabEl) oabEl.textContent = `OAB ${usuario.oab}`;
+    if (avatar) {
+        avatar.textContent = usuario.nome
+            .split(/\s+/)
+            .slice(0, 2)
+            .map((parte) => [...parte][0])
+            .join("")
+            .toUpperCase();
+    }
+}
+
+async function restaurarSessaoAutenticada() {
+    if (typeof window === "undefined") return;
+    const token = localStorage.getItem("jurivision_token") || sessionStorage.getItem("jurivision_token");
+    if (!token) return;
+    try {
+        const usuario = await fetchUsuarioAtual();
+        state.currentUser = {
+            ...usuario,
+            authenticated: true,
+            token,
+        };
+        atualizarPerfilSidebar(usuario);
+    } catch (err) {
+        if (err && (err.status === 401 || err.status === 403)) {
+            logoutAdvogado();
+        }
+    }
+}
+
 function configurarModais() {
     const accountDialog = document.getElementById("login-modal");
     const title = document.getElementById("login-modal-title");
@@ -1324,22 +1362,36 @@ function configurarModais() {
                 token: res.access_token,
             };
 
-            const nameEl = document.getElementById("sidebar-user-name");
-            const oabEl = document.getElementById("sidebar-user-oab");
-            const avatar = document.querySelector(".lawyer-avatar");
-            if (nameEl) nameEl.textContent = res.usuario.nome;
-            if (oabEl) oabEl.textContent = `OAB ${res.usuario.oab}`;
-            if (avatar) avatar.textContent = res.usuario.nome.split(/\s+/).slice(0, 2)
-                .map((parte) => [...parte][0]).join("").toUpperCase();
+            atualizarPerfilSidebar(res.usuario);
             loginSenha.value = "";
             mostrarFeedback(loginFeedback, "");
             showToast(`Bem-vindo(a), ${res.usuario.nome}.`);
             if (accountDialog.open && !loginForm.hidden) accountDialog.close();
+            carregarFiltrosDinamicos();
+            carregarBaseConhecimento(1);
+            carregarDashboard();
         } catch (err) {
             mostrarFeedback(loginFeedback, err.message || "Não foi possível autenticar com as credenciais informadas.", true);
         } finally {
             loginSubmit.disabled = false;
         }
+    });
+
+    document.getElementById("btn-logout-account")?.addEventListener("click", () => {
+        logoutAdvogado();
+        state.currentUser = {
+            id: "usr-01",
+            nome: "Dr. Lucas Gabriel",
+            oab: "12345/AL",
+            authenticated: false,
+        };
+        atualizarPerfilSidebar(state.currentUser);
+        mostrarFeedback(loginFeedback, "");
+        if (accountDialog.open) accountDialog.close();
+        carregarFiltrosDinamicos();
+        carregarBaseConhecimento(1);
+        carregarDashboard();
+        showToast("Sessão encerrada. Exibindo acervo público de demonstração.");
     });
 
     // Modal de Metodologia
@@ -1355,7 +1407,7 @@ function configurarModais() {
 /* ==========================================================================
    9. Inicialização de Eventos da Aplicação
    ========================================================================== */
-function initApp() {
+async function initApp() {
     updateSavedCounterUI();
     setupTabKeyboardNavigation();
     configurarModais();
@@ -1601,6 +1653,7 @@ function initApp() {
         }
     });
 
+    await restaurarSessaoAutenticada();
     verificarConectividadeApi();
     carregarFiltrosDinamicos();
     carregarDashboard();

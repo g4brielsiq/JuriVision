@@ -10,7 +10,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.security import create_access_token, hash_password, verify_password
+from app.core.security import (
+    create_access_token,
+    get_current_user_strict,
+    hash_password,
+    verify_password,
+)
 from app.models.entities import Usuario
 from app.schemas.contracts import (
     LoginRequest, LoginResponse, RegisterRequest, RegisterResponse, UsuarioProfileSchema,
@@ -84,3 +89,14 @@ def register_advogado(payload: RegisterRequest, db: Session = Depends(get_db)) -
         raise
 
     return response
+
+
+@router.get("/me", response_model=RegisterResponse, status_code=status.HTTP_200_OK)
+def obter_perfil_autenticado(current_user: Usuario = Depends(get_current_user_strict)) -> RegisterResponse:
+    """Retorna os dados do advogado autenticado a partir do token Bearer JWT."""
+    return RegisterResponse(
+        id=current_user.id,
+        nome=current_user.nome,
+        email=current_user.email,
+        oab=current_user.numero_oab,
+    )

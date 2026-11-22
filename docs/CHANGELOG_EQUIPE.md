@@ -12,7 +12,7 @@ A tabela abaixo ordena todas as frentes de evolução técnica **da mais simples
 | Etapa | Frente / Escopo Técnico | Complexidade | O que Substitui (Atalho / Lacuna Anterior) | Status |
 | :---: | :--- | :---: | :--- | :---: |
 | **1** | **Consistência de Pesquisa, Filtros/Ordenação no Servidor, Exclusão Integrada & PDF Multi-página** | Baixa | Filtro de salvos e ordenação apenas em memória na página atual; seletores de assunto/juiz fixos no HTML; listagem sem `resumo_curto`; rota `DELETE` sem UI; PDF restrito a 1 página. | `[x] CONCLUÍDA` |
-| **2** | **Segurança, JWT Obrigatório e Isolamento Multi-usuário** | Baixa / Média | Rotas de upload/leitura sem verificação de Bearer token e gravação fixa em `usuario_id="usr-01"`, misturando documentos de diferentes usuários. | `[ ] PENDENTE` |
+| **2** | **Segurança, JWT Obrigatório e Isolamento Multi-usuário** | Baixa / Média | Rotas de upload/leitura sem verificação de Bearer token e gravação fixa em `usuario_id="usr-01"`, misturando documentos de diferentes usuários. | `[x] CONCLUÍDA` |
 | **3** | **Endurecimento da Barreira LGPD (Regex Expandido & Detecção em Prosa)** | Média | `AnonimizadorLGPD` restrito a CPF, RG rotulado e linha `Autor: Nome`, sem mascarar e-mails, telefones, endereços ou nomes soltos. | `[ ] PENDENTE` |
 | **4** | **Motor NLP Local Real e Similaridade Textual (`TF-IDF` / `BM25`)** | Média / Alta | Classificação via 5 `if/else`, resumo pelas 2 primeiras frases, juiz padrão hardcoded (`Dr. Rafael De Amorim`), multiplicador fixo `* 7` e margem fixa `±8%`. | `[ ] PENDENTE` |
 | **5** | **RAG Jurídico (Gemini + Precedentes Reais), OCR e Microsserviço `ai_engine:8001`** | Alta | `ai_engine/worker.py` em `sleep(3600)`, Gemini sem contexto dos julgados do banco e ausência de OCR para PDFs escaneados. | `[ ] PENDENTE` |
@@ -300,4 +300,25 @@ Toda nova modificação deve seguir o modelo abaixo:
   - `backend/tests/test_etapa1_consistencia_e_filtros.py` - Suíte exaustiva com 8 novos testes cobrindo toda a Etapa 1.
 - **Como Testar / Executar Localmente:**
   - PowerShell: `$env:PYTHONPATH="backend"; .\.venv\Scripts\pytest backend/tests/ -v` (**41 testes aprovados**).
+  - Front-end: `cd frontend; npm run build`.
+
+---
+
+### [2026-11-21] — Etapa 2: Segurança JWT, Endpoint `/auth/me` e Isolamento Multi-usuário
+- **Branch:** `dev` (`VictorSamyr/JuriVision-Pro`)
+- **Autor / Dupla:** Victor Samyr
+- **Pacote da EAP / Requisitos:** Etapa 2 do Roadmap, EAP 1.3.2, RF-01, RNF-06 (Segurança / ISO 27001)
+- **Resumo da Mudança:**
+  1. **Validação JWT e Helpers de Isolamento (`backend/app/core/security.py`):** implementados `get_optional_current_user` (Bearer header ou `?token=`), `get_current_user_strict`, `build_processo_visibility_filter`, `can_read_processo` e `ensure_can_modify_processo`. Qualquer token inválido/expirado/malformado retorna `401`.
+  2. **Endpoint `/auth/me` (`backend/app/routers/auth.py`):** nova rota `GET /api/v1/auth/me` protegida por `get_current_user_strict` retornando o perfil do advogado autenticado.
+  3. **Isolamento Multi-usuário nos Routers (`processos.py`, `dashboard.py`, `relatorios.py`):** cada advogado enxerga o acervo público institucional (`usr-01`) mais os seus próprios processos privados; terceiros não veem processos privados de outro advogado (`404` / ocultos na busca, filtros e dashboard) e recebem `403` ao tentar alterar ou excluir registros do acervo público base.
+  4. **Sessão e Logout no Front-end (`api.js`, `index.html`, `app.js`):** restauração automática da sessão via `/auth/me`, propagação segura de `?token=` na exportação de PDF em nova aba, atualização automática dos painéis após login e botão `#btn-logout-account` (*Encerrar sessão atual*).
+- **Arquivos Criados / Modificados:**
+  - `backend/app/core/security.py` - Dependências JWT e isolamento de acesso.
+  - `backend/app/routers/auth.py` - Endpoint `GET /api/v1/auth/me`.
+  - `backend/app/routers/processos.py`, `backend/app/routers/dashboard.py`, `backend/app/routers/relatorios.py` - Aplicação das regras de visibilidade e propriedade.
+  - `frontend/src/services/api.js`, `frontend/index.html`, `frontend/src/app.js` - Restauração de sessão, token no download de PDF e logout.
+  - `backend/tests/test_etapa2_seguranca_e_isolamento.py` - Suíte exaustiva com 7 novos testes cobrindo JWT, `/auth/me` e isolamento multi-usuário.
+- **Como Testar / Executar Localmente:**
+  - PowerShell: `$env:PYTHONPATH="backend"; .\.venv\Scripts\pytest backend/tests/ -v` (**48 testes aprovados**).
   - Front-end: `cd frontend; npm run build`.

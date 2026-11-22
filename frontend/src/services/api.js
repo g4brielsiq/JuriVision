@@ -119,6 +119,25 @@ export async function registerAdvogado(payload) {
     return data;
 }
 
+export async function fetchUsuarioAtual() {
+    const res = await fetch(`${getApiBaseUrl()}/api/v1/auth/me`, {
+        headers: { ...getAuthHeader() },
+    });
+    if (!res.ok) {
+        const err = new Error(`Sessão inválida (HTTP ${res.status})`);
+        err.status = res.status;
+        throw err;
+    }
+    return res.json();
+}
+
+export function logoutAdvogado() {
+    if (typeof window !== "undefined") {
+        localStorage.removeItem("jurivision_token");
+        sessionStorage.removeItem("jurivision_token");
+    }
+}
+
 export async function fetchDashboardMetricas() {
     const res = await fetch(`${getApiBaseUrl()}/api/v1/dashboard/metricas`, {
         headers: { ...getAuthHeader() },
@@ -241,7 +260,14 @@ export async function preverAnonimizacao(payload, signal) {
 }
 
 export function getRelatorioPdfUrl(idProcesso) {
-    return `${getApiBaseUrl()}/api/v1/relatorios/processo/${encodeURIComponent(idProcesso)}/pdf`;
+    const base = `${getApiBaseUrl()}/api/v1/relatorios/processo/${encodeURIComponent(idProcesso)}/pdf`;
+    if (typeof window !== "undefined") {
+        const token = localStorage.getItem("jurivision_token") || sessionStorage.getItem("jurivision_token");
+        if (token) {
+            return `${base}?token=${encodeURIComponent(token)}`;
+        }
+    }
+    return base;
 }
 
 export async function consultarProcessoDatajud(numeroProcesso) {

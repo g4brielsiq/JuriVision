@@ -43,3 +43,12 @@
   - Integração completa no front-end (`api.js`, `index.html`, `app.js`), incluindo carregamento dinâmico de filtros e exclusão de julgados (`DELETE /api/v1/processos/{id_processo}`) na folha de leitura.
   - Criação da suíte `backend/tests/test_etapa1_consistencia_e_filtros.py` com 8 testes exaustivos da Etapa 1.
 - **Status:** Build do frontend (`npm run build`) e **41 de 41 testes automatizados** aprovados no pytest.
+
+### [2026-11-21] — Etapa 2 (JuriVision-Pro): Segurança JWT, Endpoint `/auth/me` e Isolamento Multi-usuário
+- **Branch de Atuação:** `dev` (`pro` — `VictorSamyr/JuriVision-Pro`)
+- **Atividades Realizadas:**
+  - Implementação de `get_optional_current_user`, `get_current_user_strict`, `build_processo_visibility_filter`, `can_read_processo` e `ensure_can_modify_processo` em `backend/app/core/security.py`.
+  - Criação do endpoint `GET /api/v1/auth/me` em `backend/app/routers/auth.py` e aplicação do isolamento multi-tenant em `processos.py`, `dashboard.py` e `relatorios.py`.
+  - Integração no front-end (`api.js`, `index.html`, `app.js`) com restauração de sessão autenticada, propagação de `?token=` para relatórios PDF privados e botão `#btn-logout-account`.
+  - Criação da suíte `backend/tests/test_etapa2_seguranca_e_isolamento.py` com 7 testes exaustivos.
+- **Status:** Build do frontend (`npm run build`) e **48 de 48 testes automatizados** aprovados no pytest.

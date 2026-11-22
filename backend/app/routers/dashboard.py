@@ -5,11 +5,14 @@ Rastreabilidade:
 - MODELING.md: RF-07 (Consolidação de Indicadores no Dashboard), UC-05, CT-07
 """
 from collections import defaultdict
+from typing import Optional
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.models.entities import AnalisePreditiva, Processo
+from app.core.security import build_processo_visibility_filter, get_optional_current_user
+from app.models.entities import Processo, Usuario
 from app.schemas.contracts import (
     DashboardMetricasResponse,
     DecisaoJuizSchema,
@@ -20,12 +23,19 @@ router = APIRouter(prefix="/api/v1/dashboard", tags=["Dashboard de Jurimetria (R
 
 
 @router.get("/metricas", response_model=DashboardMetricasResponse)
-def obter_metricas_dashboard(db: Session = Depends(get_db)) -> DashboardMetricasResponse:
+def obter_metricas_dashboard(
+    db: Session = Depends(get_db),
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
+) -> DashboardMetricasResponse:
     """
     Consolida em tempo real os indicadores globais de jurimetria a partir dos processos
-    higienizados persistidos no banco relacional (RF-07 / UC-05).
+    higienizados visíveis ao usuário atual (RF-07 / UC-05).
     """
-    processos = db.query(Processo).all()
+    processos = (
+        db.query(Processo)
+        .filter(build_processo_visibility_filter(current_user))
+        .all()
+    )
     total_processos = len(processos)
 
     if total_processos == 0:
@@ -61,11 +71,13 @@ def obter_metricas_dashboard(db: Session = Depends(get_db)) -> DashboardMetricas
 
     taxa_exito_global = round(favoraveis / total_processos, 3)
 
-    analises = db.query(AnalisePreditiva).all()
-    if analises:
-        tempo_medio = int(
-            round(sum(a.tempo_estimado_sentenca_meses for a in analises) / len(analises))
-        )
+    prazos = [
+        p.analise_preditiva.tempo_estimado_sentenca_meses
+        for p in processos
+        if p.analise_preditiva is not None
+    ]
+    if prazos:
+        tempo_medio = int(round(sum(prazos) / len(prazos)))
     else:
         tempo_medio = 14
 
