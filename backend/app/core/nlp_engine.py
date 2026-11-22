@@ -675,3 +675,112 @@ def compute_jurimetria_prediction(
         "magistrado_inferido": magistrado_inferido,
         "precedentes_similares": ranked,
     }
+
+
+def _read_precedent_field(item: Any, field: str, default: Any = "") -> Any:
+    """Lê campo de precedente similar tanto em Pydantic model quanto em dict."""
+    if isinstance(item, dict):
+        return item.get(field, default)
+    return getattr(item, field, default)
+
+
+def build_rag_precedents_context(
+    contexto_historico: Any,
+    tema: str,
+    magistrado: str,
+    comarca: str,
+) -> str:
+    """
+    Constrói bloco textual estruturado de RAG Jurídico combinando métricas estatísticas
+    do acervo visível e os Top-5 precedentes similares recuperados via TF-IDF + BM25.
+    Nenhum dado pessoal bruto é incluído (conformidade LGPD Art. 12).
+    """
+    total = int(getattr(contexto_historico, "total_casos_similares", 0) or 0)
+    taxa = float(getattr(contexto_historico, "taxa_favoravel_juiz", 0.5) or 0.5)
+    tempo = int(getattr(contexto_historico, "tempo_medio_meses", 12) or 12)
+    margem_raw = getattr(contexto_historico, "margem_confianca_calculada", None)
+    margem = (
+        float(margem_raw)
+        if margem_raw is not None
+        else compute_wilson_margin(taxa, total)
+    )
+    precedentes = list(getattr(contexto_historico, "precedentes_similares", None) or [])
+
+    lines = [
+        f"Tema Classificado: {tema}",
+        f"Órgão Julgador / Comarca: {comarca}",
+        f"Magistrado Analisado: {magistrado}",
+        (
+            f"Estatística Consolidada (TF-IDF + BM25 + Wilson): "
+            f"{total} precedente(s) similar(es) no acervo | "
+            f"Taxa Favorável Ponderada: {int(round(taxa * 100))}% "
+            f"(margem de confiança ±{int(round(margem * 100))}%) | "
+            f"Tempo Médio Estimado: {tempo} meses."
+        ),
+    ]
+
+    if precedentes:
+        lines.append("Top Precedentes Similares Recuperados do Banco:")
+        for idx, prec in enumerate(precedentes[:5], start=1):
+            cnj = _read_precedent_field(prec, "numero_processo", "N/A")
+            p_tema = _read_precedent_field(prec, "tema", tema)
+            p_juiz = _read_precedent_field(prec, "magistrado", magistrado)
+            p_res = _read_precedent_field(prec, "resultado", "Em Analise")
+            p_sim = float(_read_precedent_field(prec, "similaridade", 0.0) or 0.0)
+            p_prazo = int(_read_precedent_field(prec, "prazo_meses", tempo) or tempo)
+            p_tese = str(_read_precedent_field(prec, "tese", "") or "").strip()
+            tese_info = f" | Tese: {p_tese[:220]}" if p_tese else ""
+            lines.append(
+                f"{idx}. CNJ {cnj} | Tema: {p_tema} | Juiz: {p_juiz} | "
+                f"Resultado: {p_res} | Similaridade: {int(round(p_sim * 100))}% | "
+                f"Prazo: {p_prazo}m{tese_info}"
+            )
+    else:
+        lines.append(
+            "Top Precedentes Similares Recuperados do Banco: Nenhum precedente detalhado "
+            "vinculado; utilizar métricas agregadas do contexto histórico."
+        )
+
+    return "\n".join(lines)
+
+
+def synthesize_local_rag_tendencia(
+    magistrado: str,
+    tema: str,
+    prob: float,
+    margem: float,
+    casos_similares: int,
+    precedentes: list[Any],
+) -> str:
+    """
+    Sintetiza parecer determinístico de tendência de julgamento baseado no Intervalo de Wilson
+    e nos Top-3 precedentes similares reais recuperados do acervo.
+    """
+    pct_juiz = int(round(prob * 100))
+    pct_margem = int(round(margem * 100))
+
+    if casos_similares <= 0:
+        return (
+            f"Sem precedentes similares suficientes no acervo atual para {magistrado} em {tema}; "
+            f"aplicado baseline inicial de {pct_juiz}% (±{pct_margem}%)."
+        )
+
+    base_msg = (
+        f"Estimativa baseada em {casos_similares} precedente(s) similar(es) no acervo "
+        f"(taxa ponderada de {pct_juiz}% favorável, margem ±{pct_margem}% "
+        f"para {magistrado} em {tema})."
+    )
+    if not precedentes:
+        return base_msg
+
+    top_refs: list[str] = []
+    for prec in precedentes[:3]:
+        cnj = _read_precedent_field(prec, "numero_processo", "")
+        res = _read_precedent_field(prec, "resultado", "Em Analise")
+        sim_pct = int(round(float(_read_precedent_field(prec, "similaridade", 0.0) or 0.0) * 100))
+        if cnj:
+            top_refs.append(f"CNJ {cnj} ({res}, {sim_pct}% sim.)")
+
+    if not top_refs:
+        return base_msg
+    return f"{base_msg} Precedentes de maior aderência: {'; '.join(top_refs)}."

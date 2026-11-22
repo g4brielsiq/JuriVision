@@ -15,7 +15,7 @@ A tabela abaixo ordena todas as frentes de evolução técnica **da mais simples
 | **2** | **Segurança, JWT Obrigatório e Isolamento Multi-usuário** | Baixa / Média | Rotas de upload/leitura sem verificação de Bearer token e gravação fixa em `usuario_id="usr-01"`, misturando documentos de diferentes usuários. | `[x] CONCLUÍDA` |
 | **3** | **Endurecimento da Barreira LGPD (Regex Expandido & Detecção em Prosa)** | Média | `AnonimizadorLGPD` restrito a CPF, RG rotulado e linha `Autor: Nome`, sem mascarar e-mails, telefones, endereços ou nomes soltos. | `[x] CONCLUÍDA` |
 | **4** | **Motor NLP Local Real e Similaridade Textual (`TF-IDF` / `BM25`)** | Média / Alta | Classificação via 5 `if/else`, resumo pelas 2 primeiras frases, juiz padrão hardcoded (`Dr. Rafael De Amorim`), multiplicador fixo `* 7` e margem fixa `±8%`. | `[x] CONCLUÍDA` |
-| **5** | **RAG Jurídico (Gemini + Precedentes Reais), OCR e Microsserviço `ai_engine:8001`** | Alta | `ai_engine/worker.py` em `sleep(3600)`, Gemini sem contexto dos julgados do banco e ausência de OCR para PDFs escaneados. | `[ ] PENDENTE` |
+| **5** | **RAG Jurídico (Gemini + Precedentes Reais), Cache SHA-256, Extrator PDF e `ai_engine:8001`** | Alta | `ai_engine/worker.py` em `sleep(3600)`, Gemini sem contexto dos julgados do banco e extração restrita a operadores `Tj` simples. | `[x] CONCLUÍDA` |
 | **6** | **Modelo Freemium / Assinaturas, Cache de Demo e Deploy Cloud (CONAD)** | Alta | Plataforma 100% aberta em `localhost` sem planos (`FREE`/`PRO`), cotas de uso ou hospedagem escalável em nuvem. | `[ ] PENDENTE` |
 
 ---
@@ -356,4 +356,26 @@ Toda nova modificação deve seguir o modelo abaixo:
   - `backend/tests/test_etapa4_nlp_e_similaridade.py` - Suíte exaustiva com 6 novos testes validando TF-IDF/BM25, extração dinâmica, sumarização, Wilson e fluxos da API.
 - **Como Testar / Executar Localmente:**
   - PowerShell: `$env:PYTHONPATH="backend"; .\.venv\Scripts\pytest backend/tests/ -v` (**60 testes aprovados**).
+  - Front-end: `cd frontend; npm run build`.
+
+---
+
+### [2026-11-21] — Etapa 5: RAG Jurídico (Gemini + Precedentes Reais), Cache SHA-256, Extrator PDF Expandido e Microsserviço `ai_engine:8001`
+- **Branch:** `dev` (`VictorSamyr/JuriVision-Pro`)
+- **Autor / Dupla:** Victor Samyr
+- **Pacote da EAP / Requisitos:** Etapa 5 do Roadmap, EAP 1.4.3, RF-02, RF-05, RF-06, ADR-001, ADR-002
+- **Resumo da Mudança:**
+  1. **RAG Jurídico com Precedentes Reais (`backend/app/core/nlp_engine.py`, `backend/app/core/ai_gateway.py`):** criação de `build_rag_precedents_context` e `synthesize_local_rag_tendencia`. O `GeminiAIAdapter` passa a injetar no prompt os Top-5 precedentes similares recuperados via `TF-IDF + BM25` (CNJs, resultados históricos, prazos, teses e Intervalo de Wilson) sempre após a barreira `AnonimizadorLGPD`; no modo offline, `LocalDeterministicFallbackAdapter` também referencia os Top-3 precedentes similares na tendência de julgamento.
+  2. **Cache Persistente em Memória SHA-256 (`GeminiAIAdapter`):** deduplicação por hash `SHA-256(modelo + texto_higienizado + contexto_rag)` com limite FIFO de 256 entradas, evitando chamadas repetidas ao Gemini para análises equivalentes.
+  3. **Extrator Documental PDF Expandido (`ExtratorDocumental`):** suporte adicional a arrays de texto `[(...)] TJ`, metadados `/ActualText` e `/Contents` e descompressão automática de streams `FlateDecode` via `zlib`.
+  4. **Ativação do Microsserviço HTTP `ai_engine:8001` (`ai_engine/worker.py`, `ai_engine/requirements.txt`):** servidor FastAPI/Uvicorn real expondo `GET /health` e `POST /internal/v1/analyze` com suporte ao núcleo do monorepo ou fallback standalone e sanitização LGPD na ida e na volta do `ResilientAIGateway`.
+  5. **Planejamento Futuro Multi-Provedor (`ARCHITECTURE.md` — ADR-002):** documentada a expansão futura sobre `AIGatewayPort` para adaptadores **Ollama / OpenAI-API** (`OllamaAIAdapter` / `OpenAICompatibleAdapter` para modelos *self-hosted* como `Qwen 2.5` e `Llama 3.1`), mantendo o foco prático atual em **Gemini RAG + Motor Estatístico Local**.
+- **Arquivos Criados / Modificados:**
+  - `backend/app/core/nlp_engine.py` - Funções `build_rag_precedents_context` e `synthesize_local_rag_tendencia`.
+  - `backend/app/core/ai_gateway.py` - `ExtratorDocumental` expandido, RAG Jurídico com cache SHA-256 no `GeminiAIAdapter`, síntese RAG local e sanitização completa de saída no `ResilientAIGateway`.
+  - `ai_engine/worker.py` e `ai_engine/requirements.txt` - Microsserviço FastAPI HTTP funcional na porta `8001`.
+  - `ARCHITECTURE.md` - Atualização da `ADR-002` com RAG Jurídico e roadmap arquitetural multi-provedor.
+  - `backend/tests/test_etapa5_rag_e_ai_engine.py` - Suíte exaustiva com 6 novos testes cobrindo RAG, cache SHA-256, `ai_engine:8001`, streams PDF e fluxo E2E de upload.
+- **Como Testar / Executar Localmente:**
+  - PowerShell: `$env:PYTHONPATH="backend"; .\.venv\Scripts\pytest backend/tests/ -v` (**66 testes aprovados**).
   - Front-end: `cd frontend; npm run build`.

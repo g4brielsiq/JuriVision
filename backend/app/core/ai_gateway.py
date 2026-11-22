@@ -11,16 +11,19 @@ import json
 import logging
 import re
 from typing import Tuple
+import zlib
 
 import httpx
 from pypdf import PdfReader
 
 from app.core.config import settings
 from app.core.nlp_engine import (
+    build_rag_precedents_context,
     classify_legal_theme,
     compute_wilson_margin,
     extract_court_and_judge,
     summarize_legal_text,
+    synthesize_local_rag_tendencia,
 )
 from app.schemas.contracts import (
     AnalisePreditivaSchema,
@@ -620,10 +623,51 @@ class AnonimizadorLGPD:
 class ExtratorDocumental:
     """
     Serviço determinístico local de validação de integridade e extração textual de PDFs (RF-02 / RN-04).
+    Suporta PDFs padrão via `pypdf`, operadores `Tj`/`TJ` diretos, metadados `/ActualText` e streams `FlateDecode`.
     """
 
     @staticmethod
-    def extract_text_from_pdf_bytes(file_bytes: bytes) -> str:
+    def _unescape_pdf_literal(segment: str) -> str:
+        return (
+            segment.replace(r"\(", "(")
+            .replace(r"\)", ")")
+            .replace(r"\\", "\\")
+            .replace(r"\n", " ")
+            .replace(r"\r", " ")
+            .replace(r"\t", " ")
+        )
+
+    @classmethod
+    def _extract_operators_from_stream_text(cls, stream_text: str) -> list[str]:
+        chunks: list[str] = []
+        op_pattern = re.compile(
+            r"\(([^()\\]*(?:\\.[^()\\]*)*)\)\s*Tj|\[([^\]]+)\]\s*TJ",
+            re.DOTALL,
+        )
+        for match in op_pattern.finditer(stream_text):
+            if match.group(1) is not None:
+                text = cls._unescape_pdf_literal(match.group(1)).strip()
+                if len(text) >= 4:
+                    chunks.append(text)
+            elif match.group(2) is not None:
+                parts = re.findall(r"\(([^()\\]*(?:\\.[^()\\]*)*)\)", match.group(2))
+                joined = "".join(cls._unescape_pdf_literal(p) for p in parts).strip()
+                if len(joined) >= 4:
+                    chunks.append(joined)
+
+        if not chunks:
+            for meta_pat in (
+                r"/ActualText\s*\(([^()\\]*(?:\\.[^()\\]*)*)\)",
+                r"/Contents\s*\(([^()\\]*(?:\\.[^()\\]*)*)\)",
+            ):
+                for raw_meta in re.findall(meta_pat, stream_text):
+                    cleaned = cls._unescape_pdf_literal(raw_meta).strip()
+                    if len(cleaned) >= 4:
+                        chunks.append(cleaned)
+        return chunks
+
+    @classmethod
+    def extract_text_from_pdf_bytes(cls, file_bytes: bytes) -> str:
         if not file_bytes or len(file_bytes) < 10:
             raise ValueError("Arquivo vazio ou sem conteúdo binário válido.")
 
@@ -638,15 +682,33 @@ class ExtratorDocumental:
                 if page_text.strip():
                     extracted_chunks.append(page_text.strip())
         except Exception:
-            # Fallback para PDFs sintéticos enxutos de suítes de teste que possuem operadores Tj/TJ diretos
+            # Fallback para PDFs sintéticos ou operadores Tj/TJ diretos e streams FlateDecode
             pass
 
         if not extracted_chunks:
-            # Inspeção de strings literais em operadores PDF (ex.: (Texto da petição) Tj)
             raw_latin = file_bytes.decode("latin-1", errors="ignore")
-            literals = re.findall(r"\(([^()]{4,})\)\s*Tj", raw_latin)
-            if literals:
-                extracted_chunks.extend(literals)
+            extracted_chunks.extend(cls._extract_operators_from_stream_text(raw_latin))
+
+        if not extracted_chunks:
+            for stream_match in re.finditer(
+                rb"stream(?:\r\n|\n)(.*?)(?:\r\n|\n)?endstream", file_bytes, flags=re.DOTALL
+            ):
+                raw_stream = stream_match.group(1)
+                decompressed = b""
+                for attempt in (raw_stream, raw_stream.rstrip(b"\r\n")):
+                    for wbits in (zlib.MAX_WBITS, -zlib.MAX_WBITS):
+                        try:
+                            decompressed = zlib.decompress(attempt, wbits)
+                            break
+                        except Exception:
+                            continue
+                    if decompressed:
+                        break
+                if decompressed:
+                    stream_str = decompressed.decode("utf-8", errors="ignore") or decompressed.decode(
+                        "latin-1", errors="ignore"
+                    )
+                    extracted_chunks.extend(cls._extract_operators_from_stream_text(stream_str))
 
         full_text = "\n".join(extracted_chunks).strip()
         if not full_text:
@@ -740,19 +802,14 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
             if (ctx.tese_precedente_similar and casos_similares >= 1)
             else tese_recomendada
         )
-        percentual_juiz = int(round(prob * 100))
-
-        if casos_similares > 0:
-            tendencia_juiz = (
-                f"Estimativa baseada em {casos_similares} precedente(s) similar(es) no acervo "
-                f"(taxa ponderada de {percentual_juiz}% favorável, margem ±{int(round(margem * 100))}% "
-                f"para {magistrado} em {tema})."
-            )
-        else:
-            tendencia_juiz = (
-                f"Sem precedentes similares suficientes no acervo atual para {magistrado} em {tema}; "
-                f"aplicado baseline inicial de {percentual_juiz}% (±{int(round(margem * 100))}%)."
-            )
+        tendencia_juiz = synthesize_local_rag_tendencia(
+            magistrado=magistrado,
+            tema=tema,
+            prob=prob,
+            margem=margem,
+            casos_similares=casos_similares,
+            precedentes=ctx.precedentes_similares,
+        )
 
         return InternalAnalyzeResponse(
             metadados_extraidos=MetadadosExtraidosSchema(
@@ -783,37 +840,75 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
         )
 
 
-
 class GeminiAIAdapter(AIGatewayPort):
     """
-    Adaptador para a API do Google Gemini (Google AI Studio - Free Tier).
+    Adaptador RAG Jurídico para a API do Google Gemini (Google AI Studio - Free Tier).
     Rastreabilidade:
-    - ADR-002: Adapter pluggável com barreira LGPD obrigatória pré-chamada.
+    - ADR-002: Adapter pluggável com barreira LGPD obrigatória pré-chamada e Cache SHA-256.
     - Termos do Free Tier: Tráfego executado exclusivamente sobre texto higienizado (Art. 12 da LGPD).
     """
 
+    _rag_cache: dict[str, dict] = {}
+    _MAX_CACHE_SIZE: int = 256
+
     def __init__(self) -> None:
         self._fallback = LocalDeterministicFallbackAdapter()
+
+    @classmethod
+    def clear_cache(cls) -> None:
+        """Limpa o cache em memória SHA-256 de respostas do Gemini."""
+        cls._rag_cache.clear()
+
+    @staticmethod
+    def _apply_rag_payload(
+        base_resp: InternalAnalyzeResponse,
+        payload: dict,
+    ) -> InternalAnalyzeResponse:
+        base_resp.resumo_nlp = payload["resumo_nlp"]
+        base_resp.analise_preditiva.probabilidade_deferimento = payload["prob"]
+        base_resp.analise_preditiva.tese_recomendada = payload["tese_recomendada"]
+        base_resp.analise_preditiva.tendencia_juiz = payload["tendencia_juiz"]
+        base_resp.analise_preditiva.provedor_ia = payload["provedor_ia"]
+        base_resp.auditoria_lgpd.total_cpfs_mascarados += payload["extra_cpf"]
+        return base_resp
 
     def analyze_document(self, request: InternalAnalyzeRequest) -> InternalAnalyzeResponse:
         api_key = settings.GEMINI_API_KEY.strip()
         if not api_key:
             return self._fallback.analyze_document(request)
 
-        # 1. Obter o baseline determinístico local
+        # 1. Obter o baseline determinístico local + contexto RAG real do acervo
         base_resp = self._fallback.analyze_document(request)
         sanitized_text, _, _ = AnonimizadorLGPD.sanitize_text(request.texto_bruto or "")
+        rag_block_raw = build_rag_precedents_context(
+            request.contexto_historico,
+            base_resp.metadados_extraidos.tema,
+            base_resp.metadados_extraidos.magistrado,
+            base_resp.metadados_extraidos.comarca,
+        )
+        rag_block, _, _ = AnonimizadorLGPD.sanitize_text(rag_block_raw)
 
-        # 2. Montar prompt estruturado estritamente sobre texto desidentificado
+        # 2. Verificar Cache SHA-256 (texto higienizado + modelo + contexto RAG de precedentes)
+        cache_key = hashlib.sha256(
+            f"{settings.GEMINI_MODEL}|{sanitized_text[:4000]}|{rag_block}".encode("utf-8")
+        ).hexdigest()
+        cached = self._rag_cache.get(cache_key)
+        if cached is not None:
+            return self._apply_rag_payload(base_resp, cached)
+
+        # 3. Montar prompt estruturado de RAG Jurídico estritamente sobre texto desidentificado
         prompt = (
-            "Você é um perito jurimétrico especialista em jurisprudência cível e do consumidor do TJAL.\n"
-            "Analise o teor fático anonimizado da petição a seguir (dados pessoais já foram desidentificados sob a LGPD):\n\n"
+            "Você é um perito jurimétrico especialista em jurisprudência brasileira (TJAL / Tribunais Estaduais).\n"
+            "Analise o teor fático anonimizado da petição abaixo (dados pessoais já desidentificados sob a LGPD) "
+            "cruzando-o obrigatoriamente com os precedentes similares e métricas estatísticas recuperadas do acervo:\n\n"
             f"--- INÍCIO DO TEXTO ANONIMIZADO ---\n{sanitized_text[:4000]}\n--- FIM DO TEXTO ANONIMIZADO ---\n\n"
-            "Com base nas teses e pedidos, responda EXCLUSIVAMENTE em formato JSON com as chaves:\n"
+            f"--- CONTEXTO JURIMÉTRICO E PRECEDENTES SIMILARES DO ACERVO (RAG) ---\n{rag_block}\n"
+            "--- FIM DO CONTEXTO RAG ---\n\n"
+            "Com base nas teses, pedidos e precedentes reais acima, responda EXCLUSIVAMENTE em formato JSON com as chaves:\n"
             "- resumo_nlp: síntese concisa da causa de pedir e pedidos em até 3 parágrafos objetivos.\n"
-            "- tese_recomendada: fundamento legal e precedentes consolidados mais aderentes ao caso.\n"
-            "- probabilidade_ajustada: float entre 0.15 e 0.95 refletindo a força técnica dos argumentos.\n"
-            "- tendencia_juiz: síntese qualitativa sobre o histórico de julgamento em casos similares em Alagoas."
+            "- tese_recomendada: fundamento legal, súmulas e precedentes consolidados mais aderentes ao caso.\n"
+            "- probabilidade_ajustada: float entre 0.15 e 0.95 calibrado pelas evidências do caso e histórico do acervo.\n"
+            "- tendencia_juiz: síntese analítica citando o histórico de julgamento e aderência aos precedentes similares."
         )
 
         url = (
@@ -842,13 +937,13 @@ class GeminiAIAdapter(AIGatewayPort):
                                 raw_reply = re.sub(r"^```(?:json)?\s*", "", raw_reply)
                                 raw_reply = re.sub(r"\s*```$", "", raw_reply)
                             parsed_json = json.loads(raw_reply)
-                            clean_resumo, extra_cpf, _ = AnonimizadorLGPD.sanitize_text(
+                            clean_resumo, extra_cpf_resumo, _ = AnonimizadorLGPD.sanitize_text(
                                 parsed_json.get("resumo_nlp", base_resp.resumo_nlp)
                             )
-                            clean_tese, _, _ = AnonimizadorLGPD.sanitize_text(
+                            clean_tese, extra_cpf_tese, _ = AnonimizadorLGPD.sanitize_text(
                                 parsed_json.get("tese_recomendada", base_resp.analise_preditiva.tese_recomendada)
                             )
-                            clean_tendencia, _, _ = AnonimizadorLGPD.sanitize_text(
+                            clean_tendencia, extra_cpf_tend, _ = AnonimizadorLGPD.sanitize_text(
                                 parsed_json.get("tendencia_juiz", base_resp.analise_preditiva.tendencia_juiz)
                             )
                             prob = float(
@@ -857,15 +952,23 @@ class GeminiAIAdapter(AIGatewayPort):
                                     base_resp.analise_preditiva.probabilidade_deferimento,
                                 )
                             )
-                            prob = max(min(prob, 0.95), 0.15)
+                            prob = round(max(min(prob, 0.95), 0.15), 2)
+                            extra_cpf = extra_cpf_resumo + extra_cpf_tese + extra_cpf_tend
 
-                            base_resp.resumo_nlp = clean_resumo
-                            base_resp.analise_preditiva.probabilidade_deferimento = prob
-                            base_resp.analise_preditiva.tese_recomendada = clean_tese
-                            base_resp.analise_preditiva.tendencia_juiz = clean_tendencia
-                            base_resp.analise_preditiva.provedor_ia = f"gemini ({settings.GEMINI_MODEL})"
-                            base_resp.auditoria_lgpd.total_cpfs_mascarados += extra_cpf
-                            return base_resp
+                            cached_entry = {
+                                "resumo_nlp": clean_resumo,
+                                "prob": prob,
+                                "tese_recomendada": clean_tese,
+                                "tendencia_juiz": clean_tendencia,
+                                "provedor_ia": f"gemini ({settings.GEMINI_MODEL})",
+                                "extra_cpf": extra_cpf,
+                            }
+                            if len(self._rag_cache) >= self._MAX_CACHE_SIZE:
+                                oldest_key = next(iter(self._rag_cache))
+                                self._rag_cache.pop(oldest_key, None)
+                            self._rag_cache[cache_key] = cached_entry
+
+                            return self._apply_rag_payload(base_resp, cached_entry)
 
                 logger.warning(
                     "Gemini API retornou status %d. Acionando fallback determinístico local.",
@@ -884,8 +987,8 @@ class GeminiAIAdapter(AIGatewayPort):
 class ResilientAIGateway(AIGatewayPort):
     """
     Gateway principal da camada Back-end para os provedores de IA (ADR-001 e ADR-002).
-    - Se GEMINI_API_KEY estiver configurada e AI_PROVIDER for gemini ou auto, utiliza Gemini.
-    - Se AI_PROVIDER == 'external', tenta comunicação HTTP com ai_engine.
+    - Se GEMINI_API_KEY estiver configurada e AI_PROVIDER for gemini ou auto, utiliza Gemini RAG.
+    - Se AI_PROVIDER == 'external', tenta comunicação HTTP com o microsserviço ai_engine (:8001).
     - Em caso de timeout, offline ou erro, executa LocalDeterministicFallbackAdapter (RNF-05).
     """
 
@@ -894,7 +997,7 @@ class ResilientAIGateway(AIGatewayPort):
         self._gemini = GeminiAIAdapter()
 
     def analyze_document(self, request: InternalAnalyzeRequest) -> InternalAnalyzeResponse:
-        # 1. Se GEMINI_API_KEY estiver configurada e AI_PROVIDER for gemini ou auto, utiliza Gemini
+        # 1. Se GEMINI_API_KEY estiver configurada e AI_PROVIDER for gemini ou auto, utiliza Gemini RAG
         if settings.GEMINI_API_KEY.strip() and settings.AI_PROVIDER in ("gemini", "auto"):
             return self._gemini.analyze_document(request)
 
@@ -906,13 +1009,23 @@ class ResilientAIGateway(AIGatewayPort):
                     response = client.post(endpoint, json=request.model_dump())
                     if response.status_code == 200:
                         parsed = InternalAnalyzeResponse.model_validate(response.json())
-                        clean_resumo, extra_cpfs, _ = AnonimizadorLGPD.sanitize_text(parsed.resumo_nlp)
+                        clean_resumo, extra_cpfs_r, _ = AnonimizadorLGPD.sanitize_text(parsed.resumo_nlp)
+                        clean_tese, extra_cpfs_t, _ = AnonimizadorLGPD.sanitize_text(
+                            parsed.analise_preditiva.tese_recomendada
+                        )
+                        clean_tendencia, extra_cpfs_td, _ = AnonimizadorLGPD.sanitize_text(
+                            parsed.analise_preditiva.tendencia_juiz
+                        )
                         parsed.resumo_nlp = clean_resumo
-                        parsed.auditoria_lgpd.total_cpfs_mascarados += extra_cpfs
+                        parsed.analise_preditiva.tese_recomendada = clean_tese
+                        parsed.analise_preditiva.tendencia_juiz = clean_tendencia
+                        parsed.auditoria_lgpd.total_cpfs_mascarados += (
+                            extra_cpfs_r + extra_cpfs_t + extra_cpfs_td
+                        )
                         return parsed
             except Exception as exc:
                 logger.info(
-                    "Serviço interno ai_engine (%s) não ativo ou em modo scaffolding (%s). "
+                    "Serviço interno ai_engine (%s) não ativo ou indisponível (%s). "
                     "Executando LocalDeterministicFallbackAdapter (ADR-002 / RNF-05).",
                     endpoint,
                     exc.__class__.__name__,

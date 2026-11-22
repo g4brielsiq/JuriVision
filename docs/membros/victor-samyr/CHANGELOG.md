@@ -68,3 +68,13 @@
   - Integração completa em `LocalDeterministicFallbackAdapter` (`ai_gateway.py`), `ContextoHistoricoSchema` (`contracts.py`) e nos fluxos de PDF, CSV e cadastro manual (`processos.py`), removendo o multiplicador artificial `* 7`, a margem fixa `0.08` e o fallback fixo de juiz.
   - Criação da suíte `backend/tests/test_etapa4_nlp_e_similaridade.py` com 6 testes exaustivos.
 - **Status:** Build do frontend (`npm run build`) e **60 de 60 testes automatizados** aprovados no pytest.
+
+### [2026-11-21] — Etapa 5 (JuriVision-Pro): RAG Jurídico (Gemini + Precedentes Reais), Cache SHA-256, Extrator PDF e Microsserviço `ai_engine:8001`
+- **Branch de Atuação:** `dev` (`pro` — `VictorSamyr/JuriVision-Pro`)
+- **Atividades Realizadas:**
+  - Implementação de `build_rag_precedents_context` e `synthesize_local_rag_tendencia` em `backend/app/core/nlp_engine.py`.
+  - Evolução do `GeminiAIAdapter` em `backend/app/core/ai_gateway.py` com injeção dos Top-5 precedentes similares reais do banco (RAG), métricas estatísticas de Wilson e cache SHA-256, além de expansão de `ExtratorDocumental` (`TJ` arrays e streams `FlateDecode`).
+  - Ativação do servidor FastAPI HTTP em `ai_engine/worker.py` (`GET /health` e `POST /internal/v1/analyze` na porta `8001`) e atualização de `ai_engine/requirements.txt`.
+  - Documentação da expansão planejada multi-provedor (Ollama / OpenAI-API via `AIGatewayPort`) na `ADR-002` de `ARCHITECTURE.md`.
+  - Criação da suíte `backend/tests/test_etapa5_rag_e_ai_engine.py` com 6 testes exaustivos.
+- **Status:** Build do frontend (`npm run build`) e **66 de 66 testes automatizados** aprovados no pytest.
