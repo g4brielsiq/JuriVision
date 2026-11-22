@@ -119,6 +119,14 @@ export async function registerAdvogado(payload) {
     return data;
 }
 
+export async function fetchPerfilAutenticado() {
+    const res = await fetch(`${getApiBaseUrl()}/api/v1/auth/me`, {
+        headers: { ...getAuthHeader() },
+    });
+    if (!res.ok) throw new Error(`Sessão não autenticada (HTTP ${res.status}).`);
+    return res.json();
+}
+
 export async function fetchDashboardMetricas() {
     const res = await fetch(`${getApiBaseUrl()}/api/v1/dashboard/metricas`, {
         headers: { ...getAuthHeader() },
@@ -157,10 +165,20 @@ export async function uploadProcessosCsv(file) {
     return data;
 }
 
-export async function fetchProcessos({ tema = "", juiz = "", busca = "", pagina = 1, limite = 8 } = {}) {
+export async function fetchProcessos({
+    tema = "",
+    juiz = "",
+    comarca = "",
+    tribunal = "",
+    busca = "",
+    pagina = 1,
+    limite = 8,
+} = {}) {
     const params = new URLSearchParams();
     if (tema) params.set("tema", tema);
     if (juiz) params.set("juiz", juiz);
+    if (comarca) params.set("comarca", comarca);
+    if (tribunal) params.set("tribunal", tribunal);
     if (busca) params.set("busca", busca);
     params.set("pagina", String(pagina));
     params.set("limite", String(limite));
@@ -170,6 +188,24 @@ export async function fetchProcessos({ tema = "", juiz = "", busca = "", pagina 
     });
     if (!res.ok) throw new Error(`Erro ao consultar processos: HTTP ${res.status}`);
     return res.json();
+}
+
+export async function fetchProcessosSimilares(idProcesso, limite = 5) {
+    const res = await fetch(
+        `${getApiBaseUrl()}/api/v1/processos/${encodeURIComponent(idProcesso)}/similares?limite=${limite}`,
+        { headers: { ...getAuthHeader() } },
+    );
+    if (!res.ok) throw new Error(`Erro ao buscar precedentes similares (HTTP ${res.status}).`);
+    return res.json();
+}
+
+export async function excluirProcesso(idProcesso) {
+    const res = await fetch(`${getApiBaseUrl()}/api/v1/processos/${encodeURIComponent(idProcesso)}`, {
+        method: "DELETE",
+        headers: { ...getAuthHeader() },
+    });
+    if (res.status === 404) throw new Error("Decisão não encontrada para exclusão.");
+    if (!res.ok) throw new Error(`Não foi possível excluir a decisão (HTTP ${res.status}).`);
 }
 
 export async function fetchProcessoDetalhes(idProcesso) {
