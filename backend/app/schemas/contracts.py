@@ -173,12 +173,19 @@ class ProcessoListItemSchema(BaseModel):
     resultado: str
     data_julgamento: Optional[str] = None
     probabilidade_deferimento: Optional[float] = None
+    resumo_curto: Optional[str] = None
 
 
 class ProcessoListResponse(BaseModel):
     total: int = Field(..., ge=0)
     pagina: int = Field(..., ge=1)
     itens: List[ProcessoListItemSchema]
+
+
+class FiltrosDisponiveisResponse(BaseModel):
+    temas: List[str]
+    magistrados: List[str]
+    comarcas: List[str]
 
 
 # ==============================================================================

@@ -13,7 +13,9 @@ import {
     buildSamplePetitionPdfFile,
     checkApiHealth,
     consultarProcessoDatajud,
+    excluirProcesso,
     fetchDashboardMetricas,
+    fetchFiltrosProcessos,
     fetchProcessoDetalhes,
     fetchProcessos,
     getRelatorioPdfUrl,
@@ -376,7 +378,18 @@ function renderizarMatrizesPrecisao(metricas) {
                 const selectJuiz = document.getElementById("filtro-juiz");
                 if (selectJuiz) {
                     const cleaned = rawJudge.replace(/^Dra?\.\s*/i, "");
-                    selectJuiz.value = cleaned;
+                    const exactOption = Array.from(selectJuiz.options).find(
+                        (opt) => opt.value === rawJudge || opt.value === cleaned
+                    );
+                    if (exactOption) {
+                        selectJuiz.value = exactOption.value;
+                    } else if (rawJudge) {
+                        const opt = document.createElement("option");
+                        opt.value = rawJudge;
+                        opt.textContent = rawJudge;
+                        selectJuiz.appendChild(opt);
+                        selectJuiz.value = rawJudge;
+                    }
                 }
                 switchTab("historico");
                 showToast(`Exibindo decisões filtradas por: ${rawJudge}`);
@@ -414,7 +427,16 @@ function renderizarMatrizesPrecisao(metricas) {
             btn.addEventListener("click", () => {
                 const tema = btn.getAttribute("data-theme") || "";
                 const selectTema = document.getElementById("filtro-tema");
-                if (selectTema) selectTema.value = tema;
+                if (selectTema) {
+                    const exists = Array.from(selectTema.options).some((opt) => opt.value === tema);
+                    if (!exists && tema) {
+                        const opt = document.createElement("option");
+                        opt.value = tema;
+                        opt.textContent = tema;
+                        selectTema.appendChild(opt);
+                    }
+                    selectTema.value = tema;
+                }
                 switchTab("historico");
                 showToast(`Exibindo decisões do assunto: ${tema}`);
             });
@@ -630,6 +652,46 @@ function renderizarChipsFiltrosAtivos() {
     });
 }
 
+export async function carregarFiltrosDinamicos() {
+    try {
+        const filtros = await fetchFiltrosProcessos();
+        const selectTema = document.getElementById("filtro-tema");
+        if (selectTema && Array.isArray(filtros.temas)) {
+            const atual = selectTema.value;
+            selectTema.innerHTML = '<option value="">Todos os assuntos</option>';
+            filtros.temas.forEach((tema) => {
+                const opt = document.createElement("option");
+                opt.value = tema;
+                opt.textContent = tema;
+                selectTema.appendChild(opt);
+            });
+            if (atual && Array.from(selectTema.options).some((opt) => opt.value === atual)) {
+                selectTema.value = atual;
+            }
+        }
+
+        const selectJuiz = document.getElementById("filtro-juiz");
+        if (selectJuiz && Array.isArray(filtros.magistrados)) {
+            const atual = selectJuiz.value;
+            selectJuiz.innerHTML = '<option value="">Todos os magistrados</option>';
+            filtros.magistrados.forEach((mag) => {
+                const opt = document.createElement("option");
+                opt.value = mag;
+                opt.textContent = mag;
+                selectJuiz.appendChild(opt);
+            });
+            if (atual) {
+                const match = Array.from(selectJuiz.options).find(
+                    (opt) => opt.value === atual || opt.value.replace(/^Dra?\.\s*/i, "") === atual
+                );
+                if (match) selectJuiz.value = match.value;
+            }
+        }
+    } catch {
+        // Fallback silencioso mantendo as opções iniciais do HTML
+    }
+}
+
 export async function carregarBaseConhecimento(novaPagina = null) {
     if (novaPagina !== null) {
         state.paginaAtual = novaPagina;
@@ -640,6 +702,7 @@ export async function carregarBaseConhecimento(novaPagina = null) {
     const juiz = document.getElementById("filtro-juiz")?.value || "";
     const ordenacao = document.getElementById("filtro-ordenacao")?.value || "recentes";
     const colecao = document.getElementById("filtro-colecao")?.value || "todos";
+    const ids = colecao === "salvos" ? Array.from(state.savedDecisions).join(",") : null;
 
     renderizarChipsFiltrosAtivos();
 
@@ -648,39 +711,45 @@ export async function carregarBaseConhecimento(novaPagina = null) {
         pagina: 1,
         itens: [...FALLBACK_PROCESSOS],
     };
+    let apiLoaded = false;
 
     try {
         lista = await fetchProcessos({
             tema,
             juiz,
             busca,
+            ordenacao,
+            ids,
             pagina: state.paginaAtual,
             limite: state.limitePorPagina,
         });
+        apiLoaded = true;
     } catch {
         // Fallback local
     }
 
     let itens = Array.isArray(lista.itens) ? [...lista.itens] : [];
 
-    // Filtro de biblioteca pessoal ("Decisões salvas")
-    if (colecao === "salvos") {
-        itens = itens.filter((item) => state.savedDecisions.has(item.id_processo));
+    if (!apiLoaded) {
+        if (colecao === "salvos") {
+            itens = itens.filter((item) => state.savedDecisions.has(item.id_processo));
+        }
+
+        itens.sort((a, b) => {
+            if (ordenacao === "antigas") {
+                return String(a.data_julgamento || "").localeCompare(String(b.data_julgamento || ""));
+            }
+            if (ordenacao === "assunto") {
+                return String(a.tema || "").localeCompare(String(b.tema || ""));
+            }
+            return String(b.data_julgamento || "").localeCompare(String(a.data_julgamento || ""));
+        });
     }
 
-    // Ordenação transparente conforme Seção 11.6
-    itens.sort((a, b) => {
-        if (ordenacao === "antigas") {
-            return String(a.data_julgamento || "").localeCompare(String(b.data_julgamento || ""));
-        }
-        if (ordenacao === "assunto") {
-            return String(a.tema || "").localeCompare(String(b.tema || ""));
-        }
-        return String(b.data_julgamento || "").localeCompare(String(a.data_julgamento || ""));
-    });
-
     state.lastLoadedItems = itens;
-    state.totalProcessosLista = colecao === "salvos" ? itens.length : lista.total;
+    state.totalProcessosLista = apiLoaded
+        ? lista.total
+        : (colecao === "salvos" ? itens.length : lista.total);
 
     const countLabel = document.getElementById("historico-total-label");
     if (countLabel) {
@@ -1020,6 +1089,7 @@ export async function processarArquivoPdf(file) {
         showToast(
             `Estudo comparativo concluído para o processo ${resultado.metadados_extraidos.numero_processo}.`
         );
+        carregarFiltrosDinamicos();
         carregarDashboard();
     } catch (err) {
         exibirErroUpload(err.message || "Não foi possível ler o arquivo PDF enviado.");
@@ -1051,6 +1121,7 @@ export async function processarArquivoCsv(file) {
         document.getElementById("csv-res-lgpd").textContent = String(resCsv.total_entidades_anonimizadas_lgpd);
 
         showToast(`${resCsv.total_importados_com_sucesso} decisões adicionadas ao acervo.`);
+        carregarFiltrosDinamicos();
         carregarDashboard();
     } catch (err) {
         exibirErroUpload(err.message || "Não foi possível importar a planilha CSV.");
@@ -1487,10 +1558,35 @@ function initApp() {
         }
     });
 
+    document.getElementById("btn-excluir-julgado")?.addEventListener("click", async () => {
+        const idProc = state.drawerProcessId;
+        if (!idProc) return;
+        const btnExcluir = document.getElementById("btn-excluir-julgado");
+        if (btnExcluir) btnExcluir.disabled = true;
+        try {
+            await excluirProcesso(idProc);
+            state.savedDecisions.delete(idProc);
+            persistSavedIds(state.savedDecisions);
+            updateSavedCounterUI();
+            fecharDrawerProcesso();
+            await Promise.all([
+                carregarFiltrosDinamicos(),
+                carregarBaseConhecimento(1),
+                carregarDashboard(),
+            ]);
+            showToast("Julgado excluído do acervo.");
+        } catch (err) {
+            showToast(err.message || "Não foi possível excluir o julgado.");
+        } finally {
+            if (btnExcluir) btnExcluir.disabled = false;
+        }
+    });
+
     configurarFormularioJulgado({
         obterDetalhes: () => state.currentDrawerPayload,
         aoSalvar: (detalhes, edicao) => {
             if (edicao) exibirDrawerProcesso(detalhes);
+            carregarFiltrosDinamicos();
             carregarBaseConhecimento(edicao ? state.paginaAtual : 1);
             carregarDashboard();
             showToast(edicao ? "Julgado atualizado." : "Julgado cadastrado.");
@@ -1506,6 +1602,7 @@ function initApp() {
     });
 
     verificarConectividadeApi();
+    carregarFiltrosDinamicos();
     carregarDashboard();
     switchTab("historico");
 }

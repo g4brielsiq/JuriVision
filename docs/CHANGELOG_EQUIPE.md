@@ -5,6 +5,21 @@
 
 ---
 
+## 🎯 Roadmap de Evolução: Eliminação de Atalhos do MVP rumo ao Produto Real (CONAD / SaaS)
+
+A tabela abaixo ordena todas as frentes de evolução técnica **da mais simples à mais complexa**, rastreando o que ainda era atalho/protótipo no MVP acadêmico e o que já foi convertido em funcionalidade real com testes exaustivos:
+
+| Etapa | Frente / Escopo Técnico | Complexidade | O que Substitui (Atalho / Lacuna Anterior) | Status |
+| :---: | :--- | :---: | :--- | :---: |
+| **1** | **Consistência de Pesquisa, Filtros/Ordenação no Servidor, Exclusão Integrada & PDF Multi-página** | Baixa | Filtro de salvos e ordenação apenas em memória na página atual; seletores de assunto/juiz fixos no HTML; listagem sem `resumo_curto`; rota `DELETE` sem UI; PDF restrito a 1 página. | `[x] CONCLUÍDA` |
+| **2** | **Segurança, JWT Obrigatório e Isolamento Multi-usuário** | Baixa / Média | Rotas de upload/leitura sem verificação de Bearer token e gravação fixa em `usuario_id="usr-01"`, misturando documentos de diferentes usuários. | `[ ] PENDENTE` |
+| **3** | **Endurecimento da Barreira LGPD (Regex Expandido & Detecção em Prosa)** | Média | `AnonimizadorLGPD` restrito a CPF, RG rotulado e linha `Autor: Nome`, sem mascarar e-mails, telefones, endereços ou nomes soltos. | `[ ] PENDENTE` |
+| **4** | **Motor NLP Local Real e Similaridade Textual (`TF-IDF` / `BM25`)** | Média / Alta | Classificação via 5 `if/else`, resumo pelas 2 primeiras frases, juiz padrão hardcoded (`Dr. Rafael De Amorim`), multiplicador fixo `* 7` e margem fixa `±8%`. | `[ ] PENDENTE` |
+| **5** | **RAG Jurídico (Gemini + Precedentes Reais), OCR e Microsserviço `ai_engine:8001`** | Alta | `ai_engine/worker.py` em `sleep(3600)`, Gemini sem contexto dos julgados do banco e ausência de OCR para PDFs escaneados. | `[ ] PENDENTE` |
+| **6** | **Modelo Freemium / Assinaturas, Cache de Demo e Deploy Cloud (CONAD)** | Alta | Plataforma 100% aberta em `localhost` sem planos (`FREE`/`PRO`), cotas de uso ou hospedagem escalável em nuvem. | `[ ] PENDENTE` |
+
+---
+
 ## 📌 Padrão de Registro para Novas Entradas
 
 Toda nova modificação deve seguir o modelo abaixo:
@@ -265,4 +280,24 @@ Toda nova modificação deve seguir o modelo abaixo:
   2. **Shell global e Pesquisa de Precedentes (`frontend/index.html`, `frontend/src/components/design-tokens.css`, `frontend/src/app.js`):** sidebar clara e silenciosa (`236px`), remoção de estilos *inline*, busca principal inline, painel DataJud com tokens semânticos, fichas jurídicas contínuas com filetes de `1px` e integração com os modais de cadastro/edição de julgados e cadastro de advogados.
 - **Como Testar / Executar Localmente:**
   - PowerShell: `$env:PYTHONPATH="backend"; pytest backend/tests/ -v` (**33 testes aprovados**).
+  - Front-end: `cd frontend; npm run build`.
+
+---
+
+### [2026-11-21] — Etapa 1: Filtros e Ordenação no Servidor, Exclusão Integrada de Julgados e Relatórios PDF Multi-página
+- **Branch:** `dev` (`VictorSamyr/JuriVision-Pro`)
+- **Autor / Dupla:** Victor Samyr
+- **Pacote da EAP / Requisitos:** Etapa 1 do Roadmap, EAP 1.3.2, EAP 1.3.3, RF-08, RF-09
+- **Resumo da Mudança:**
+  1. **Filtros e Ordenação no Servidor (`backend/app/routers/processos.py`, `backend/app/schemas/contracts.py`):** adicionados os parâmetros `ordenacao` (`recentes`, `antigas`, `assunto`) e `ids` (lista separada por vírgula para "Decisões Salvas") em `GET /api/v1/processos`, retorno de `resumo_curto` real (`resumo_nlp`) nos itens listados e criação do endpoint `GET /api/v1/processos/filtros` com listas distintas e ordenadas de temas, magistrados e comarcas.
+  2. **Relatório PDF Multi-página (`backend/app/routers/relatorios.py`):** `_build_pdf_document` agora pagina automaticamente em blocos de até 45 linhas por página, gerando objetos `/Pages` e `/Page` válidos em PDF 1.4 com rodapé `Pagina X de N`.
+  3. **Integração Front-end (`frontend/src/services/api.js`, `frontend/index.html`, `frontend/src/app.js`):** consumo dinâmico de `/api/v1/processos/filtros`, passagem de `ordenacao` e `ids` para o servidor, correção do *drill-down* por juiz/tema no Dashboard e botão `#btn-excluir-julgado` integrado ao endpoint `DELETE /api/v1/processos/{id_processo}`.
+- **Arquivos Criados / Modificados:**
+  - `backend/app/schemas/contracts.py` e `backend/app/schemas/__init__.py` - Campo `resumo_curto` e schema `FiltrosDisponiveisResponse`.
+  - `backend/app/routers/processos.py` - Ordenação e filtro `ids` no servidor, `resumo_curto` e rota `GET /api/v1/processos/filtros`.
+  - `backend/app/routers/relatorios.py` - Paginação automática multi-página em `_build_pdf_document`.
+  - `frontend/src/services/api.js`, `frontend/index.html` e `frontend/src/app.js` - Integração de filtros dinâmicos, busca/ordenação no servidor e exclusão de julgados.
+  - `backend/tests/test_etapa1_consistencia_e_filtros.py` - Suíte exaustiva com 8 novos testes cobrindo toda a Etapa 1.
+- **Como Testar / Executar Localmente:**
+  - PowerShell: `$env:PYTHONPATH="backend"; .\.venv\Scripts\pytest backend/tests/ -v` (**41 testes aprovados**).
   - Front-end: `cd frontend; npm run build`.

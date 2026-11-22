@@ -21,35 +21,64 @@ def _normalize_pdf_text(text: str) -> str:
     return normalized.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
+MAX_LINES_PER_PAGE = 45
+
+
 def _build_pdf_document(lines: list[str]) -> bytes:
     """
-    Constrói um documento binário PDF 1.4 válido (ISO 32000-1) contendo os metadados
-    higienizados (LGPD), resumo NLP e parecer preditivo do processo.
+    Constrói um documento binário PDF 1.4 válido (ISO 32000-1) com paginação automática,
+    contendo os metadados higienizados (LGPD), resumo NLP e parecer preditivo do processo.
     """
-    content_ops = ["BT", "/F1 14 Tf", "50 790 Td"]
-    first = True
-    for raw_line in lines:
-        safe_line = _normalize_pdf_text(raw_line)
-        if first:
-            content_ops.append(f"({safe_line}) Tj")
-            content_ops.append("/F1 10 Tf")
-            content_ops.append("0 -22 Td")
-            first = False
-        else:
-            content_ops.append(f"({safe_line}) Tj")
-            content_ops.append("0 -14 Td")
-    content_ops.append("ET")
-    stream_bytes = "\n".join(content_ops).encode("latin-1")
+    chunks = [
+        lines[i : i + MAX_LINES_PER_PAGE]
+        for i in range(0, len(lines), MAX_LINES_PER_PAGE)
+    ] or [[]]
+    total_pages = len(chunks)
+    kids_refs = " ".join(f"{4 + idx * 2} 0 R" for idx in range(total_pages))
 
     objects: list[bytes] = [
         b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
-        b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
-        b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n",
-        b"4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
-        f"5 0 obj\n<< /Length {len(stream_bytes)} >>\nstream\n".encode("latin-1")
-        + stream_bytes
-        + b"\nendstream\nendobj\n",
+        f"2 0 obj\n<< /Type /Pages /Kids [{kids_refs}] /Count {total_pages} >>\nendobj\n".encode("latin-1"),
+        b"3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
     ]
+
+    for idx, page_lines in enumerate(chunks):
+        page_obj_id = 4 + idx * 2
+        stream_obj_id = 5 + idx * 2
+        content_ops = [
+            "BT",
+            "/F1 14 Tf" if idx == 0 else "/F1 10 Tf",
+            "50 790 Td",
+        ]
+        for line_idx, raw_line in enumerate(page_lines):
+            safe_line = _normalize_pdf_text(raw_line)
+            content_ops.append(f"({safe_line}) Tj")
+            if idx == 0 and line_idx == 0:
+                content_ops.append("/F1 10 Tf")
+                content_ops.append("0 -22 Td")
+            else:
+                content_ops.append("0 -14 Td")
+        content_ops.extend(
+            [
+                "ET",
+                "BT",
+                "/F1 8 Tf",
+                "50 32 Td",
+                f"(Pagina {idx + 1} de {total_pages}) Tj",
+                "ET",
+            ]
+        )
+        stream_bytes = "\n".join(content_ops).encode("latin-1")
+
+        objects.append(
+            f"{page_obj_id} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
+            f"/Resources << /Font << /F1 3 0 R >> >> /Contents {stream_obj_id} 0 R >>\nendobj\n".encode("latin-1")
+        )
+        objects.append(
+            f"{stream_obj_id} 0 obj\n<< /Length {len(stream_bytes)} >>\nstream\n".encode("latin-1")
+            + stream_bytes
+            + b"\nendstream\nendobj\n"
+        )
 
     output = bytearray(b"%PDF-1.4\n")
     offsets: list[int] = []

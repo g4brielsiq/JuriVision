@@ -157,11 +157,21 @@ export async function uploadProcessosCsv(file) {
     return data;
 }
 
-export async function fetchProcessos({ tema = "", juiz = "", busca = "", pagina = 1, limite = 8 } = {}) {
+export async function fetchProcessos({
+    tema = "",
+    juiz = "",
+    busca = "",
+    ordenacao = "recentes",
+    ids = null,
+    pagina = 1,
+    limite = 8,
+} = {}) {
     const params = new URLSearchParams();
     if (tema) params.set("tema", tema);
     if (juiz) params.set("juiz", juiz);
     if (busca) params.set("busca", busca);
+    if (ordenacao) params.set("ordenacao", ordenacao);
+    if (ids !== null && ids !== undefined) params.set("ids", String(ids));
     params.set("pagina", String(pagina));
     params.set("limite", String(limite));
 
@@ -170,6 +180,28 @@ export async function fetchProcessos({ tema = "", juiz = "", busca = "", pagina 
     });
     if (!res.ok) throw new Error(`Erro ao consultar processos: HTTP ${res.status}`);
     return res.json();
+}
+
+export async function fetchFiltrosProcessos() {
+    const res = await fetch(`${getApiBaseUrl()}/api/v1/processos/filtros`, {
+        headers: { ...getAuthHeader() },
+    });
+    if (!res.ok) throw new Error(`Erro ao carregar filtros: HTTP ${res.status}`);
+    return res.json();
+}
+
+export async function excluirProcesso(idProcesso) {
+    const res = await fetch(`${getApiBaseUrl()}/api/v1/processos/${encodeURIComponent(idProcesso)}`, {
+        method: "DELETE",
+        headers: { ...getAuthHeader() },
+    });
+    if (res.status === 404) {
+        throw new Error(`Processo ${idProcesso} não encontrado.`);
+    }
+    if (!res.ok) {
+        throw new Error(`Não foi possível excluir o julgado (HTTP ${res.status}).`);
+    }
+    return true;
 }
 
 export async function fetchProcessoDetalhes(idProcesso) {

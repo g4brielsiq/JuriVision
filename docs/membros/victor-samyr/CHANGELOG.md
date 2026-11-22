@@ -33,3 +33,13 @@
   - Refatoração do shell global (`frontend/index.html` e `frontend/src/components/design-tokens.css`): sidebar clara (`236px`), remoção do monograma e estilos *inline*, cabeçalho enxuto (`48px`) e fichas de decisão contínuas sem caixas redundantes.
   - Integração e compatibilização do Guia v2 com os modais de cadastro/edição de julgados e cadastro de advogados da branch `dev` (PR #9).
 - **Status:** Build de produção do frontend aprovado (`npm run build`) e **33 de 33 testes automatizados** aprovados no pytest.
+
+### [2026-11-21] — Etapa 1 (JuriVision-Pro): Filtros/Ordenação no Servidor, Exclusão Integrada e PDF Multi-página
+- **Branch de Atuação:** `dev` (`pro` — `VictorSamyr/JuriVision-Pro`)
+- **Atividades Realizadas:**
+  - Estruturação do Roadmap Mestre (Etapas 1 a 6) em `docs/CHANGELOG_EQUIPE.md`.
+  - Evolução de `GET /api/v1/processos` com ordenação no banco (`recentes`, `antigas`, `assunto`), filtro server-side por `ids` e retorno de `resumo_curto`, além do novo endpoint `GET /api/v1/processos/filtros`.
+  - Evolução de `_build_pdf_document` em `backend/app/routers/relatorios.py` para paginação automática multi-página em PDF 1.4.
+  - Integração completa no front-end (`api.js`, `index.html`, `app.js`), incluindo carregamento dinâmico de filtros e exclusão de julgados (`DELETE /api/v1/processos/{id_processo}`) na folha de leitura.
+  - Criação da suíte `backend/tests/test_etapa1_consistencia_e_filtros.py` com 8 testes exaustivos da Etapa 1.
+- **Status:** Build do frontend (`npm run build`) e **41 de 41 testes automatizados** aprovados no pytest.

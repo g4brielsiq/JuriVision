@@ -24,6 +24,7 @@ from app.schemas.contracts import (
     AuditoriaLGPDSchema,
     ContextoHistoricoSchema,
     CSVUploadResponse,
+    FiltrosDisponiveisResponse,
     InternalAnalyzeRequest,
     MetadadosExtraidosSchema,
     PartesAnonimizadasSchema,
@@ -378,6 +379,12 @@ def listar_processos(
     tema: Optional[str] = Query(default=None, description="Filtrar por tema jurídico"),
     juiz: Optional[str] = Query(default=None, description="Filtrar por nome do magistrado"),
     busca: Optional[str] = Query(default=None, description="Busca textual livre (CNJ, tema, juiz ou partes)"),
+    ordenacao: Optional[str] = Query(
+        default="recentes", description="Ordenação no servidor: recentes | antigas | assunto"
+    ),
+    ids: Optional[str] = Query(
+        default=None, description="Filtro opcional de IDs separados por vírgula (ex: proc-1001,proc-1004)"
+    ),
     pagina: int = Query(default=1, ge=1, description="Página atual"),
     limite: int = Query(default=10, ge=1, le=100, description="Itens por página"),
     db: Session = Depends(get_db),
@@ -386,6 +393,13 @@ def listar_processos(
     Lista e filtra processos higienizados na Base de Conhecimento com paginação (RF-08 / UC-06 / UC-07).
     """
     query = db.query(Processo)
+
+    if ids is not None:
+        id_list = [item.strip() for item in ids.split(",") if item.strip()]
+        if not id_list:
+            query = query.filter(Processo.id_processo == "__nenhum__")
+        else:
+            query = query.filter(Processo.id_processo.in_(id_list))
 
     if tema and tema.strip():
         query = query.filter(Processo.tema.ilike(f"%{tema.strip()}%"))
@@ -407,7 +421,16 @@ def listar_processos(
 
     total = query.count()
     offset = (pagina - 1) * limite
-    registros = query.order_by(Processo.criado_em.desc()).offset(offset).limit(limite).all()
+    if ordenacao == "antigas":
+        ordered_query = query.order_by(Processo.data_julgamento.asc(), Processo.criado_em.asc())
+    elif ordenacao == "assunto":
+        ordered_query = query.order_by(
+            Processo.tema.asc(), Processo.data_julgamento.desc(), Processo.criado_em.desc()
+        )
+    else:
+        ordered_query = query.order_by(Processo.data_julgamento.desc(), Processo.criado_em.desc())
+
+    registros = ordered_query.offset(offset).limit(limite).all()
 
     itens = [
         ProcessoListItemSchema(
@@ -422,6 +445,7 @@ def listar_processos(
             probabilidade_deferimento=(
                 p.analise_preditiva.probabilidade_deferimento if p.analise_preditiva else None
             ),
+            resumo_curto=p.resumo_nlp,
         )
         for p in registros
     ]
@@ -431,6 +455,15 @@ def listar_processos(
         pagina=pagina,
         itens=itens,
     )
+
+
+@router.get("/filtros", response_model=FiltrosDisponiveisResponse, status_code=status.HTTP_200_OK)
+def obter_filtros_disponiveis(db: Session = Depends(get_db)) -> FiltrosDisponiveisResponse:
+    """Retorna as listas distintas e ordenadas de temas, magistrados e comarcas existentes no acervo."""
+    temas = sorted({r[0] for r in db.query(Processo.tema).distinct().all() if r[0]})
+    magistrados = sorted({r[0] for r in db.query(Processo.magistrado).distinct().all() if r[0]})
+    comarcas = sorted({r[0] for r in db.query(Processo.comarca).distinct().all() if r[0]})
+    return FiltrosDisponiveisResponse(temas=temas, magistrados=magistrados, comarcas=comarcas)
 
 
 
