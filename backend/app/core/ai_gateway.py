@@ -10,15 +10,23 @@ import io
 import json
 import logging
 import re
-from typing import Tuple
+from typing import Optional, Tuple
+import uuid
 
 import httpx
 from pypdf import PdfReader
 
 from app.core.config import settings
+from app.schemas.comparacao import (
+    PontoControvertido,
+    ResultadoComparacaoPecas,
+    StatusTese,
+    TipoTese,
+)
 from app.schemas.contracts import (
     AnalisePreditivaSchema,
     AuditoriaLGPDSchema,
+    ContextoHistoricoSchema,
     InternalAnalyzeRequest,
     InternalAnalyzeResponse,
     MetadadosExtraidosSchema,
@@ -171,35 +179,77 @@ class ExtratorDocumental:
 
     @staticmethod
     def extract_text_from_pdf_bytes(file_bytes: bytes) -> str:
+        text, _ = ExtratorDocumental.extract_text_with_page_markers(file_bytes)
+        # Remove marcadores [PÁG XX] para compatibilidade com rotas que esperam texto puro
+        clean_text = re.sub(r"\[PÁG \d+\]\n?", "", text).strip()
+        return clean_text
+
+    @staticmethod
+    def extract_text_with_page_markers(file_bytes: bytes) -> Tuple[str, dict[int, str]]:
+        """
+        Extrai texto do PDF injetando marcadores [PÁG XX] por página.
+        Retorna (texto_completo_anotado, dicionario_paginas).
+        """
         if not file_bytes or len(file_bytes) < 10:
             raise ValueError("Arquivo vazio ou sem conteúdo binário válido.")
 
         if not file_bytes.lstrip().startswith(b"%PDF-"):
             raise ValueError("Assinatura binária inválida: o arquivo enviado não é um documento PDF (%PDF-).")
 
-        extracted_chunks: list[str] = []
+        pages_dict: dict[int, str] = {}
         try:
             reader = PdfReader(io.BytesIO(file_bytes))
-            for page in reader.pages:
+            for idx, page in enumerate(reader.pages, start=1):
                 page_text = page.extract_text() or ""
                 if page_text.strip():
-                    extracted_chunks.append(page_text.strip())
+                    pages_dict[idx] = page_text.strip()
         except Exception:
-            # Fallback para PDFs sintéticos enxutos de suítes de teste que possuem operadores Tj/TJ diretos
             pass
 
-        if not extracted_chunks:
-            # Inspeção de strings literais em operadores PDF (ex.: (Texto da petição) Tj)
+        if not pages_dict:
+            # Fallback para PDFs sintéticos enxutos de suítes de teste com operadores Tj diretos
             raw_latin = file_bytes.decode("latin-1", errors="ignore")
             literals = re.findall(r"\(([^()]{4,})\)\s*Tj", raw_latin)
             if literals:
-                extracted_chunks.extend(literals)
+                pages_dict[1] = "\n".join(literals).strip()
 
-        full_text = "\n".join(extracted_chunks).strip()
-        if not full_text:
+        if not pages_dict:
             raise ValueError("Não foi possível extrair texto legível do PDF enviado (FalhaOCR / Documento vazio).")
 
-        return full_text
+        full_parts = []
+        for pnum, ptext in pages_dict.items():
+            full_parts.append(f"[PÁG {pnum:02d}]\n{ptext}")
+
+        annotated_text = "\n\n".join(full_parts).strip()
+        return annotated_text, pages_dict
+
+    @staticmethod
+    def segment_macro_sections(annotated_text: str) -> dict[str, str]:
+        """
+        Segmenta estruturalmente o texto da peça nos 7 eixos jurídicos fundamentais do CPC.
+        """
+        section_patterns = {
+            "preliminares": re.compile(r"(?i)\b(?:das?\s+preliminares|da\s+preliminar|preliminarmente)\b"),
+            "prejudiciais_merito": re.compile(r"(?i)\b(?:prejudicial\s+de\s+m[ée]rito|prescri[çc][ãa]o|decad[êe]ncia)\b"),
+            "fatos": re.compile(r"(?i)\b(?:dos?\s+fatos|da\s+cronologia|do\s+resumo\s+f[áa]tico|s[íi]ntese\s+f[áa]tica)\b"),
+            "merito": re.compile(r"(?i)\b(?:do\s+m[ée]rito|do\s+direito|fundamenta[çc][ãa]o\s+jur[íi]dica)\b"),
+            "tutela_provisoria": re.compile(r"(?i)\b(?:tutela\s+de\s+urg[êe]ncia|tutela\s+antecipada|tutela\s+provis[óo]ria)\b"),
+            "provas_onus": re.compile(r"(?i)\b(?:das?\s+provas|produ[çc][ãa]o\s+de\s+provas|[ôo]nus\s+da\s+prova|invers[ãa]o\s+do\s+[ôo]nus)\b"),
+            "pedidos": re.compile(r"(?i)\b(?:dos?\s+pedidos|do\s+pedido|dos?\s+requerimentos|valor\s+da\s+causa)\b"),
+        }
+        sections: dict[str, str] = {k: "" for k in section_patterns}
+        # Varredura por blocos/parágrafos
+        blocks = annotated_text.split("\n\n")
+        current_section = "fatos"
+        for block in blocks:
+            matched = False
+            for sec_name, pattern in section_patterns.items():
+                if pattern.search(block[:120]):
+                    current_section = sec_name
+                    matched = True
+                    break
+            sections[current_section] = (sections[current_section] + "\n\n" + block).strip()
+        return sections
 
 
 class AIGatewayPort(ABC):
@@ -210,6 +260,17 @@ class AIGatewayPort(ABC):
     @abstractmethod
     def analyze_document(self, request: InternalAnalyzeRequest) -> InternalAnalyzeResponse:
         """Processa um documento extraindo metadados anonimizados, resumo NLP e análise preditiva."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def comparar_pecas(
+        self,
+        texto_inicial: str,
+        texto_contestacao: str,
+        contexto_historico: Optional[ContextoHistoricoSchema] = None,
+        numero_processo: Optional[str] = None,
+    ) -> ResultadoComparacaoPecas:
+        """Realiza saneamento e confronto analítico bidirecional de duas peças processuais (CPC art. 357)."""
         raise NotImplementedError
 
 
@@ -367,6 +428,285 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
             ),
         )
 
+    @staticmethod
+    def _find_page_number(annotated_text: str, snippet: Optional[str]) -> Optional[int]:
+        if not snippet or not annotated_text:
+            return 1
+        norm_snippet = " ".join(snippet.split()[:8])
+        pos = annotated_text.find(norm_snippet) if norm_snippet else -1
+        if pos == -1:
+            pos = annotated_text.find(snippet[:30])
+        if pos == -1:
+            m = re.search(r"\[PÁG (\d+)\]", annotated_text)
+            return int(m.group(1)) if m else 1
+        sub = annotated_text[:pos]
+        matches = list(re.finditer(r"\[PÁG (\d+)\]", sub))
+        if matches:
+            return int(matches[-1].group(1))
+        m = re.search(r"\[PÁG (\d+)\]", annotated_text)
+        return int(m.group(1)) if m else 1
+
+    def comparar_pecas(
+        self,
+        texto_inicial: str,
+        texto_contestacao: str,
+        contexto_historico: Optional[ContextoHistoricoSchema] = None,
+        numero_processo: Optional[str] = None,
+    ) -> ResultadoComparacaoPecas:
+        clean_init = texto_inicial or ""
+        clean_cont = texto_contestacao or ""
+        lower_init = clean_init.lower()
+        lower_cont = clean_cont.lower()
+
+        if not numero_processo:
+            cnj_m = CNJ_REGEX.search(clean_init) or CNJ_REGEX.search(clean_cont)
+            if cnj_m:
+                numero_processo = cnj_m.group(0)
+
+        taxa_base = contexto_historico.taxa_favoravel_juiz if contexto_historico else 0.72
+        teses: list[PontoControvertido] = []
+        tese_counter = 1
+
+        # 1. VARREDURA DIRETA: Fatos, Cronologia e Valores
+        datas_init = re.findall(r"\b(\d{2}/\d{2}/\d{4})\b", clean_init)
+        if datas_init:
+            data_alvo = datas_init[0]
+            frases_data = [s.strip() for s in re.split(r"[.\n]", clean_init) if data_alvo in s]
+            trecho_autor_data = frases_data[0] if frases_data else f"O descumprimento fático ocorreu na data de {data_alvo}."
+            if any(w in lower_cont for w in ("impugna", "diverge", "não ocorreu", "incorret", "falso")):
+                frases_cont = [s.strip() for s in re.split(r"[.\n]", clean_cont) if any(w in s.lower() for w in ("data", "impugna", data_alvo))]
+                trecho_reu_data = frases_cont[0] if frases_cont else f"A ré impugna a cronologia dos fatos alegada e a data de {data_alvo}."
+                status_data = StatusTese.DIVERGENTE
+                prob_data = round(min(max(taxa_base * 100 + 4, 15.0), 95.0), 1)
+                forca_aut = "Documental Robusta - Registros de Atendimento"
+                forca_reu = "Alegação Retórica Desprovida de Prova"
+                impacto_data = "Requerer na réplica fixação de ponto incontroverso ou produção de prova testemunhal/documental quanto à data."
+            elif data_alvo in clean_cont:
+                trecho_reu_data = f"A ré confirma a ocorrência e cronologia em {data_alvo}."
+                status_data = StatusTese.CONVERGENTE
+                prob_data = 100.0
+                forca_aut = "Fato Admitido Expressamente"
+                forca_reu = "Concordância Fática Expressa"
+                impacto_data = "Ponto incontroverso por convergência fática expressa (art. 374, II do CPC): dispensada dilação probatória."
+            else:
+                trecho_reu_data = None
+                status_data = StatusTese.INCONTROVERSO_POR_OMISSAO
+                prob_data = 90.0
+                forca_aut = "Alegação Fática Específica na Petição Inicial"
+                forca_reu = "Ausência de Impugnação Específica (Art. 341 CPC)"
+                impacto_data = "Requerer na réplica a decretação da preclusão e presunção de veracidade (art. 341 do CPC)."
+
+            teses.append(
+                PontoControvertido(
+                    id_tese=f"TESE-{tese_counter:02d}",
+                    tipo=TipoTese.FATO_CRONOLOGIA,
+                    tema="Cronologia e Data do Inadimplemento",
+                    trecho_autor=trecho_autor_data,
+                    trecho_reu=trecho_reu_data,
+                    status=status_data,
+                    forca_probatoria_autor=forca_aut,
+                    forca_probatoria_reu=forca_reu,
+                    probabilidade_procedencia_pct=prob_data,
+                    fundamentacao_preditiva="Apresentação de cronologia pormenorizada com suporte documental vincula a defesa ao ônus da impugnação específica.",
+                    impacto_processual=impacto_data,
+                    pagina_autor=self._find_page_number(clean_init, trecho_autor_data),
+                    pagina_reu=self._find_page_number(clean_cont, trecho_reu_data) if trecho_reu_data else None,
+                )
+            )
+            tese_counter += 1
+
+        valores_init = re.findall(r"(R\$\s*[\d.,]+)", clean_init)
+        if valores_init:
+            val_alvo = valores_init[0]
+            frases_val = [s.strip() for s in re.split(r"[.\n]", clean_init) if val_alvo in s]
+            trecho_aut_val = frases_val[0] if frases_val else f"Prejuízo material e pedido indenizatório fixado em {val_alvo}."
+            if any(w in lower_cont for w in ("excesso", "desproporcional", "impugna o valor", "valor excessivo")):
+                frases_c_val = [s.strip() for s in re.split(r"[.\n]", clean_cont) if any(w in s.lower() for w in ("valor", "excesso", "desproporcional", "impugna"))]
+                trecho_reu_val = frases_c_val[0] if frases_c_val else "A contestação refuta o montante indenizatório alegando excesso e enriquecimento sem causa."
+                status_val = StatusTese.DIVERGENTE
+                prob_val = round(min(max(taxa_base * 100 - 5, 20.0), 90.0), 1)
+                impacto_val = "Juntar comprovantes fiscais e extratos complementares para demonstrar a exata liquidez do dano."
+                forca_r_val = "Alegação de Excesso de Execução"
+            elif val_alvo in clean_cont:
+                trecho_reu_val = f"A ré reconhece o montante de {val_alvo}."
+                status_val = StatusTese.CONVERGENTE
+                prob_val = 100.0
+                impacto_val = "Fato incontroverso quanto ao montante: postular julgamento antecipado parcial do mérito (art. 356 CPC)."
+                forca_r_val = "Reconhecimento do Pedido Parcial"
+            else:
+                trecho_reu_val = None
+                status_val = StatusTese.INCONTROVERSO_POR_OMISSAO
+                prob_val = 92.0
+                impacto_val = "Pleitear reconhecimento de veracidade sobre o valor pretendido ante a ausência de impugnação específica (art. 341 CPC)."
+                forca_r_val = "Não Impugnado na Contestação"
+
+            teses.append(
+                PontoControvertido(
+                    id_tese=f"TESE-{tese_counter:02d}",
+                    tipo=TipoTese.FATO_CRONOLOGIA,
+                    tema="Quantificação dos Danos e Valor Pleiteado",
+                    trecho_autor=trecho_aut_val,
+                    trecho_reu=trecho_reu_val,
+                    status=status_val,
+                    forca_probatoria_autor="Planilha de Cálculos e Comprovantes acostados",
+                    forca_probatoria_reu=forca_r_val,
+                    probabilidade_procedencia_pct=prob_val,
+                    fundamentacao_preditiva="A impugnação genérica de valores sem apresentação de memória de cálculo desfavorável desqualifica a oposição da ré.",
+                    impacto_processual=impacto_val,
+                    pagina_autor=self._find_page_number(clean_init, trecho_aut_val),
+                    pagina_reu=self._find_page_number(clean_cont, trecho_reu_val) if trecho_reu_val else None,
+                )
+            )
+            tese_counter += 1
+
+        # 2. Mérito Principal
+        frases_merito_aut = [s.strip() for s in re.split(r"[.\n]", clean_init) if any(w in s.lower() for w in ("falha", "defeito", "dano moral", "indeniza", "responsabilidade", "inadimplemento")) and len(s.strip()) > 25]
+        trecho_aut_mer = frases_merito_aut[0] if frases_merito_aut else "Configuração de responsabilidade civil objetiva e dever de indenizar pelos transtornos sofridos."
+        frases_merito_reu = [s.strip() for s in re.split(r"[.\n]", clean_cont) if any(w in s.lower() for w in ("exercício regular", "exercicio regular", "mero dissabor", "inexistência", "inexistencia", "não há dano", "improcedente")) and len(s.strip()) > 25]
+        trecho_reu_mer = frases_merito_reu[0] if frases_merito_reu else "A ré sustenta exercício regular de direito e inocorrência de dano moral indenizável (mero dissabor)."
+
+        teses.append(
+            PontoControvertido(
+                id_tese=f"TESE-{tese_counter:02d}",
+                tipo=TipoTese.MERITO,
+                tema="Configuração de Falha na Prestação de Serviço e Dano Moral",
+                trecho_autor=trecho_aut_mer,
+                trecho_reu=trecho_reu_mer,
+                status=StatusTese.DIVERGENTE,
+                forca_probatoria_autor="Documental - Falha Operacional Comprovada",
+                forca_probatoria_reu="Defesa de Mero Dissabor Cotidiano",
+                probabilidade_procedencia_pct=round(taxa_base * 100, 1),
+                fundamentacao_preditiva="Jurisprudência consolidada do tribunal local reconhece responsabilidade objetiva do prestador de serviços pelo vício na prestação (art. 14 do CDC).",
+                impacto_processual="Reiterar em réplica a incidência da Súmula do TJAL e precedentes vinculantes favoráveis à reparação integral.",
+                pagina_autor=self._find_page_number(clean_init, trecho_aut_mer),
+                pagina_reu=self._find_page_number(clean_cont, trecho_reu_mer),
+            )
+        )
+        tese_counter += 1
+
+        # 3. Prova e Ônus
+        if any(w in lower_init for w in ("inversão", "inversao", "ônus da prova", "onus da prova", "art. 6", "cdc")):
+            trecho_aut_onus = "Requer-se a inversão do ônus da prova nos termos do art. 6º, VIII, do CDC em face da hipossuficiência técnica."
+            if any(w in lower_cont for w in ("descabe", "indevida a inversão", "art. 373", "não cabe inversão")):
+                trecho_reu_onus = "A ré impugna a inversão do ônus da prova aduzindo incumbir ao autor a prova dos fatos constitutivos de seu direito."
+                status_onus = StatusTese.DIVERGENTE
+            else:
+                trecho_reu_onus = None
+                status_onus = StatusTese.INCONTROVERSO_POR_OMISSAO
+
+            teses.append(
+                PontoControvertido(
+                    id_tese=f"TESE-{tese_counter:02d}",
+                    tipo=TipoTese.PROVA_ONUS,
+                    tema="Distribuição do Ônus Probatório e Inversão (CDC)",
+                    trecho_autor=trecho_aut_onus,
+                    trecho_reu=trecho_reu_onus,
+                    status=status_onus,
+                    forca_probatoria_autor="Vulnerabilidade Técnica e Econômica Evidente",
+                    forca_probatoria_reu="Resistência Genérica ao Estatuto Consumerista" if trecho_reu_onus else "Não Impugnado na Defesa",
+                    probabilidade_procedencia_pct=85.0,
+                    fundamentacao_preditiva="A verossimilhança das alegações somada à hipossuficiência autoriza a inversão do ônus probatório pelo juízo saneador (art. 357, III CPC).",
+                    impacto_processual="Requerer expressamente ao magistrado a fixação da inversão probatória na decisão de saneamento processual.",
+                    pagina_autor=self._find_page_number(clean_init, trecho_aut_onus),
+                    pagina_reu=self._find_page_number(clean_cont, trecho_reu_onus) if trecho_reu_onus else None,
+                )
+            )
+            tese_counter += 1
+
+        # 4. VARREDURA REVERSA: Fatos Novos da Defesa (Art. 350 CPC) e Preliminares
+        if any(w in lower_cont for w in ("prescrição", "prescricao", "decadência", "decadencia")):
+            frases_presc = [s.strip() for s in re.split(r"[.\n]", clean_cont) if any(w in s.lower() for w in ("prescri", "decad")) and len(s.strip()) > 20]
+            trecho_reu_presc = frases_presc[0] if frases_presc else "A ré suscita prejudicial de mérito arguindo a consumação da prescrição quinquenal."
+            teses.append(
+                PontoControvertido(
+                    id_tese=f"TESE-{tese_counter:02d}",
+                    tipo=TipoTese.PREJUDICIAL_MERITO,
+                    tema="Prejudicial de Prescrição / Decadência",
+                    trecho_autor=None,
+                    trecho_reu=trecho_reu_presc,
+                    status=StatusTese.FATO_NOVO_DEFESA,
+                    forca_probatoria_autor="Não Arguido na Petição Inicial (Fato Inédito)",
+                    forca_probatoria_reu="Alegação de Decurso de Prazo Legal (Art. 206 CC / Art. 27 CDC)",
+                    probabilidade_procedencia_pct=40.0,
+                    fundamentacao_preditiva="Defesa indireta de mérito que desloca o contraditório para a manifestação em réplica (art. 350 do CPC).",
+                    impacto_processual="Apresentar réplica comprovando causa interruptiva da prescrição ou termo inicial vinculado ao conhecimento do dano.",
+                    pagina_autor=None,
+                    pagina_reu=self._find_page_number(clean_cont, trecho_reu_presc),
+                )
+            )
+            tese_counter += 1
+        elif any(w in lower_cont for w in ("ilegitimidade", "incompetência", "incompetencia", "preliminar")):
+            frases_prelim = [s.strip() for s in re.split(r"[.\n]", clean_cont) if any(w in s.lower() for w in ("ilegitimidade", "incompet", "preliminar")) and len(s.strip()) > 20]
+            trecho_reu_prel = frases_prelim[0] if frases_prelim else "Arguição de preliminar de ilegitimidade passiva ad causam da contestante."
+            teses.append(
+                PontoControvertido(
+                    id_tese=f"TESE-{tese_counter:02d}",
+                    tipo=TipoTese.PRELIMINAR,
+                    tema="Preliminar de Ilegitimidade Passiva ou Vício Processual",
+                    trecho_autor=None,
+                    trecho_reu=trecho_reu_prel,
+                    status=StatusTese.FATO_NOVO_DEFESA,
+                    forca_probatoria_autor="Não Constante da Causa de Pedir Inicial",
+                    forca_probatoria_reu="Preliminar de Defesa (Art. 337 do CPC)",
+                    probabilidade_procedencia_pct=75.0,
+                    fundamentacao_preditiva="Pertinência subjetiva da demanda amparada pela teoria da asserção e cadeia de fornecimento solidária (art. 7º, § único, CDC).",
+                    impacto_processual="Requerer a rejeição liminar da preliminar com base na responsabilidade solidária da cadeia consumerista.",
+                    pagina_autor=None,
+                    pagina_reu=self._find_page_number(clean_cont, trecho_reu_prel),
+                )
+            )
+            tese_counter += 1
+        elif any(w in lower_cont for w in ("culpa exclusiva", "fato de terceiro", "força maior", "forca maior", "caso fortuito", "quitação", "quitacao", "pagamento")):
+            frases_fato_novo = [s.strip() for s in re.split(r"[.\n]", clean_cont) if any(w in s.lower() for w in ("culpa exclusiva", "terceiro", "força maior", "forca maior", "fortuito", "quitação", "pagamento")) and len(s.strip()) > 20]
+            trecho_reu_fn = frases_fato_novo[0] if frases_fato_novo else "Alegação de fato impeditivo consistente em excludente de responsabilidade civil."
+            teses.append(
+                PontoControvertido(
+                    id_tese=f"TESE-{tese_counter:02d}",
+                    tipo=TipoTese.MERITO,
+                    tema="Fato Impeditivo / Modificativo da Obrigação (Art. 350 CPC)",
+                    trecho_autor=None,
+                    trecho_reu=trecho_reu_fn,
+                    status=StatusTese.FATO_NOVO_DEFESA,
+                    forca_probatoria_autor="Inexistência de Prévia Oposição na Inicial",
+                    forca_probatoria_reu="Alegação de Excludente de Ilicitude",
+                    probabilidade_procedencia_pct=65.0,
+                    fundamentacao_preditiva="Ônus probatório integralmente carreado à ré nos termos do art. 373, II, do CPC, demandando dilação probatória estrita.",
+                    impacto_processual="Impugnar o fato extintivo/modificativo em réplica por falta de lastro documental idôneo.",
+                    pagina_autor=None,
+                    pagina_reu=self._find_page_number(clean_cont, trecho_reu_fn),
+                )
+            )
+            tese_counter += 1
+
+        total_teses = len(teses)
+        total_conv = sum(1 for t in teses if t.status == StatusTese.CONVERGENTE)
+        total_div = sum(1 for t in teses if t.status == StatusTese.DIVERGENTE)
+        total_omiss = sum(1 for t in teses if t.status == StatusTese.INCONTROVERSO_POR_OMISSAO)
+        total_fn = sum(1 for t in teses if t.status == StatusTese.FATO_NOVO_DEFESA)
+
+        score_geral = round(sum(t.probabilidade_procedencia_pct for t in teses) / total_teses, 1) if total_teses > 0 else 70.0
+
+        resumo_geral = (
+            f"Confronto analítico de saneamento processual (art. 357 do CPC): identificadas {total_teses} teses fundamentais, "
+            f"com {total_div} ponto(s) divergente(s), {total_omiss} fato(s) incontroverso(s) por omissão e {total_fn} fato(s) novo(s) da defesa. "
+            f"Favorabilidade global estimada do autor de {score_geral}%."
+        )
+
+        return ResultadoComparacaoPecas(
+            id_comparacao=f"comp-{uuid.uuid4().hex[:8]}",
+            numero_processo=numero_processo,
+            resumo_controvertido_geral=resumo_geral,
+            total_teses=total_teses,
+            total_convergencias=total_conv,
+            total_divergencias=total_div,
+            total_omissoes=total_omiss,
+            total_fatos_novos_defesa=total_fn,
+            score_geral_favorabilidade_autor_pct=score_geral,
+            teses=teses,
+            texto_higienizado_autor=clean_init,
+            texto_higienizado_reu=clean_cont,
+        )
+
 
 
 class GeminiAIAdapter(AIGatewayPort):
@@ -465,6 +805,71 @@ class GeminiAIAdapter(AIGatewayPort):
 
         return base_resp
 
+    def comparar_pecas(
+        self,
+        texto_inicial: str,
+        texto_contestacao: str,
+        contexto_historico: Optional[ContextoHistoricoSchema] = None,
+        numero_processo: Optional[str] = None,
+    ) -> ResultadoComparacaoPecas:
+        api_key = settings.GEMINI_API_KEY.strip()
+        if not api_key:
+            return self._fallback.comparar_pecas(texto_inicial, texto_contestacao, contexto_historico, numero_processo)
+
+        base_resp = self._fallback.comparar_pecas(texto_inicial, texto_contestacao, contexto_historico, numero_processo)
+
+        sanitized_init, _, _ = AnonimizadorLGPD.sanitize_text(texto_inicial or "")
+        sanitized_cont, _, _ = AnonimizadorLGPD.sanitize_text(texto_contestacao or "")
+
+        prompt = (
+            "Você é um Juiz de Direito especialista em Direito Processual Civil atuando na fase de Saneamento e Organização do Processo (Art. 357 do CPC).\n"
+            "Realize o confronto analítico bidirecional entre a PETIÇÃO INICIAL e a CONTESTAÇÃO a seguir (ambas devidamente anonimizadas sob a LGPD).\n\n"
+            f"=== INÍCIO PETIÇÃO INICIAL ANONIMIZADA ===\n{sanitized_init[:5000]}\n=== FIM PETIÇÃO INICIAL ===\n\n"
+            f"=== INÍCIO CONTESTAÇÃO ANONIMIZADA ===\n{sanitized_cont[:5000]}\n=== FIM CONTESTAÇÃO ===\n\n"
+            "Diretrizes Obrigatórias:\n"
+            "1. Varredura Direta (Autor -> Réu): Identifique convergências, divergências e fatos incontroversos por ausência de impugnação específica (Art. 341 CPC).\n"
+            "2. Varredura Reversa (Réu -> Autor): Identifique preliminares e fatos novos impeditivos/modificativos/extintivos da defesa sem correspondência prévia (Art. 350 CPC).\n"
+            "3. Enquadre cada tese nos 7 eixos do TipoTese (preliminar, prejudicial_merito, fato_ou_valor, merito, tutela_provisoria, prova_e_onus, pedido_e_valor_causa) e nos 4 status do StatusTese (convergente, divergente, fato_incontroverso_por_omissao, fato_novo_ou_extintivo_reu).\n"
+            "4. Extraia citações literais exatas e preencha pagina_autor e pagina_reu com base nas marcações [PÁG XX]. Note: trecho_autor deve ser null apenas em fato_novo_ou_extintivo_reu; trecho_reu deve ser null apenas em fato_incontroverso_por_omissao.\n"
+            "5. Calcule probabilidade_procedencia_pct entre 0.0 e 100.0 e gere impacto_processual objetivo para o advogado em réplica.\n"
+            "Responda EXCLUSIVAMENTE em formato JSON compatível com o schema do ResultadoComparacaoPecas."
+        )
+
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{settings.GEMINI_MODEL}:generateContent?key={api_key}"
+        )
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": 0.2,
+                "responseMimeType": "application/json",
+            },
+        }
+
+        try:
+            with httpx.Client(timeout=settings.GEMINI_TIMEOUT_SECONDS) as client:
+                res = client.post(url, json=payload)
+                if res.status_code == 200:
+                    data = res.json()
+                    candidates = data.get("candidates", [])
+                    if candidates:
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        if parts:
+                            raw_reply = parts[0].get("text", "").strip()
+                            if raw_reply.startswith("```"):
+                                raw_reply = re.sub(r"^```(?:json)?\s*", "", raw_reply)
+                                raw_reply = re.sub(r"\s*```$", "", raw_reply)
+                            parsed_json = json.loads(raw_reply)
+                            parsed_obj = ResultadoComparacaoPecas.model_validate(parsed_json)
+                            parsed_obj.texto_higienizado_autor = sanitized_init
+                            parsed_obj.texto_higienizado_reu = sanitized_cont
+                            return parsed_obj
+        except Exception as exc:
+            logger.info("Chamada Gemini comparar_pecas não concluída (%s: %s). Acionando fallback local.", exc.__class__.__name__, exc)
+
+        return base_resp
+
 
 class ResilientAIGateway(AIGatewayPort):
     """
@@ -505,6 +910,17 @@ class ResilientAIGateway(AIGatewayPort):
 
         # 3. Fallback determinístico local (offline, seguro e de custo zero)
         return self._fallback.analyze_document(request)
+
+    def comparar_pecas(
+        self,
+        texto_inicial: str,
+        texto_contestacao: str,
+        contexto_historico: Optional[ContextoHistoricoSchema] = None,
+        numero_processo: Optional[str] = None,
+    ) -> ResultadoComparacaoPecas:
+        if settings.GEMINI_API_KEY.strip() and settings.AI_PROVIDER in ("gemini", "auto"):
+            return self._gemini.comparar_pecas(texto_inicial, texto_contestacao, contexto_historico, numero_processo)
+        return self._fallback.comparar_pecas(texto_inicial, texto_contestacao, contexto_historico, numero_processo)
 
 
 ai_gateway = ResilientAIGateway()

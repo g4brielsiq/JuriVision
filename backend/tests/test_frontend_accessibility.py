@@ -25,6 +25,8 @@ def test_rnf09_wai_aria_landmarks_e_tab_pattern():
     assert 'aria-controls="panel-dashboard"' in html
     assert 'aria-controls="panel-upload"' in html
     assert 'aria-controls="panel-historico"' in html
+    assert 'aria-controls="panel-comparador"' in html
+    assert 'id="panel-comparador"' in html
     assert 'aria-live="polite"' in html
     assert 'role="alert"' in html
     assert 'href="#main-content"' in html
@@ -81,6 +83,8 @@ def test_rnf04_integracao_completa_contratos_api():
     assert "/api/v1/processos/upload-pdf" in api_code
     assert "/api/v1/processos/upload-csv" in api_code
     assert "/api/v1/processos" in api_code
+    assert "/api/v1/processos/comparar-pecas" in api_code
     assert "/api/v1/relatorios/processo/" in api_code
     assert "resetarFluxoUpload" in app_code
+    assert "setupComparadorInteractions" in app_code
     assert "getAuthHeader" in api_code

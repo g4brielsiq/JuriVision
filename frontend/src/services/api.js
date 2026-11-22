@@ -59,6 +59,41 @@ export function buildSamplePetitionPdfFile() {
     return new File([blob], "peticao_inicial_voo.pdf", { type: "application/pdf" });
 }
 
+export function buildSampleDefensePdfFile() {
+    const lines = [
+        "EXCELENTISSIMO SENHOR JUIZ DA 1a VARA CIVEL DE MACEIO",
+        "Processo: 0019283-44.2026.8.02.0001",
+        "Reu: Companhia Aerea Linhas Brasil S.A.",
+        "DAS PREJUDICIAIS DE MERITO",
+        "Argui expressamente a prescrição quinquenal da pretensão indenizatória nos termos da lei.",
+        "DO MERITO",
+        "A ré impugna a data dos fatos e a alegação de inadimplemento sem assistência material.",
+        "Houve readequação técnica da malha aérea decorrente de condições meteorológicas adversas.",
+        "Impugnação expressa aos danos morais pleiteados tratando-se de mero dissabor.",
+    ];
+
+    const streamOps = ["BT", "/F1 12 Tf", "50 750 Td"];
+    lines.forEach((line) => {
+        streamOps.push(`(${line}) Tj`);
+        streamOps.push("0 -18 Td");
+    });
+    streamOps.push("ET");
+    const streamStr = streamOps.join("\n");
+
+    const pdfContent = [
+        "%PDF-1.4\n",
+        "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+        "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+        "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n",
+        "4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
+        `5 0 obj\n<< /Length ${streamStr.length} >>\nstream\n${streamStr}\nendstream\nendobj\n`,
+        "trailer\n<< /Size 6 /Root 1 0 R >>\n%%EOF\n",
+    ].join("");
+
+    const blob = new Blob([pdfContent], { type: "application/pdf" });
+    return new File([blob], "contestacao_empresa_aerea.pdf", { type: "application/pdf" });
+}
+
 export function buildSampleBatchCsvFile() {
     const csvText = [
         "numero_processo,tema,magistrado,comarca,autor,reu,texto_resumo,resultado,data_julgamento",
@@ -219,6 +254,26 @@ export async function consultarProcessoDatajud(numeroProcesso) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
         throw new Error(data.detail || `Erro ao consultar metadados no DataJud (HTTP ${res.status}).`);
+    }
+    return data;
+}
+
+export async function compararPecas(fileInicial, fileContestacao) {
+    const formData = new FormData();
+    formData.append("peticao_inicial", fileInicial);
+    formData.append("contestacao", fileContestacao);
+
+    const res = await fetch(`${getApiBaseUrl()}/api/v1/processos/comparar-pecas`, {
+        method: "POST",
+        headers: {
+            ...getAuthHeader(),
+        },
+        body: formData,
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw new Error(data.detail || `Erro HTTP ${res.status} ao confrontar peças processuais.`);
     }
     return data;
 }
