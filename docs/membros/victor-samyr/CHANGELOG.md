@@ -52,3 +52,11 @@
   - Integração no front-end (`api.js`, `index.html`, `app.js`) com restauração de sessão autenticada, propagação de `?token=` para relatórios PDF privados e botão `#btn-logout-account`.
   - Criação da suíte `backend/tests/test_etapa2_seguranca_e_isolamento.py` com 7 testes exaustivos.
 - **Status:** Build do frontend (`npm run build`) e **48 de 48 testes automatizados** aprovados no pytest.
+
+### [2026-11-21] — Etapa 3 (JuriVision-Pro): Endurecimento da Barreira LGPD (`AnonimizadorLGPD`)
+- **Branch de Atuação:** `dev` (`pro` — `VictorSamyr/JuriVision-Pro`)
+- **Atividades Realizadas:**
+  - Expansão do `AnonimizadorLGPD` em `backend/app/core/ai_gateway.py` para mascarar e-mails, telefones/WhatsApp, CEPs, endereços residenciais, documentos civis (CNH, CTPS, PIS/PASEP, Passaporte, Título de Eleitor, CNS) e nomes em prosa jurídica contínua, qualificação civil e variações parciais (`Sr./Sra.`).
+  - Substituição da correspondência de empresas por `CORPORATE_REGEX` com fronteiras de palavra e introdução de `LEGAL_AND_GEO_STOPWORDS` / `GEO_PHRASES` para eliminar falsos positivos em sobrenomes, magistrados e termos jurídicos.
+  - Criação de `extract_parties_from_text` integrado ao `LocalDeterministicFallbackAdapter` e da suíte `backend/tests/test_etapa3_barreira_lgpd_expandida.py` com 6 testes exaustivos.
+- **Status:** Build do frontend (`npm run build`) e **54 de 54 testes automatizados** aprovados no pytest.

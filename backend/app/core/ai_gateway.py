@@ -32,27 +32,93 @@ CPF_REGEX = re.compile(r"\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b")
 RG_LABELED_REGEX = re.compile(
     r"(?i)\b(?:RG|Identidade)\s*[:nº°.-]*\s*(\d{1,2}\.?\d{3}\.?\d{3}-?[\dXx]|\d{6,10})\b"
 )
+EMAIL_REGEX = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+PHONE_REGEX = re.compile(
+    r"(?i)(?:\+55\s*\(?\d{2}\)?\s*9?\d{4}[-\s]?\d{4}\b|\(\d{2}\)\s*9?\d{4}[-\s]?\d{4}\b"
+    r"|\b(?:tel(?:efone)?|cel(?:ular)?|whatsapp|fone)\s*[:nº°.-]*\s*(?:\+55\s*)?\(?\d{2}\)?\s*9?\d{4}[-\s]?\d{4}\b"
+    r"|\b\d{2}\s+9\d{4}-\d{4}\b)"
+)
+CEP_REGEX = re.compile(r"(?i)(?:\bCEP\s*[:nº°.-]*\s*\d{2}\.?\d{3}-\d{3}\b|(?<!\d)\b\d{5}-\d{3}\b(?!\.\d))")
+DOC_EXTRA_REGEX = re.compile(
+    r"(?i)\b(?:CNH|CTPS|PIS(?:/PASEP)?|PASEP|Passaporte|T[íi]tulo\s+de\s+Eleitor|Cart[ãa]o\s+(?:do\s+)?SUS|CNS)"
+    r"\s*[:nº°.-]*\s*(?:[A-Z]{2})?\d(?:[\d./-]|\s(?=\d)){4,19}\d\b"
+)
+ADDRESS_REGEX = re.compile(
+    r"(?i)(?:\b(?:residente\s+e\s+domiciliad[oa]\s+(?:na|no|à|em)|domiciliad[oa]\s+(?:na|no|à|em)|endere[çc]o\s*[:.-]+)"
+    r"\s*(?:Rua|Avenida|Av\.|Travessa|Alameda|Pra[çc]a|Rodovia|Estrada|Condom[íi]nio|Loteamento)\s+[^\n\r.;\[]+"
+    r"|\b(?:Rua|Avenida|Av\.|Travessa|Alameda)\s+[A-ZÀ-Ú][A-Za-zÀ-ú0-9\s]{2,45},\s*(?:n[º°.]?\s*)?\d{1,5}"
+    r"(?:\s*,\s*(?:apto\.?|apartamento|bloco|casa|sala)\s*[A-Za-z0-9-]+)?)"
+)
 CNJ_REGEX = re.compile(r"\b\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}\b")
 
 CORPORATE_KEYWORDS = (
     "s.a",
     "s/a",
     "ltda",
+    "me",
+    "epp",
+    "eireli",
     "companhia",
     "cia",
     "banco",
     "unimed",
+    "hapvida",
+    "equatorial",
+    "casal",
+    "telefônica",
+    "telefonica",
+    "vivo",
+    "claro",
+    "tim",
+    "magazine",
+    "mercadolivre",
+    "mercado livre",
     "hospital",
     "clínica",
     "clinica",
     "linhas",
     "aérea",
     "aerea",
+    "transportes",
+    "operadora",
+    "cooperativa",
     "empresa",
     "comércio",
     "comercio",
     "serviços",
     "servicos",
+    "instituição",
+    "instituicao",
+    "financeira",
+    "seguradora",
+    "construtora",
+    "supermercado",
+    "farmácia",
+    "farmacia",
+    "faculdade",
+    "universidade",
+    "instituto",
+    "fundação",
+    "fundacao",
+    "associação",
+    "associacao",
+    "sindicato",
+    "prefeitura",
+    "secretaria",
+    "ministério",
+    "ministerio",
+    "autarquia",
+    "anac",
+    "ans",
+    "anatel",
+    "aneel",
+    "anvisa",
+    "procon",
+    "detran",
+    "nubank",
+    "softwares",
+    "tecnologia",
+    "consultoria",
     "estado",
     "município",
     "municipio",
@@ -70,17 +136,237 @@ CORPORATE_KEYWORDS = (
     "azul",
 )
 
+CORPORATE_REGEX = re.compile(
+    r"(?i)(?:^|[\s,./(-])(?:"
+    + "|".join(re.escape(kw) for kw in CORPORATE_KEYWORDS)
+    + r")(?=$|[\s,.)/-])"
+)
+
+LEGAL_AND_GEO_STOPWORDS = {
+    "código",
+    "codigo",
+    "defesa",
+    "consumidor",
+    "civil",
+    "processo",
+    "processual",
+    "penal",
+    "trabalho",
+    "trabalhista",
+    "tributário",
+    "tributario",
+    "constituição",
+    "constituicao",
+    "federal",
+    "estadual",
+    "municipal",
+    "súmula",
+    "sumula",
+    "tema",
+    "artigo",
+    "lei",
+    "decreto",
+    "resolução",
+    "resolucao",
+    "vara",
+    "cível",
+    "civel",
+    "comarca",
+    "tribunal",
+    "justiça",
+    "justica",
+    "superior",
+    "supremo",
+    "regional",
+    "turma",
+    "câmara",
+    "camara",
+    "seção",
+    "secao",
+    "juizado",
+    "especial",
+    "maceió",
+    "maceio",
+    "arapiraca",
+    "penedo",
+    "alagoas",
+    "brasil",
+    "brasília",
+    "brasilia",
+    "dano",
+    "moral",
+    "material",
+    "indenização",
+    "indenizacao",
+    "reparação",
+    "reparacao",
+    "obrigação",
+    "obrigacao",
+    "tutela",
+    "urgência",
+    "urgencia",
+    "atraso",
+    "voo",
+    "plano",
+    "saúde",
+    "saude",
+    "horas",
+    "extras",
+    "rescisão",
+    "rescisao",
+    "contrato",
+    "ação",
+    "acao",
+    "declaratória",
+    "declaratoria",
+    "inexistência",
+    "inexistencia",
+    "débito",
+    "debito",
+    "procedente",
+    "improcedente",
+    "acordo",
+    "sentença",
+    "sentenca",
+    "acórdão",
+    "acordao",
+    "decisão",
+    "decisao",
+    "julgamento",
+    "síntese",
+    "sintese",
+    "factual",
+    "direito",
+    "juiz",
+    "juíza",
+    "juiza",
+    "magistrado",
+    "magistrada",
+    "desembargador",
+    "desembargadora",
+    "ministro",
+    "ministra",
+    "relator",
+    "relatora",
+    "dr",
+    "dra",
+    "exmo",
+    "exma",
+    "excelentíssimo",
+    "excelentissimo",
+    "senhor",
+    "senhora",
+    "autor",
+    "autora",
+    "requerente",
+    "reclamante",
+    "réu",
+    "reu",
+    "ré",
+    "re",
+    "requerido",
+    "requerida",
+    "reclamado",
+    "reclamada",
+    "executado",
+    "executada",
+    "exequente",
+    "paciente",
+    "impetrante",
+    "testemunha",
+    "vítima",
+    "vitima",
+    "brasileiro",
+    "brasileira",
+    "casado",
+    "casada",
+    "solteiro",
+    "solteira",
+    "divorciado",
+    "divorciada",
+    "viúvo",
+    "viúva",
+    "residente",
+    "domiciliado",
+    "domiciliada",
+    "portador",
+    "portadora",
+    "inscrito",
+    "inscrita",
+}
+
+GEO_PHRASES = (
+    "são paulo",
+    "sao paulo",
+    "rio de janeiro",
+    "rio largo",
+    "belo horizonte",
+    "porto alegre",
+    "santa catarina",
+    "minas gerais",
+    "mato grosso",
+    "espírito santo",
+    "espirito santo",
+    "distrito federal",
+)
+
 
 class AnonimizadorLGPD:
     """
     Motor determinístico local de higienização de Dados Pessoais (PII) em conformidade com a LGPD.
-    Cumpre o invariante RN-01: nenhum CPF, RG ou nome real de pessoa física transpõe esta barreira.
+    Cumpre o invariante RN-01: nenhum CPF, RG, e-mail, telefone, endereço ou nome real de pessoa
+    física transpõe esta barreira.
     """
 
     @staticmethod
     def is_corporate_entity(name: str) -> bool:
-        lower = name.lower()
-        return any(kw in lower for kw in CORPORATE_KEYWORDS)
+        if not name:
+            return False
+        return bool(CORPORATE_REGEX.search(name))
+
+    @classmethod
+    def _clean_candidate_person_name(cls, candidate: str) -> str:
+        """
+        Valida e limpa candidato a nome de pessoa física capturado em prosa jurídica,
+        interrompendo antes de termos jurídicos/geográficos e evitando falsos positivos.
+        """
+        cleaned = " ".join((candidate or "").strip(" ,.;:-").split())
+        if not cleaned or cls.is_corporate_entity(cleaned):
+            return ""
+        lower_full = cleaned.lower()
+        if any(phrase in lower_full for phrase in GEO_PHRASES):
+            return ""
+
+        prepositions = {"de", "da", "do", "das", "dos", "e"}
+        raw_tokens = cleaned.split()
+        kept: list[str] = []
+        for tok in raw_tokens:
+            low = tok.lower().strip(".,;:")
+            if low in LEGAL_AND_GEO_STOPWORDS:
+                break
+            if low in prepositions:
+                kept.append(tok)
+                continue
+            if not re.match(r"^[A-ZÀ-Ú][a-zà-ú'-]{1,}$", tok):
+                break
+            kept.append(tok)
+
+        while kept and kept[-1].lower() in prepositions:
+            kept.pop()
+
+        significant = [t for t in kept if t.lower() not in prepositions]
+        if len(significant) < 2:
+            return ""
+
+        result = " ".join(kept)
+        if cls.is_corporate_entity(result):
+            return ""
+        return result
+
+    @classmethod
+    def _is_followed_by_corporate_suffix(cls, text: str, end_pos: int) -> bool:
+        tail = text[end_pos : end_pos + 30].lstrip(" ,.-")
+        return bool(re.match(r"(?i)^(?:S\.?A\.?|S/A|LTDA\.?|ME|EPP|EIRELI)\b", tail))
 
     @classmethod
     def mask_party_name(cls, raw_name: str) -> Tuple[str, bool]:
@@ -117,51 +403,212 @@ class AnonimizadorLGPD:
         return f"{first_name} {second_initial}. ***", True
 
     @classmethod
+    def extract_parties_from_text(cls, raw_text: str, default_reu: str) -> Tuple[str, str]:
+        """Extrai Autor e Réu de cabeçalhos explícitos ou de construções em prosa jurídica."""
+        autor_match = re.search(
+            r"(?i)\b(?:Autor(?:a)?|Requerente|Reclamante)\s*:\s*([^\n\r,;]{3,60})", raw_text
+        )
+        if autor_match:
+            raw_autor = autor_match.group(1).strip()
+        else:
+            prose_autor = re.search(
+                r"(?i:\b(?:Autor(?:a)?|Requerente|Reclamante|Impetrante|Exequente)\s+"
+                r"|movid[oa]\s+por\s+|ajuizad[oa]\s+por\s+|propost[oa]\s+por\s+|promovid[oa]\s+por\s+)"
+                r"([A-ZÀ-Ú][a-zà-ú]{1,25}(?:\s+(?:de|da|do|das|dos|e)\s+[A-ZÀ-Ú][a-zà-ú]{1,25}|\s+[A-ZÀ-Ú][a-zà-ú]{1,25}){1,4})",
+                raw_text,
+            )
+            cleaned_autor = cls._clean_candidate_person_name(prose_autor.group(1)) if prose_autor else ""
+            raw_autor = cleaned_autor or "Lucas Gabriel Rodrigues"
+
+        reu_match = re.search(
+            r"(?i)\b(?:R[ée]u|R[ée]|Requerid[oa]|Reclamad[oa])\s*:\s*([^\n\r,;]{3,60})", raw_text
+        )
+        if reu_match:
+            raw_reu = reu_match.group(1).strip()
+        else:
+            prose_reu = re.search(
+                r"(?i:\bem[ \t]+face[ \t]+de[ \t]+|\bem[ \t]+desfavor[ \t]+de[ \t]+|\bcontra[ \t]+"
+                r"|\bR[ée]u[ \t]+|\bR[ée][ \t]+|\bRequerid[oa][ \t]+|\bReclamad[oa][ \t]+)"
+                r"([A-ZÀ-Ú][A-Za-zÀ-ú0-9.&/-]*(?:[ \t]+(?:de|da|do|das|dos|e|[A-ZÀ-Ú][A-Za-zÀ-ú0-9.&/-]*)){1,5})",
+                raw_text,
+            )
+            if prose_reu:
+                raw_cand_reu = prose_reu.group(1).strip(" ,;:")
+                corp_end = re.search(r"(?i)\b(?:S\.?A\.?|S/A|LTDA\.?|EIRELI)(?:\.|$)", raw_cand_reu)
+                if corp_end:
+                    candidate_reu = raw_cand_reu[: corp_end.end()].strip(" ,;:")
+                else:
+                    candidate_reu = raw_cand_reu.strip(" ,.;:")
+                if cls.is_corporate_entity(candidate_reu) or cls._is_followed_by_corporate_suffix(
+                    raw_text, prose_reu.end()
+                ):
+                    raw_reu = candidate_reu
+                else:
+                    cleaned_reu = cls._clean_candidate_person_name(candidate_reu)
+                    raw_reu = cleaned_reu or default_reu
+            else:
+                raw_reu = default_reu
+
+        return raw_autor, raw_reu
+
+    @classmethod
     def sanitize_text(cls, raw_text: str, known_natural_names: list[str] | None = None) -> Tuple[str, int, int]:
         """
-        Varre um texto jurídico bruto e substitui CPFs, RGs e nomes de pessoas físicas.
-        Retorna: (texto_higienizado, total_cpfs_rgs_mascarados, total_nomes_mascarados)
+        Varre um texto jurídico bruto e substitui documentos civis (RG, CNH/CTPS/PIS, CPF),
+        e-mails, telefones, CEPs, endereços e nomes de pessoas físicas (em cabeçalhos e prosa).
+        Retorna: (texto_higienizado, total_identificadores_mascarados, total_nomes_mascarados)
         """
         if not raw_text:
             return "", 0, 0
 
-        sanitized, cpf_count = CPF_REGEX.subn("[CPF_ANONIMIZADO]", raw_text)
-        sanitized, rg_count = RG_LABELED_REGEX.subn("RG: [RG_ANONIMIZADO]", sanitized)
+        # Documentos rotulados (RG, CNH, CTPS, PIS, CNS) antes de CPF para evitar colisão de 11 dígitos
+        sanitized, rg_count = RG_LABELED_REGEX.subn("RG: [RG_ANONIMIZADO]", raw_text)
+        sanitized, doc_extra_count = DOC_EXTRA_REGEX.subn("[DOC_ANONIMIZADO]", sanitized)
+        sanitized, cpf_count = CPF_REGEX.subn("[CPF_ANONIMIZADO]", sanitized)
+        sanitized, email_count = EMAIL_REGEX.subn("[EMAIL_ANONIMIZADO]", sanitized)
+        sanitized, phone_count = PHONE_REGEX.subn("[TELEFONE_ANONIMIZADO]", sanitized)
+        sanitized, cep_count = CEP_REGEX.subn("[CEP_ANONIMIZADO]", sanitized)
+        sanitized, address_count = ADDRESS_REGEX.subn("[ENDERECO_ANONIMIZADO]", sanitized)
 
-        names_masked = 0
-        # Mascarar padrões contextuais explícitos como "Autor: Nome Completo" ou "Requerente: Nome Completo"
-        contextual_pattern = re.compile(
-            r"(?i)\b(Autor(?:a)?|Requerente|Reclamante|Paciente)\s*:\s*([A-ZÀ-Ú][a-zà-ú]+(?:\s+(?:de|da|do|das|dos|[A-ZÀ-Ú][a-zà-ú]+)){1,5})"
+        doc_pii_count = (
+            cpf_count
+            + rg_count
+            + doc_extra_count
+            + email_count
+            + phone_count
+            + cep_count
+            + address_count
         )
 
-        def _replace_contextual_name(match: re.Match) -> str:
+        names_masked = 0
+        discovered_names: list[str] = []
+        name_seq = r"([A-ZÀ-Ú][a-zà-ú]{1,25}(?:\s+(?:de|da|do|das|dos|e)\s+[A-ZÀ-Ú][a-zà-ú]{1,25}|\s+[A-ZÀ-Ú][a-zà-ú]{1,25}){1,4})"
+
+        # 1. Papéis processuais com ou sem ":" (Autor, Autora, Réu, Requerente, Testemunha, etc.)
+        role_pattern = re.compile(
+            r"(?i:\b(?:Autor(?:a)?|Requerente|Reclamante|Paciente|Impetrante|Exequente|"
+            r"R[ée]u|R[ée]|Requerid[oa]|Reclamad[oa]|Executad[oa]|Testemunha|V[íi]tima))\s*(?::\s*|\s+)"
+            + name_seq
+        )
+
+        # 2. Locuções processuais em prosa contínua
+        prose_pattern = re.compile(
+            r"(?i:\b(?:movid[oa]\s+por|ajuizad[oa]\s+por|propost[oa]\s+por|promovid[oa]\s+por|"
+            r"impetrad[oa]\s+por|em\s+face\s+de|em\s+desfavor\s+de|contra|prescrit[oa]\s+para|"
+            r"correntista|consumidor(?:a)?|segurad[oa]))\s+"
+            + name_seq
+        )
+
+        for pattern in (role_pattern, prose_pattern):
+            def _replace_labeled_or_prose(match: re.Match, _src=None) -> str:
+                nonlocal names_masked
+                full = match.group(0)
+                raw_cand = match.group(1)
+                prefix = full[: len(full) - len(raw_cand)]
+                if cls._is_followed_by_corporate_suffix(match.string, match.end()):
+                    return full
+                cleaned = cls._clean_candidate_person_name(raw_cand)
+                if not cleaned:
+                    return full
+                discovered_names.append(cleaned)
+                masked, was_masked = cls.mask_party_name(cleaned)
+                if was_masked:
+                    names_masked += 1
+                trailing = raw_cand[len(cleaned) :]
+                return f"{prefix}{masked}{trailing}"
+
+            sanitized = pattern.sub(_replace_labeled_or_prose, sanitized)
+
+        # 3. Qualificação civil clássica antes de vírgula (ex.: "Fulano de Tal, brasileiro, casado, inscrito no CPF...")
+        qualificacao_pattern = re.compile(
+            name_seq
+            + r"(?=,\s*(?i:brasileir[oa]|casad[oa]|solteir[oa]|divorciad[oa]|vi[úu]v[oa]|"
+            r"inscrit[oa]\s+no\s+(?:CPF|\[CPF)|portador(?:a)?\s+d[eo]\s+RG|CPF\b|RG\b|"
+            r"residente\s+e\s+domiciliad[oa]|\[ENDERECO_ANONIMIZADO\]))"
+        )
+
+        def _replace_qualificacao(match: re.Match) -> str:
             nonlocal names_masked
-            role_label = match.group(1)
-            candidate_name = match.group(2).strip()
-            if cls.is_corporate_entity(candidate_name):
+            raw_cand = match.group(1)
+            before = match.string[max(0, match.start() - 25) : match.start()]
+            if re.search(r"(?i)\b(?:Dr\.?|Dra\.?|Ju[íi]z(?:a)?|Magistrad[oa]|Desembargador(?:a)?|Ministr[oa])\s*$", before):
                 return match.group(0)
-            masked, was_masked = cls.mask_party_name(candidate_name)
+            if cls._is_followed_by_corporate_suffix(match.string, match.end()):
+                return match.group(0)
+            cleaned = cls._clean_candidate_person_name(raw_cand)
+            if not cleaned:
+                return match.group(0)
+            discovered_names.append(cleaned)
+            masked, was_masked = cls.mask_party_name(cleaned)
             if was_masked:
                 names_masked += 1
-            return f"{role_label}: {masked}"
+            return masked
 
-        sanitized = contextual_pattern.sub(_replace_contextual_name, sanitized)
+        sanitized = qualificacao_pattern.sub(_replace_qualificacao, sanitized)
 
-        if known_natural_names:
-            for person_name in known_natural_names:
-                clean_person = person_name.strip()
+        # 4. Nomes conhecidos (partes do formulário/CSV ou descobertos na etapa acima) e variações parciais
+        all_known: list[str] = []
+        for candidate_name in (known_natural_names or []) + discovered_names:
+            clean_person = (candidate_name or "").strip()
+            if (
+                clean_person
+                and "***" not in clean_person
+                and not cls.is_corporate_entity(clean_person)
+                and len(clean_person) >= 3
+                and clean_person not in all_known
+            ):
+                all_known.append(clean_person)
+
+        prepositions = {"de", "da", "do", "das", "dos", "e"}
+        for person_name in all_known:
+            masked_person, _ = cls.mask_party_name(person_name)
+            full_re = re.compile(r"\b" + re.escape(person_name) + r"\b")
+            sanitized, count_full = full_re.subn(masked_person, sanitized)
+            if count_full:
+                names_masked += count_full
+
+            sig_tokens = [t for t in person_name.split() if t.lower() not in prepositions]
+            if len(sig_tokens) >= 2:
+                # Prenome composto (ex.: "João Carlos")
+                first_two = f"{sig_tokens[0]} {sig_tokens[1]}"
+                if first_two != person_name and len(first_two) >= 5:
+                    two_re = re.compile(r"\b" + re.escape(first_two) + r"\b")
+                    sanitized, count_two = two_re.subn(masked_person, sanitized)
+                    names_masked += count_two
+
+                last_name = sig_tokens[-1]
                 if (
-                    clean_person
-                    and "***" not in clean_person
-                    and not cls.is_corporate_entity(clean_person)
-                    and len(clean_person) >= 3
+                    len(last_name) >= 5
+                    and last_name.lower() not in LEGAL_AND_GEO_STOPWORDS
+                    and not cls.is_corporate_entity(last_name)
                 ):
-                    masked_person, _ = cls.mask_party_name(clean_person)
-                    if clean_person in sanitized:
-                        sanitized = sanitized.replace(clean_person, masked_person)
-                        names_masked += 1
+                    # Menções com pronome de tratamento + sobrenome (Sr./Sra. Albuquerque)
+                    title_re = re.compile(
+                        r"\b(?:Sr\.?|Sra\.?|Senhor(?:a)?)\s+" + re.escape(last_name) + r"\b"
+                    )
+                    sanitized, count_title = title_re.subn(masked_person, sanitized)
+                    names_masked += count_title
 
-        return sanitized, (cpf_count + rg_count), names_masked
+                    # Menção isolada ao sobrenome (sem título jurídico ou prenome diferente imediatamente antes)
+                    if len(last_name) >= 6:
+                        surname_re = re.compile(r"\b" + re.escape(last_name) + r"\b")
+
+                        def _replace_isolated_surname(m: re.Match) -> str:
+                            nonlocal names_masked
+                            before = m.string[max(0, m.start() - 35) : m.start()]
+                            if re.search(
+                                r"(?i)\b(?:Dr\.?|Dra\.?|Ju[íi]z(?:a)?|Magistrad[oa]|Desembargador(?:a)?)\s+(?:[A-ZÀ-Ú][a-zà-ú]+\s+)*$",
+                                before,
+                            ):
+                                return m.group(0)
+                            if re.search(r"[A-ZÀ-Ú][a-zà-ú]+\s+(?:de\s+|da\s+|do\s+)?$", before):
+                                return m.group(0)
+                            names_masked += 1
+                            return masked_person
+
+                        sanitized = surname_re.sub(_replace_isolated_surname, sanitized)
+
+        return sanitized, doc_pii_count, names_masked
 
 
 class ExtratorDocumental:
@@ -283,21 +730,19 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
         comarca = comarca_match.group(1).strip() if comarca_match else "1ª Vara Cível de Maceió"
 
         # 4. Identificação de Partes e Barreira Obrigatória LGPD (RN-01 / RF-04)
-        autor_match = re.search(
-            r"(?i)\b(?:Autor(?:a)?|Requerente|Reclamante)\s*:\s*([^\n\r,;]{3,60})", raw_text
-        )
-        reu_match = re.search(
-            r"(?i)\b(?:R[ée]u|Requerid[oa]|Reclamad[oa])\s*:\s*([^\n\r,;]{3,60})", raw_text
-        )
-
-        raw_autor = autor_match.group(1).strip() if autor_match else "Lucas Gabriel Rodrigues"
-        raw_reu = reu_match.group(1).strip() if reu_match else default_reu
+        raw_autor, raw_reu = AnonimizadorLGPD.extract_parties_from_text(raw_text, default_reu)
 
         autor_anon, autor_masked = AnonimizadorLGPD.mask_party_name(raw_autor)
         reu_anon, reu_masked = AnonimizadorLGPD.mask_party_name(raw_reu)
 
+        known_for_sanitization = []
+        if raw_autor in raw_text:
+            known_for_sanitization.append(raw_autor)
+        if raw_reu in raw_text:
+            known_for_sanitization.append(raw_reu)
+
         sanitized_text, cpf_rg_count, contextual_names_count = AnonimizadorLGPD.sanitize_text(
-            raw_text, known_natural_names=[raw_autor, raw_reu]
+            raw_text, known_natural_names=known_for_sanitization
         )
         total_names_masked = max(
             contextual_names_count,

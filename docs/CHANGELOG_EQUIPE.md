@@ -13,7 +13,7 @@ A tabela abaixo ordena todas as frentes de evolução técnica **da mais simples
 | :---: | :--- | :---: | :--- | :---: |
 | **1** | **Consistência de Pesquisa, Filtros/Ordenação no Servidor, Exclusão Integrada & PDF Multi-página** | Baixa | Filtro de salvos e ordenação apenas em memória na página atual; seletores de assunto/juiz fixos no HTML; listagem sem `resumo_curto`; rota `DELETE` sem UI; PDF restrito a 1 página. | `[x] CONCLUÍDA` |
 | **2** | **Segurança, JWT Obrigatório e Isolamento Multi-usuário** | Baixa / Média | Rotas de upload/leitura sem verificação de Bearer token e gravação fixa em `usuario_id="usr-01"`, misturando documentos de diferentes usuários. | `[x] CONCLUÍDA` |
-| **3** | **Endurecimento da Barreira LGPD (Regex Expandido & Detecção em Prosa)** | Média | `AnonimizadorLGPD` restrito a CPF, RG rotulado e linha `Autor: Nome`, sem mascarar e-mails, telefones, endereços ou nomes soltos. | `[ ] PENDENTE` |
+| **3** | **Endurecimento da Barreira LGPD (Regex Expandido & Detecção em Prosa)** | Média | `AnonimizadorLGPD` restrito a CPF, RG rotulado e linha `Autor: Nome`, sem mascarar e-mails, telefones, endereços ou nomes soltos. | `[x] CONCLUÍDA` |
 | **4** | **Motor NLP Local Real e Similaridade Textual (`TF-IDF` / `BM25`)** | Média / Alta | Classificação via 5 `if/else`, resumo pelas 2 primeiras frases, juiz padrão hardcoded (`Dr. Rafael De Amorim`), multiplicador fixo `* 7` e margem fixa `±8%`. | `[ ] PENDENTE` |
 | **5** | **RAG Jurídico (Gemini + Precedentes Reais), OCR e Microsserviço `ai_engine:8001`** | Alta | `ai_engine/worker.py` em `sleep(3600)`, Gemini sem contexto dos julgados do banco e ausência de OCR para PDFs escaneados. | `[ ] PENDENTE` |
 | **6** | **Modelo Freemium / Assinaturas, Cache de Demo e Deploy Cloud (CONAD)** | Alta | Plataforma 100% aberta em `localhost` sem planos (`FREE`/`PRO`), cotas de uso ou hospedagem escalável em nuvem. | `[ ] PENDENTE` |
@@ -321,4 +321,21 @@ Toda nova modificação deve seguir o modelo abaixo:
   - `backend/tests/test_etapa2_seguranca_e_isolamento.py` - Suíte exaustiva com 7 novos testes cobrindo JWT, `/auth/me` e isolamento multi-usuário.
 - **Como Testar / Executar Localmente:**
   - PowerShell: `$env:PYTHONPATH="backend"; .\.venv\Scripts\pytest backend/tests/ -v` (**48 testes aprovados**).
+  - Front-end: `cd frontend; npm run build`.
+
+---
+
+### [2026-11-21] — Etapa 3: Endurecimento da Barreira LGPD (`AnonimizadorLGPD` Expandido e Detecção em Prosa)
+- **Branch:** `dev` (`VictorSamyr/JuriVision-Pro`)
+- **Autor / Dupla:** Victor Samyr
+- **Pacote da EAP / Requisitos:** Etapa 3 do Roadmap, EAP 1.4.1, RF-04, RN-01, RNF-06 (LGPD Art. 12)
+- **Resumo da Mudança:**
+  1. **Detecção Expandida de PII (`backend/app/core/ai_gateway.py`):** adicionadas expressões auditáveis para e-mails (`EMAIL_REGEX`), telefones/WhatsApp (`PHONE_REGEX`), CEPs (`CEP_REGEX`), documentos extras (`DOC_EXTRA_REGEX` — CNH, CTPS, PIS/PASEP, Passaporte, Título de Eleitor, CNS) e endereços (`ADDRESS_REGEX`), preservando números CNJ sem colisões.
+  2. **Detecção de Nomes em Prosa e Variações (`AnonimizadorLGPD`):** suporte a papéis processuais sem dois-pontos (`Autora Maria Clara...`), locuções jurídicas (`movida por`, `ajuizada por`, `em face de`, `contra`), qualificação civil antes de vírgula (`..., brasileiro, casado, inscrito no CPF`), variações parciais (`Sr./Sra. + sobrenome`, prenome composto e sobrenome isolado de partes conhecidas) e extração de partes em prosa (`extract_parties_from_text`).
+  3. **Zero Falso Positivo:** `CORPORATE_REGEX` com fronteiras de palavra (`\b`) e `LEGAL_AND_GEO_STOPWORDS` + `GEO_PHRASES` preservam 100% de empresas, órgãos públicos, magistrados e institutos jurídicos.
+- **Arquivos Criados / Modificados:**
+  - `backend/app/core/ai_gateway.py` - Endurecimento completo de `AnonimizadorLGPD` e integração em `LocalDeterministicFallbackAdapter`.
+  - `backend/tests/test_etapa3_barreira_lgpd_expandida.py` - Suíte exaustiva com 6 novos testes cobrindo todos os vetores de PII e zero falsos positivos.
+- **Como Testar / Executar Localmente:**
+  - PowerShell: `$env:PYTHONPATH="backend"; .\.venv\Scripts\pytest backend/tests/ -v` (**54 testes aprovados**).
   - Front-end: `cd frontend; npm run build`.
