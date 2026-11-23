@@ -4,6 +4,9 @@ from app.schemas.contracts import (
     ContextoHistoricoSchema,
     CSVUploadResponse,
     DashboardMetricasResponse,
+    DataJudProcessoResponse,
+    DataJudSincronizacaoRequest,
+    DataJudSincronizacaoResponse,
     DecisaoJuizSchema,
     FiltrosDisponiveisResponse,
     InternalAnalyzeRequest,
@@ -46,4 +49,7 @@ __all__ = [
     "ContextoHistoricoSchema",
     "InternalAnalyzeRequest",
     "InternalAnalyzeResponse",
+    "DataJudProcessoResponse",
+    "DataJudSincronizacaoRequest",
+    "DataJudSincronizacaoResponse",
 ]

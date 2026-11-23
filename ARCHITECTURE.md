@@ -432,8 +432,10 @@ erDiagram
 
 * **Regras:** `numero_processo` no formato CNJ; `resultado` ∈ {`Procedente`, `Improcedente`, `Acordo`, `Em Analise`} (padrão `Em Analise`); `comarca` e `data_julgamento` opcionais. Autor, réu e resumo passam pelo `AnonimizadorLGPD` antes da persistência (`RN-01`); nomes já mascarados (`***`) são preservados na edição. A `analise_preditiva` é uma estimativa heurística calculada com processos do mesmo tema e magistrado na base (`provedor_ia = "local_heuristic"`).
 * **Response Body:** mesmo formato de `GET /api/v1/processos/{id_processo}` (Seção 8.3), com `resultado` e `data_julgamento` (ISO 8601 ou `null`) para preencher a edição.
-* **Erros:** `422` (validação), `409` (número CNJ já cadastrado em outro processo), `404` (edição de processo inexistente).
+* **Erros:** `422` (validação), `409` (número CNJ já cadastrado em outro processo), `404` (edição ou exclusão de processo inexistente), `401` (token JWT inválido ou expirado).
 * **Prévia:** `POST /api/v1/processos/anonimizacao/previa` aceita `autor`, `reu` e `resumo` em preenchimento parcial. Retorna `partes_anonimizadas`, `resumo` e `auditoria_lgpd` usando a mesma rotina do cadastro e da edição, sem persistência.
+* **Exclusão (`DELETE /api/v1/processos/{id_processo}`):** remove o processo e seus registros dependentes em cascata (`204 No Content` ou `404 Not Found`).
+* **Precedentes Semelhantes (`GET /api/v1/processos/{id_processo}/similares`):** retorna `ProcessoListResponse` com os julgados reais mais semelhantes na base (pontuados por correspondência de tema, magistrado, comarca e vocabulário da ementa, sem multiplicadores artificiais).
 
 ### 8.6 Exportação de Relatório Estratégico (`RF-09`)
 

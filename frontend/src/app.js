@@ -25,6 +25,7 @@ import {
     loginAdvogado,
     logoutAdvogado,
     registerAdvogado,
+    sincronizarLoteDatajud,
     uploadProcessoPdf,
     uploadProcessosCsv,
 } from "./services/api.js";
@@ -991,8 +992,12 @@ function exibirDrawerProcesso(det) {
     document.getElementById("drawer-proc-comarca").textContent = `TJAL · ${meta.comarca}`;
     document.getElementById("drawer-proc-autor").textContent = meta.partes_anonimizadas.autor;
     document.getElementById("drawer-proc-reu").textContent = meta.partes_anonimizadas.reu;
+    const origemMetodo =
+        pred.provedor_ia === "local_heuristic" || !pred.provedor_ia
+            ? "estimativa heurística local"
+            : `IA (${pred.provedor_ia})`;
     document.getElementById("drawer-proc-prob").textContent =
-        `${Math.round(pred.probabilidade_deferimento * 100)}% em ${pred.casos_similares_encontrados || 42} decisões semelhantes`;
+        `${Math.round(pred.probabilidade_deferimento * 100)}% em ${pred.casos_similares_encontrados ?? 0} decisões semelhantes (${origemMetodo})`;
     document.getElementById("drawer-proc-resumo").textContent = det.resumo_nlp;
     document.getElementById("drawer-proc-tese").textContent = pred.tese_recomendada;
 
@@ -1169,11 +1174,11 @@ export function renderizarResultadoPredicaoPdf(payload) {
     document.getElementById("res-probabilidade").textContent = `${probPct}%`;
     document.getElementById("res-margem").textContent = `±${margemPct}% na amostra`;
     document.getElementById("res-prazo").textContent = `${pred.tempo_estimado_sentenca_meses} meses`;
-    document.getElementById("res-similares").textContent = `${pred.casos_similares_encontrados} julgados`;
+    document.getElementById("res-similares").textContent = `${pred.casos_similares_encontrados ?? 0} julgados`;
     document.getElementById("res-provedor-ia").textContent =
         pred.provedor_ia === "local_heuristic" || !pred.provedor_ia
-            ? "Estatística Local"
-            : String(pred.provedor_ia);
+            ? "Estimativa Heurística Local (Base TJAL)"
+            : `Análise por IA (${pred.provedor_ia})`;
 
     document.getElementById("res-tema").textContent = meta.tema;
     document.getElementById("res-magistrado").textContent = meta.magistrado;
@@ -1264,6 +1269,32 @@ async function dispararConsultaDataJud() {
         showToast("Dados do DataJud recuperados com sucesso!");
     } catch (err) {
         showToast(`Consulta ao DataJud: ${err.message}`);
+    }
+}
+
+async function dispararSincronizacaoDataJud() {
+    const btnSync = document.getElementById("btn-sincronizar-datajud");
+    const temaSelecionado = document.getElementById("filtro-tema")?.value || "";
+
+    if (btnSync) btnSync.disabled = true;
+    showToast("Coletando e sincronizando lote de jurisprudências do DataJud (CNJ)...");
+    announceStatus("Sincronizando lote de jurisprudências do DataJud com a base histórica...");
+
+    try {
+        const res = await sincronizarLoteDatajud({
+            tribunal: "TJAL",
+            tema: temaSelecionado,
+            limite: 3,
+        });
+        await carregarFiltrosDinamicos();
+        await carregarBaseConhecimento(1);
+        carregarDashboard();
+        showToast(res.mensagem || "Base histórica atualizada com lote do DataJud (CNJ).");
+        announceStatus(res.mensagem || "Sincronização do DataJud concluída.");
+    } catch (err) {
+        showToast(`Sincronização DataJud: ${err.message}`);
+    } finally {
+        if (btnSync) btnSync.disabled = false;
     }
 }
 
@@ -1692,8 +1723,9 @@ async function initApp() {
 
     // Filtros e paginação na Pesquisa Jurisprudencial (RF-08)
     
-    // Consulta Oficial DataJud (CNJ)
+    // Consulta Oficial e Sincronização em Lote DataJud (CNJ)
     document.getElementById("btn-consultar-datajud")?.addEventListener("click", dispararConsultaDataJud);
+    document.getElementById("btn-sincronizar-datajud")?.addEventListener("click", dispararSincronizacaoDataJud);
     document.getElementById("btn-fechar-datajud")?.addEventListener("click", () => {
         document.getElementById("datajud-result-box")?.classList.add("hidden");
     });

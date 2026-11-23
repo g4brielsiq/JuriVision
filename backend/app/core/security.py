@@ -182,3 +182,6 @@ def ensure_can_modify_processo(proc: Processo, current_user: Optional[Usuario]) 
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Acesso negado: o acervo público institucional não pode ser alterado ou excluído por contas externas.",
         )
+
+
+get_current_user = get_current_user_strict

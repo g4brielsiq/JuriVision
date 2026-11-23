@@ -23,6 +23,7 @@ from app.core.nlp_engine import (
     classify_legal_theme,
     compute_jurimetria_prediction,
     extract_court_and_judge,
+    rank_similar_precedents,
 )
 from app.core.security import (
     PUBLIC_OWNER_ID,
@@ -38,6 +39,9 @@ from app.schemas.contracts import (
     AuditoriaLGPDSchema,
     ContextoHistoricoSchema,
     CSVUploadResponse,
+    DataJudProcessoResponse,
+    DataJudSincronizacaoRequest,
+    DataJudSincronizacaoResponse,
     FiltrosDisponiveisResponse,
     InternalAnalyzeRequest,
     MetadadosExtraidosSchema,
@@ -49,7 +53,6 @@ from app.schemas.contracts import (
     ProcessoListItemSchema,
     ProcessoListResponse,
     ProcessoUploadResponse,
-    DataJudProcessoResponse,
 )
 
 router = APIRouter(prefix="/api/v1/processos", tags=["Processos e Base de Conhecimento (RF-02 a RF-08)"])
@@ -434,11 +437,39 @@ async def upload_processos_csv(
     )
 
 
+_TRIBUNAL_CNJ_CODES = {
+    "TJAL": ".8.02.",
+    "TJPE": ".8.17.",
+    "TJRJ": ".8.19.",
+    "TJSP": ".8.26.",
+    "TRT19": ".5.19.",
+}
+
+
+def _converter_para_list_item(p: Processo) -> ProcessoListItemSchema:
+    return ProcessoListItemSchema(
+        id_processo=p.id_processo,
+        numero_processo=p.numero_processo,
+        tema=p.tema,
+        magistrado=p.magistrado,
+        comarca=p.comarca,
+        partes_anonimizadas=f"{p.autor_anonimizado} vs {p.reu_anonimizado}",
+        resultado=p.resultado_historico,
+        data_julgamento=p.data_julgamento.isoformat() if p.data_julgamento else None,
+        probabilidade_deferimento=(
+            p.analise_preditiva.probabilidade_deferimento if p.analise_preditiva else None
+        ),
+        resumo_curto=p.resumo_nlp,
+    )
+
+
 @router.get("", response_model=ProcessoListResponse, status_code=status.HTTP_200_OK)
 def listar_processos(
     tema: Optional[str] = Query(default=None, description="Filtrar por tema jurídico"),
     juiz: Optional[str] = Query(default=None, description="Filtrar por nome do magistrado"),
-    busca: Optional[str] = Query(default=None, description="Busca textual livre (CNJ, tema, juiz ou partes)"),
+    comarca: Optional[str] = Query(default=None, description="Filtrar por comarca ou órgão julgador"),
+    tribunal: Optional[str] = Query(default=None, description="Filtrar por sigla ou código CNJ do tribunal (ex: TJAL)"),
+    busca: Optional[str] = Query(default=None, description="Busca textual livre (CNJ, tema, juiz, comarca ou partes)"),
     ordenacao: Optional[str] = Query(
         default="recentes", description="Ordenação no servidor: recentes | antigas | assunto"
     ),
@@ -466,6 +497,27 @@ def listar_processos(
         query = query.filter(Processo.tema.ilike(f"%{tema.strip()}%"))
     if juiz and juiz.strip():
         query = query.filter(Processo.magistrado.ilike(f"%{juiz.strip()}%"))
+    if comarca and comarca.strip():
+        query = query.filter(Processo.comarca.ilike(f"%{comarca.strip()}%"))
+    if tribunal and tribunal.strip():
+        trib = tribunal.strip().upper()
+        cnj_code = _TRIBUNAL_CNJ_CODES.get(trib, trib)
+        if trib in ("TJAL", "8.02", ".8.02."):
+            query = query.filter(
+                or_(
+                    Processo.numero_processo.ilike("%.8.02.%"),
+                    Processo.comarca.ilike("%Maceió%"),
+                    Processo.comarca.ilike("%Arapiraca%"),
+                    Processo.comarca.ilike("%TJAL%"),
+                )
+            )
+        else:
+            query = query.filter(
+                or_(
+                    Processo.numero_processo.ilike(f"%{cnj_code}%"),
+                    Processo.comarca.ilike(f"%{trib}%"),
+                )
+            )
     if busca and busca.strip():
         term = f"%{busca.strip()}%"
         query = query.filter(
@@ -474,6 +526,7 @@ def listar_processos(
                 Processo.id_processo.ilike(term),
                 Processo.tema.ilike(term),
                 Processo.magistrado.ilike(term),
+                Processo.comarca.ilike(term),
                 Processo.autor_anonimizado.ilike(term),
                 Processo.reu_anonimizado.ilike(term),
                 Processo.resumo_nlp.ilike(term),
@@ -493,23 +546,7 @@ def listar_processos(
 
     registros = ordered_query.offset(offset).limit(limite).all()
 
-    itens = [
-        ProcessoListItemSchema(
-            id_processo=p.id_processo,
-            numero_processo=p.numero_processo,
-            tema=p.tema,
-            magistrado=p.magistrado,
-            comarca=p.comarca,
-            partes_anonimizadas=f"{p.autor_anonimizado} vs {p.reu_anonimizado}",
-            resultado=p.resultado_historico,
-            data_julgamento=p.data_julgamento.isoformat() if p.data_julgamento else None,
-            probabilidade_deferimento=(
-                p.analise_preditiva.probabilidade_deferimento if p.analise_preditiva else None
-            ),
-            resumo_curto=p.resumo_nlp,
-        )
-        for p in registros
-    ]
+    itens = [_converter_para_list_item(p) for p in registros]
 
     return ProcessoListResponse(
         total=total,
@@ -765,16 +802,143 @@ def excluir_processo(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.post(
+    "/datajud/sincronizar",
+    response_model=DataJudSincronizacaoResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Coletar e sincronizar lote de processos e jurisprudências via DataJud (CNJ)",
+)
+async def sincronizar_lote_datajud(
+    payload: DataJudSincronizacaoRequest = DataJudSincronizacaoRequest(),
+    db: Session = Depends(get_db),
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
+) -> DataJudSincronizacaoResponse:
+    """
+    Executa a coleta automática em lote de processos e jurisprudências na API Pública do DataJud (CNJ)
+    (com fallback local resiliente) e atualiza a base histórica visível de forma idempotente (Card #27 / RF-08 / RN-01).
+    Todos os registros passam pelo AnonimizadorLGPD e pelo motor TF-IDF/BM25 antes da persistência.
+    """
+    tribunal_sigla = (payload.tribunal or "TJAL").strip().upper()
+    coletados, fonte = await DataJudClient.coletar_lote_jurisprudencia(
+        tribunal=tribunal_sigla,
+        tema=payload.tema,
+        limite=payload.limite,
+    )
+
+    owner_id = get_effective_user_id(current_user)
+    novos_inseridos = 0
+    atualizados = 0
+    total_lgpd = 0
+    itens_sincronizados: list[ProcessoListItemSchema] = []
+
+    for item in coletados:
+        dados_cadastro = DataJudClient.extrair_registro_para_acervo(item)
+        req_cadastro = ProcessoCadastroRequest(**dados_cadastro)
+
+        existing = db.query(Processo).filter(Processo.numero_processo == req_cadastro.numero_processo).first()
+        if existing:
+            if existing.usuario_id not in (None, PUBLIC_OWNER_ID, owner_id):
+                continue
+            if (
+                current_user is not None
+                and current_user.id != PUBLIC_OWNER_ID
+                and existing.usuario_id in (None, PUBLIC_OWNER_ID)
+            ):
+                continue
+            proc = existing
+            atualizados += 1
+        else:
+            short_hash = hashlib.sha1(
+                f"{req_cadastro.numero_processo}-{uuid.uuid4()}".encode("utf-8")
+            ).hexdigest()[:5]
+            proc = Processo(
+                id_processo=f"proc-{short_hash}",
+                usuario_id=owner_id,
+                numero_processo=req_cadastro.numero_processo,
+                arquivo_nome=f"datajud_{tribunal_sigla.lower()}_sync",
+                origem_ingestao="DATAJUD",
+            )
+            db.add(proc)
+            novos_inseridos += 1
+
+        _aplicar_cadastro(db, proc, req_cadastro, current_user=current_user)
+        db.flush()
+
+        ultimo_log = proc.logs_lgpd[-1] if proc.logs_lgpd else None
+        if ultimo_log:
+            total_lgpd += (ultimo_log.total_cpfs_mascarados or 0) + (ultimo_log.total_nomes_mascarados or 0)
+
+        itens_sincronizados.append(_converter_para_list_item(proc))
+
+    db.commit()
+
+    return DataJudSincronizacaoResponse(
+        tribunal=tribunal_sigla,
+        fonte=fonte,
+        total_coletados=len(coletados),
+        novos_inseridos=novos_inseridos,
+        atualizados=atualizados,
+        total_entidades_anonimizadas_lgpd=total_lgpd,
+        mensagem=(
+            f"Sincronização DataJud ({tribunal_sigla}) concluída: "
+            f"{novos_inseridos} novo(s) processo(s) inserido(s) e {atualizados} atualizado(s) com proteção LGPD."
+        ),
+        itens=itens_sincronizados,
+    )
+
+
 @router.get("/datajud/{numero_processo}", response_model=DataJudProcessoResponse, status_code=status.HTTP_200_OK)
 async def consultar_processo_datajud(
     numero_processo: str,
     db: Session = Depends(get_db),
+    _usuario: Optional[Usuario] = Depends(get_optional_current_user),
 ) -> DataJudProcessoResponse:
     """
     Consulta metadados processuais na API Pública do DataJud (CNJ) com fallback local (TJAL).
     Rastreabilidade: EAP 1.4.2 / RF-08 / ADR-002
     """
     return await DataJudClient.consultar_processo(numero_processo=numero_processo, db=db)
+
+
+@router.get("/{id_processo}/similares", response_model=ProcessoListResponse, status_code=status.HTTP_200_OK)
+def listar_processos_similares(
+    id_processo: str,
+    limite: int = Query(default=5, ge=1, le=50, description="Quantidade máxima de precedentes similares"),
+    db: Session = Depends(get_db),
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
+) -> ProcessoListResponse:
+    """
+    Localiza e retorna os precedentes reais mais semelhantes ao processo informado (RF-06 / Card #35),
+    ranqueados por Similaridade de Cosseno TF-IDF + Okapi BM25 dentro do acervo visível ao usuário.
+    """
+    proc = db.query(Processo).filter(Processo.id_processo == id_processo).first()
+    if not proc or not can_read_processo(proc, current_user):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Processo '{id_processo}' não encontrado na base de conhecimento.",
+        )
+
+    candidatos = (
+        db.query(Processo)
+        .filter(build_processo_visibility_filter(current_user), Processo.id_processo != proc.id_processo)
+        .all()
+    )
+    ranked = rank_similar_precedents(
+        query_text=f"{proc.tema} {proc.comarca} {proc.magistrado} {proc.resumo_nlp}",
+        processes=candidatos,
+        target_tema=proc.tema,
+        target_magistrado=proc.magistrado,
+        top_k=len(candidatos) or 1,
+        min_similarity=0.05,
+    )
+    by_id = {p.id_processo: p for p in candidatos}
+    similares_ordenados = [by_id[item["id_processo"]] for item in ranked if item["id_processo"] in by_id]
+
+    return ProcessoListResponse(
+        total=len(similares_ordenados),
+        pagina=1,
+        itens=[_converter_para_list_item(p) for p in similares_ordenados[:limite]],
+    )
 
 
 @router.get("/{id_processo}", response_model=ProcessoDetalhesResponse, status_code=status.HTTP_200_OK)

@@ -232,3 +232,53 @@ def test_ct09_exportacao_relatorio_pdf_binario(client: TestClient):
 
     resp_404 = client.get("/api/v1/relatorios/processo/proc-inexistente-999/pdf")
     assert resp_404.status_code == 404
+
+
+def test_ct01_perfil_autenticado_e_rejeicao_token_invalido(client: TestClient):
+    """Valida GET /api/v1/auth/me com token válido e rejeição HTTP 401 para tokens inválidos nas rotas."""
+    sem_token = client.get("/api/v1/auth/me")
+    assert sem_token.status_code == 401
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "advogado@escritorio.com", "senha": "senhaSegura123"},
+    )
+    assert login.status_code == 200
+    token = login.json()["access_token"]
+
+    perfil = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert perfil.status_code == 200
+    assert perfil.json()["email"] == "advogado@escritorio.com"
+
+    token_invalido = client.get(
+        "/api/v1/processos",
+        headers={"Authorization": "Bearer token-forjado-invalido"},
+    )
+    assert token_invalido.status_code == 401
+
+
+def test_ct08_filtros_comarca_e_tribunal(client: TestClient):
+    """Valida filtragem explícita por comarca e tribunal em GET /api/v1/processos."""
+    resp_tjal = client.get("/api/v1/processos?comarca=Maceió&tribunal=TJAL")
+    assert resp_tjal.status_code == 200
+    body_tjal = resp_tjal.json()
+    assert body_tjal["total"] >= 1
+    for item in body_tjal["itens"]:
+        assert "Macei" in item["comarca"]
+
+    resp_outro = client.get("/api/v1/processos?tribunal=TJSP")
+    assert resp_outro.status_code == 200
+    assert resp_outro.json()["total"] == 0
+
+
+def test_ct06_processos_similares_reais_sem_multiplicador_artificial(client: TestClient):
+    """Valida GET /api/v1/processos/{id}/similares retornando precedentes reais existentes no banco."""
+    resp = client.get("/api/v1/processos/proc-1001/similares?limite=50")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] == len(body["itens"])
+    assert body["total"] >= 1
+    assert all(item["id_processo"] != "proc-1001" for item in body["itens"])
+
+    resp_404 = client.get("/api/v1/processos/proc-inexistente-999/similares")
+    assert resp_404.status_code == 404

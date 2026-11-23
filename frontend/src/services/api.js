@@ -217,6 +217,8 @@ export async function atualizarPlanoAssinatura(plano = "PRO", codigoConvite = "C
 export async function fetchProcessos({
     tema = "",
     juiz = "",
+    comarca = "",
+    tribunal = "",
     busca = "",
     ordenacao = "recentes",
     ids = null,
@@ -226,6 +228,8 @@ export async function fetchProcessos({
     const params = new URLSearchParams();
     if (tema) params.set("tema", tema);
     if (juiz) params.set("juiz", juiz);
+    if (comarca) params.set("comarca", comarca);
+    if (tribunal) params.set("tribunal", tribunal);
     if (busca) params.set("busca", busca);
     if (ordenacao) params.set("ordenacao", ordenacao);
     if (ids !== null && ids !== undefined) params.set("ids", String(ids));
@@ -236,6 +240,15 @@ export async function fetchProcessos({
         headers: { ...getAuthHeader() },
     });
     if (!res.ok) throw new Error(`Erro ao consultar processos: HTTP ${res.status}`);
+    return res.json();
+}
+
+export async function fetchProcessosSimilares(idProcesso, limite = 5) {
+    const res = await fetch(
+        `${getApiBaseUrl()}/api/v1/processos/${encodeURIComponent(idProcesso)}/similares?limite=${limite}`,
+        { headers: { ...getAuthHeader() } },
+    );
+    if (!res.ok) throw new Error(`Erro ao buscar precedentes similares (HTTP ${res.status}).`);
     return res.json();
 }
 
@@ -315,6 +328,23 @@ export async function consultarProcessoDatajud(numeroProcesso) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
         throw new Error(data.detail || `Erro ao consultar metadados no DataJud (HTTP ${res.status}).`);
+    }
+    return data;
+}
+
+export async function sincronizarLoteDatajud({ tribunal = "TJAL", tema = "", limite = 3 } = {}) {
+    const res = await fetch(`${getApiBaseUrl()}/api/v1/processos/datajud/sincronizar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeader() },
+        body: JSON.stringify({
+            tribunal,
+            tema: tema ? tema.trim() : null,
+            limite,
+        }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw new Error(data.detail || `Erro ao sincronizar lote DataJud (HTTP ${res.status}).`);
     }
     return data;
 }
