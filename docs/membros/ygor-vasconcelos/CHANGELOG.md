@@ -61,3 +61,27 @@
   - Suíte de testes do backend executada com **42 testes aprovados (`42 passed` no `pytest`)**, incluindo 9 novos testes em `backend/tests/test_comparador_pecas.py` e preservação integral dos 11 testes originais de regras de negócio (`test_api_contracts.py`).
   - Quatro testes automatizados de acessibilidade (`test_frontend_accessibility.py`) cobrindo WAI-ARIA, WCAG 2.2 AA e contratos REST atualizados.
   - Build de produção do frontend (`npm run build`) validado sem erros em 267ms.
+
+### [2026-11-23] - Disponibilidade da estimativa e identificação do motor no comparador
+
+- **Branch** `Comparador/Ygor`
+- O backend passou a calcular a estimativa de procedência com pelo menos cinco julgados do mesmo tema, cadastrados manualmente e com resultado procedente ou improcedente. A amostra exclui o próprio processo comparado. O cálculo usa suavização de Laplace e retirou os percentuais fixos por classificação, incluindo os 100% atribuídos às convergências.
+- A API retorna `null` quando o histórico é insuficiente. A interface mostra **Estimativa indisponível** na tese e informa quantos julgados foram encontrados. A média geral só aparece quando todas as teses têm estimativa.
+- O campo `motor_analise` identifica quem produziu a comparação. A interface mostra **Gemini** quando a resposta externa foi recebida e validada, ou **Análise local** quando o motor determinístico respondeu, inclusive em caso de fallback.
+- **Verificação** — 46 testes aprovados com `pytest`, build de produção aprovado com `npm run build` e estados da estimativa e rótulos dos motores verificados no Chrome com resultados fictícios. Os testes automatizados simularam as respostas do Gemini, incluindo o fallback após erro HTTP.
+- A regra de cálculo e o contrato atualizado estão no [plano de implementação](./plano_de_implementa_o_visualizador_comparativo_de_pe_as_jur_dicas.md).
+
+### [2026-11-23] - Resposta estruturada do Gemini no comparador
+
+- O adaptador passou a solicitar o JSON de síntese e teses pelo `responseJsonSchema`. O backend valida as teses e monta o resultado com identificadores, contagens e dados extraídos dos PDFs.
+- A autenticação passou a usar o cabeçalho `x-goog-api-key`. Os logs do comparador indicam o status HTTP ou o tipo de erro quando acionam a análise local.
+- **Verificação** — 46 testes aprovados. A rota de comparação retornou HTTP 200 com `motor_analise=gemini` e duas teses em um teste com dois PDFs fictícios e o modelo `gemini-3.5-flash-lite`.
+
+### [2026-11-23] - Demonstração guiada do comparador
+
+- **Branch** `Comparador/Ygor`
+- A aba **Comparador de Peças** ganhou uma área de demonstração com dois casos fictícios, **Atraso de voo e despesas de hospedagem** e **Cobrança após cancelamento de assinatura**. Cada caso gera uma petição inicial e uma contestação de três páginas e as envia pela mesma rota usada no upload de peças próprias.
+- O resultado inclui um guia de leitura por caso, páginas das citações e destaques nos documentos. Os filtros de status e eixo podem ser combinados, informam quantas teses estão visíveis e limpam os destaques quando a combinação fica sem resultados. Uma nova comparação reinicia os filtros.
+- **Plano de implementação** — A Etapa 4 passou a incluir os casos demonstrativos, a geração dos PDFs e o roteiro de validação no navegador. A entrega usa o contrato de comparação e as regras de jurimetria já especificados nas Etapas 1 a 3. [Plano de implementação](./plano_de_implementa_o_visualizador_comparativo_de_pe_as_jur_dicas.md#demonstração-guiada)
+- **Verificação** — Build de produção aprovado e 46 testes aprovados. No Chrome com o motor local, foram verificados os dois casos, a extração das seis páginas de cada comparação, a seleção de teses por teclado, os filtros combinados, o estado vazio e o upload de peças próprias.
+- **Execução local** — O erro `WinError 10048` ocorreu porque a API do JuriVision já respondia na porta `8000`. A instância existente foi reaproveitada, o frontend foi iniciado na porta `5173` e ambos responderam. A intervenção foi operacional, com as portas previstas pelo projeto.

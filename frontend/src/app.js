@@ -8,9 +8,9 @@
  */
 
 import { configurarFormularioJulgado } from "./components/julgado-form.js";
+import { casosComparador, criarPecasDemonstrativas } from "./components/comparador-demo.js";
 import {
     buildSampleBatchCsvFile,
-    buildSampleDefensePdfFile,
     buildSamplePetitionPdfFile,
     checkApiHealth,
     compararPecas,
@@ -1290,6 +1290,9 @@ function configurarModais() {
 function setupComparadorInteractions() {
     let fileInicial = null;
     let fileContestacao = null;
+    let processando = false;
+    let tesesAtuais = [];
+    let teseSelecionada = null;
 
     const btnExecutar = document.getElementById("btn-executar-comparacao");
     const statusFeedback = document.getElementById("comparador-status-feedback");
@@ -1302,13 +1305,33 @@ function setupComparadorInteractions() {
     const btnSelectInicial = document.getElementById("btn-select-inicial");
     const btnSelectContestacao = document.getElementById("btn-select-contestacao");
     const btnDemo = document.getElementById("btn-demo-comparador");
+    const selectDemo = document.getElementById("select-demo-comparador");
+    const descricaoDemo = document.getElementById("comparador-demo-descricao");
+    const statusDemo = document.getElementById("comparador-demo-status");
+    const guiaDemo = document.getElementById("comparador-demo-guia");
+    const tituloGuiaDemo = document.getElementById("comparador-demo-guia-titulo");
+    const resultados = document.getElementById("comparador-resultados");
     const formComparador = document.getElementById("form-comparador-pecas");
+    const botoesFiltro = Array.from(resultados.querySelectorAll(".chip-filter"));
+    const feedbackFiltro = document.getElementById("comparador-filtro-feedback");
 
     function atualizarEstadoBotao() {
         if (btnExecutar) {
-            btnExecutar.disabled = !(fileInicial && fileContestacao);
+            btnExecutar.disabled = processando || !(fileInicial && fileContestacao);
         }
+        btnDemo.disabled = processando;
+        selectDemo.disabled = processando;
     }
+
+    for (const [id, caso] of Object.entries(casosComparador)) {
+        selectDemo.add(new Option(caso.titulo, id));
+    }
+    function atualizarDescricaoDemo() {
+        descricaoDemo.textContent = casosComparador[selectDemo.value].descricao;
+        statusDemo.textContent = "";
+    }
+    selectDemo.addEventListener("change", atualizarDescricaoDemo);
+    atualizarDescricaoDemo();
 
     btnSelectInicial?.addEventListener("click", () => inputInicial?.click());
     btnSelectContestacao?.addEventListener("click", () => inputContestacao?.click());
@@ -1361,52 +1384,65 @@ function setupComparadorInteractions() {
         }
     });
 
-    // Demonstração em 1 clique
-    btnDemo?.addEventListener("click", async () => {
-        fileInicial = buildSamplePetitionPdfFile();
-        fileContestacao = buildSampleDefensePdfFile();
-        if (infoInicial) infoInicial.textContent = fileInicial.name;
-        if (infoContestacao) infoContestacao.textContent = fileContestacao.name;
-        atualizarEstadoBotao();
-        showToast("Peças de teste carregadas. Iniciando confronto analítico...");
-        await executarComparacao();
+    btnDemo.addEventListener("click", async () => {
+        const idCaso = selectDemo.value;
+        const pecas = criarPecasDemonstrativas(idCaso);
+        await executarComparacao(pecas.inicial, pecas.contestacao, casosComparador[idCaso]);
     });
 
     formComparador?.addEventListener("submit", async (e) => {
         e.preventDefault();
-        await executarComparacao();
+        await executarComparacao(fileInicial, fileContestacao);
     });
 
-    async function executarComparacao() {
-        if (!fileInicial || !fileContestacao) return;
+    async function executarComparacao(inicial, contestacao, casoDemo) {
+        if (processando || !inicial || !contestacao) return;
 
-        if (btnExecutar) btnExecutar.disabled = true;
-        if (statusFeedback) statusFeedback.textContent = "Confrontando peças e calculando jurimetria granular...";
-        announceStatus("Processando saneamento comparativo de peças...");
+        processando = true;
+        atualizarEstadoBotao();
+        resultados.classList.add("hidden");
+        statusDemo.textContent = "";
+        statusFeedback.textContent = "";
+        const feedback = casoDemo ? statusDemo : statusFeedback;
+        feedback.textContent = "Comparando as peças…";
 
         try {
-            const data = await compararPecas(fileInicial, fileContestacao);
-            renderizarResultadosComparacao(data);
-            if (statusFeedback) statusFeedback.textContent = "Confronto concluído com sucesso!";
-            showToast("Confronto processual e saneamento gerados com sucesso!");
+            const data = await compararPecas(inicial, contestacao);
+            renderizarResultadosComparacao(data, casoDemo);
+            feedback.textContent = "Comparação concluída.";
         } catch (err) {
             console.error("Erro na comparação:", err);
-            if (statusFeedback) statusFeedback.textContent = err.message || "Erro ao processar as peças.";
-            showToast(`Falha no confronto: ${err.message}`);
+            feedback.textContent = err instanceof TypeError
+                ? "Não foi possível conectar à API. Verifique a conexão e tente novamente."
+                : err.message || "Erro ao processar as peças.";
         } finally {
-            if (btnExecutar) btnExecutar.disabled = false;
+            processando = false;
+            atualizarEstadoBotao();
         }
     }
 
-    function renderizarResultadosComparacao(data) {
-        const resContainer = document.getElementById("comparador-resultados");
-        if (resContainer) resContainer.classList.remove("hidden");
+    function renderizarResultadosComparacao(data, casoDemo) {
+        resultados.classList.remove("hidden");
+        guiaDemo.classList.toggle("hidden", !casoDemo);
+        if (casoDemo) {
+            tituloGuiaDemo.textContent = casoDemo.titulo;
+            document.getElementById("comparador-demo-guia-texto").textContent = casoDemo.guia;
+        }
 
         const cnjBadge = document.getElementById("badge-comparador-cnj");
-        if (cnjBadge) cnjBadge.textContent = data.numero_processo ? `CNJ: ${data.numero_processo}` : "CNJ: Extraído via Heurística";
+        if (cnjBadge) {
+            const rotulo = casoDemo ? "CNJ fictício" : "CNJ";
+            cnjBadge.textContent = `${rotulo}: ${data.numero_processo || "Não identificado"}`;
+        }
+
+        document.getElementById("badge-comparador-motor").textContent =
+            data.motor_analise === "gemini" ? "Gemini" : "Análise local";
 
         const scoreVal = document.getElementById("score-geral-valor");
-        if (scoreVal) scoreVal.textContent = `${data.score_geral_favorabilidade_autor_pct}%`;
+        const score = data.score_geral_favorabilidade_autor_pct;
+        const temScore = Number.isFinite(score);
+        scoreVal.textContent = temScore ? `${score}%` : "Estimativa indisponível";
+        scoreVal.classList.toggle("estimativa-indisponivel", !temScore);
 
         const resumoTexto = document.getElementById("resumo-controvertido-geral");
         if (resumoTexto) resumoTexto.textContent = data.resumo_controvertido_geral;
@@ -1424,64 +1460,99 @@ function setupComparadorInteractions() {
         if (chipFn) chipFn.textContent = data.total_fatos_novos_defesa;
 
         // Renderizar Colunas
-        renderizarColunaTexto("texto-peticao-inicial", data.texto_higienizado_autor || "", data.teses, "autor");
-        renderizarColunaTexto("texto-contestacao", data.texto_higienizado_reu || "", data.teses, "reu");
-        renderizarFeedTeses(data.teses);
-        configurarFiltrosTeses();
+        renderizarColunaTexto("texto-peticao-inicial", data.texto_higienizado_autor || "");
+        renderizarColunaTexto("texto-contestacao", data.texto_higienizado_reu || "");
+        tesesAtuais = data.teses || [];
+        teseSelecionada = null;
+        renderizarFeedTeses(tesesAtuais);
+        for (const botao of botoesFiltro) {
+            atualizarBotaoFiltro(botao, (botao.dataset.filterStatus || botao.dataset.filterTipo) === "todos");
+        }
+        aplicarFiltros();
 
-        resContainer?.scrollIntoView({ behavior: "smooth", block: "start" });
+        if (document.getElementById("panel-comparador").hidden) return;
+        if (casoDemo) tituloGuiaDemo.focus({ preventScroll: true });
+        const reduzirMovimento = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        resultados.scrollIntoView({ behavior: reduzirMovimento ? "instant" : "smooth", block: "start" });
     }
 
-    function renderizarColunaTexto(elementId, fullText, teses, lado) {
+    function renderizarColunaTexto(elementId, fullText) {
         const container = document.getElementById(elementId);
         if (!container) return;
-        container.innerHTML = "";
+        container.replaceChildren();
+        container.scrollTop = 0;
 
-        if (!fullText) {
-            container.innerHTML = "<p>Nenhum texto disponível.</p>";
-            return;
-        }
-
-        const linhas = fullText.split("\n");
-        let htmlBuffer = "";
-
-        linhas.forEach((linha) => {
-            const trimmed = linha.trim();
-            if (!trimmed) return;
-
-            const pagMatch = trimmed.match(/^\[PÁG (\d+)\]$/);
-            if (pagMatch) {
-                htmlBuffer += `<div class="page-marker-pill">Página ${parseInt(pagMatch[1], 10)}</div>`;
-                return;
+        const partes = fullText.split(/^\[PÁG (\d+)\][ \t]*\r?$/m);
+        for (let i = 0; i < partes.length; i += 2) {
+            const pagina = i === 0 ? "" : String(Number(partes[i - 1]));
+            if (pagina) {
+                const marcador = document.createElement("div");
+                marcador.className = "page-marker-pill";
+                marcador.textContent = `Página ${pagina}`;
+                container.append(marcador);
             }
 
-            let linhaHtml = escapeHtml(trimmed);
-            teses.forEach((t) => {
-                const trecho = lado === "autor" ? t.trecho_autor : t.trecho_reu;
-                if (trecho && trecho.length > 15) {
-                    const trechoLimpo = trecho.trim();
-                    const subIndex = linhaHtml.toLowerCase().indexOf(trechoLimpo.slice(0, 25).toLowerCase());
-                    if (subIndex !== -1) {
-                        linhaHtml = `<span class="highlight-snippet" id="snippet-${lado}-${t.id_tese}" data-tese-id="${t.id_tese}">${linhaHtml}</span>`;
-                    }
-                }
+            const texto = partes[i].trim();
+            if (!texto) continue;
+            const paragrafo = document.createElement("p");
+            paragrafo.className = "comparador-texto-pagina";
+            paragrafo.dataset.pagina = pagina;
+            paragrafo.textContent = texto;
+            container.append(paragrafo);
+        }
+
+        if (!container.hasChildNodes()) {
+            const mensagem = document.createElement("p");
+            mensagem.textContent = "Nenhum texto disponível.";
+            container.append(mensagem);
+        }
+    }
+
+    function destacarTrecho(elementId, trecho, pagina) {
+        const coluna = document.getElementById(elementId);
+        const destaqueAnterior = coluna.querySelector(".highlight-snippet");
+        if (destaqueAnterior) {
+            const paragrafo = destaqueAnterior.parentNode;
+            destaqueAnterior.replaceWith(destaqueAnterior.textContent);
+            paragrafo.normalize();
+        }
+        if (!trecho?.trim()) return;
+
+        const palavras = trecho.trim().split(/\s+/u);
+        const padrao = palavras.map((palavra) => palavra.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+");
+        const cita = new RegExp(padrao, "iu");
+        const paginas = Array.from(coluna.querySelectorAll(".comparador-texto-pagina"));
+        const paginaIndicada = paginas.find((item) => item.dataset.pagina === String(pagina));
+        const candidatas = paginaIndicada
+            ? [paginaIndicada, ...paginas.filter((item) => item !== paginaIndicada)]
+            : paginas;
+
+        for (const paragrafo of candidatas) {
+            const correspondencia = cita.exec(paragrafo.textContent);
+            if (!correspondencia) continue;
+
+            const { index } = correspondencia;
+            const range = document.createRange();
+            range.setStart(paragrafo.firstChild, index);
+            range.setEnd(paragrafo.firstChild, index + correspondencia[0].length);
+            const destaque = document.createElement("mark");
+            destaque.className = "highlight-snippet";
+            range.surroundContents(destaque);
+
+            const topoRelativo = destaque.getBoundingClientRect().top - coluna.getBoundingClientRect().top;
+            const reduzirMovimento = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+            coluna.scrollTo({
+                top: coluna.scrollTop + topoRelativo - coluna.clientHeight / 2,
+                behavior: reduzirMovimento ? "instant" : "smooth",
             });
-
-            htmlBuffer += `<p class="legal-paragraph">${linhaHtml}</p>`;
-        });
-
-        container.innerHTML = htmlBuffer;
+            break;
+        }
     }
 
     function renderizarFeedTeses(teses) {
         const feed = document.getElementById("feed-teses-comparacao");
         if (!feed) return;
         feed.innerHTML = "";
-
-        if (!teses || teses.length === 0) {
-            feed.innerHTML = "<p class='text-muted'>Nenhum ponto controvertido identificado.</p>";
-            return;
-        }
 
         const statusLabels = {
             convergente: "Convergente",
@@ -1513,6 +1584,13 @@ function setupComparadorInteractions() {
             const statusClass = `status-${tese.status}`;
             const statusLabel = statusLabels[tese.status] || tese.status;
             const tipoLabel = tipoLabels[tese.tipo] || tese.tipo;
+            const probabilidade = tese.probabilidade_procedencia_pct;
+            const estimativa = Number.isFinite(probabilidade)
+                ? `<div class="tese-prob-bar-track" aria-hidden="true">
+                        <div class="tese-prob-bar-fill" style="width: ${probabilidade}%;"></div>
+                    </div>
+                    <span class="tese-prob-label">${probabilidade}%</span>`
+                : '<span class="estimativa-indisponivel">Estimativa indisponível</span>';
 
             card.innerHTML = `
                 <div class="tese-header-row">
@@ -1526,86 +1604,70 @@ function setupComparadorInteractions() {
                         <span>${escapeHtml(statusLabel)}</span>
                     </span>
                 </div>
+                <p class="card-subtitle">${[
+                    Number.isInteger(tese.pagina_autor) && `Inicial, pág. ${tese.pagina_autor}`,
+                    Number.isInteger(tese.pagina_reu) && `Contestação, pág. ${tese.pagina_reu}`,
+                ].filter(Boolean).join(" · ")}</p>
                 <div class="tese-prob-row">
-                    <span style="font-size: 11px; color: var(--text-secondary);">Êxito do Autor:</span>
-                    <div class="tese-prob-bar-track" aria-hidden="true">
-                        <div class="tese-prob-bar-fill" style="width: ${tese.probabilidade_procedencia_pct}%;"></div>
-                    </div>
-                    <span class="tese-prob-label">${tese.probabilidade_procedencia_pct}%</span>
+                    <span class="tese-prob-title">Êxito do autor</span>
+                    ${estimativa}
                 </div>
+                <p class="tese-prob-fundamentacao">${escapeHtml(tese.fundamentacao_preditiva)}</p>
                 <div class="tese-impacto-alert" role="note">
                     <strong>Orientação:</strong> ${escapeHtml(tese.impacto_processual)}
                 </div>
             `;
 
-            card.addEventListener("click", () => selecionarTese(tese.id_tese));
+            card.addEventListener("click", () => selecionarTese(tese));
             card.addEventListener("keydown", (e) => {
                 if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
-                    selecionarTese(tese.id_tese);
+                    selecionarTese(tese);
                 }
             });
 
             feed.appendChild(card);
         });
-
-        if (teses.length > 0) {
-            selecionarTese(teses[0].id_tese);
-        }
     }
 
-    function selecionarTese(idTese) {
-        document.querySelectorAll(".tese-card").forEach((c) => {
-            c.classList.toggle("active-tese", c.dataset.idTese === idTese);
+    function selecionarTese(tese) {
+        teseSelecionada = tese || null;
+        resultados.querySelectorAll(".tese-card").forEach((c) => {
+            c.classList.toggle("active-tese", c.dataset.idTese === tese?.id_tese);
         });
 
-        document.querySelectorAll(".highlight-snippet").forEach((el) => {
-            el.classList.remove("active-highlight");
-        });
-
-        const elAutor = document.getElementById(`snippet-autor-${idTese}`) ||
-                        document.querySelector(`#texto-peticao-inicial [data-tese-id="${idTese}"]`);
-        if (elAutor) {
-            elAutor.classList.add("active-highlight");
-            elAutor.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
-
-        const elReu = document.getElementById(`snippet-reu-${idTese}`) ||
-                      document.querySelector(`#texto-contestacao [data-tese-id="${idTese}"]`);
-        if (elReu) {
-            elReu.classList.add("active-highlight");
-            elReu.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
+        destacarTrecho("texto-peticao-inicial", tese?.trecho_autor, tese?.pagina_autor);
+        destacarTrecho("texto-contestacao", tese?.trecho_reu, tese?.pagina_reu);
     }
 
-    function configurarFiltrosTeses() {
-        let filtroStatus = "todos";
-        let filtroTipo = "todos";
+    function atualizarBotaoFiltro(botao, ativo) {
+        botao.classList.toggle("active", ativo);
+        botao.setAttribute("aria-pressed", String(ativo));
+    }
 
-        function aplicarFiltros() {
-            document.querySelectorAll(".tese-card").forEach((card) => {
-                const matchStatus = filtroStatus === "todos" || card.dataset.status === filtroStatus;
-                const matchTipo = filtroTipo === "todos" || card.dataset.tipo === filtroTipo;
-                card.style.display = matchStatus && matchTipo ? "flex" : "none";
-            });
-        }
-
-        document.querySelectorAll("[data-filter-status]").forEach((btn) => {
-            btn.addEventListener("click", () => {
-                document.querySelectorAll("[data-filter-status]").forEach((b) => b.classList.remove("active"));
-                btn.classList.add("active");
-                filtroStatus = btn.dataset.filterStatus;
-                aplicarFiltros();
-            });
+    function aplicarFiltros() {
+        const status = resultados.querySelector("[data-filter-status].active").dataset.filterStatus;
+        const tipo = resultados.querySelector("[data-filter-tipo].active").dataset.filterTipo;
+        const visiveis = tesesAtuais.filter((tese) =>
+            (status === "todos" || tese.status === status) && (tipo === "todos" || tese.tipo === tipo),
+        );
+        const idsVisiveis = new Set(visiveis.map((tese) => tese.id_tese));
+        resultados.querySelectorAll(".tese-card").forEach((card) => {
+            card.classList.toggle("hidden", !idsVisiveis.has(card.dataset.idTese));
         });
+        feedbackFiltro.textContent = visiveis.length
+            ? `${visiveis.length} de ${tesesAtuais.length} teses exibidas.`
+            : "Nenhuma tese encontrada para os filtros selecionados.";
+        if (!visiveis.includes(teseSelecionada)) selecionarTese(visiveis[0]);
+    }
 
-        document.querySelectorAll("[data-filter-tipo]").forEach((btn) => {
-            btn.addEventListener("click", () => {
-                document.querySelectorAll("[data-filter-tipo]").forEach((b) => b.classList.remove("active"));
-                btn.classList.add("active");
-                filtroTipo = btn.dataset.filterTipo;
-                aplicarFiltros();
-            });
+    for (const botao of botoesFiltro) {
+        botao.addEventListener("click", () => {
+            const grupo = botao.closest(".filter-group");
+            for (const item of grupo.querySelectorAll(".chip-filter")) {
+                atualizarBotaoFiltro(item, item === botao);
+            }
+            aplicarFiltros();
         });
     }
 }

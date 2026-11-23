@@ -938,18 +938,29 @@
                         </div>
                     </div>
 
-                    <!-- Card de Upload Duplo e Ações Rápidas -->
+                    <section class="card comparador-demo-card" aria-labelledby="comparador-demo-titulo">
+                        <div>
+                            <h3 class="card-title" id="comparador-demo-titulo">Demonstração guiada</h3>
+                            <p class="card-subtitle">Compare a petição inicial e a contestação de um caso fictício, com três páginas por peça.</p>
+                        </div>
+                        <div class="comparador-demo-controls">
+                            <div class="comparador-demo-caso">
+                                <label class="filter-label" for="select-demo-comparador">Caso demonstrativo</label>
+                                <select class="control-select" id="select-demo-comparador" aria-describedby="comparador-demo-descricao"></select>
+                            </div>
+                            <button type="button" class="btn btn-primary" id="btn-demo-comparador">
+                                Comparar peças do exemplo
+                            </button>
+                        </div>
+                        <p class="card-subtitle" id="comparador-demo-descricao" aria-live="polite"></p>
+                        <p class="status-feedback" id="comparador-demo-status" role="status"></p>
+                    </section>
+
                     <div class="card comparador-upload-card" id="comparador-upload-section">
                         <div class="card-header">
                             <div>
                                 <h3 class="card-title">Upload das Peças Processuais</h3>
                                 <p class="card-subtitle">Selecione os documentos em formato PDF (%PDF- até 15MB). A barreira LGPD higienizará dados pessoais automaticamente antes da análise.</p>
-                            </div>
-                            <div class="upload-quick-actions">
-                                <button type="button" class="btn btn-secondary" id="btn-demo-comparador" aria-label="Preencher e comparar peças com dados de demonstração em um clique">
-                                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                                    <span>Demonstração em 1 Clique</span>
-                                </button>
                             </div>
                         </div>
 
@@ -990,16 +1001,27 @@
 
                     <!-- Seção de Resultados: Visualizador Split-View de 3 Colunas -->
                     <div id="comparador-resultados" class="comparador-resultados-view hidden" aria-label="Resultado da Comparação de Peças">
+                        <section class="card comparador-demo-card hidden" id="comparador-demo-guia" aria-labelledby="comparador-demo-guia-titulo">
+                            <div>
+                                <h3 class="card-title" id="comparador-demo-guia-titulo" tabindex="-1"></h3>
+                                <p class="card-subtitle">Selecione uma tese para localizar os trechos citados nas duas peças.</p>
+                            </div>
+                            <p id="comparador-demo-guia-texto"></p>
+                            <p class="card-subtitle">As classificações são automáticas. Se houver poucos julgados no mesmo tema, a estimativa aparece como indisponível.</p>
+                        </section>
                         <!-- Barra de Resumo e Métricas -->
                         <div class="card comparador-summary-card">
                             <div class="comparador-summary-header">
                                 <div>
-                                    <span class="badge badge-primary" id="badge-comparador-cnj">CNJ: Não identificado</span>
+                                    <div class="comparador-summary-meta">
+                                        <span class="badge badge-primary" id="badge-comparador-cnj">CNJ: Não identificado</span>
+                                        <span class="badge badge-primary" id="badge-comparador-motor"></span>
+                                    </div>
                                     <h3 class="card-title" style="margin-top: 6px;">Síntese Geral da Controvérsia</h3>
                                 </div>
                                 <div class="comparador-score-box">
-                                    <span class="score-label">Favorabilidade Estimada (Autor)</span>
-                                    <span class="score-value" id="score-geral-valor">--%</span>
+                                    <span class="score-label">Média das estimativas (autor)</span>
+                                    <span class="score-value" id="score-geral-valor"></span>
                                 </div>
                             </div>
                             <p class="comparador-summary-text" id="resumo-controvertido-geral">Processando...</p>
@@ -1014,7 +1036,7 @@
                             </div>
 
                             <!-- Barra de Filtros Interativos -->
-                            <div class="comparador-filter-bar" role="toolbar" aria-label="Filtros de teses controvertidas">
+                            <div class="comparador-filter-bar" role="group" aria-label="Filtros de teses controvertidas">
                                 <div class="filter-group">
                                     <span class="filter-label">Status:</span>
                                     <button type="button" class="chip-filter active" data-filter-status="todos">Todos</button>
@@ -1033,6 +1055,7 @@
                                     <button type="button" class="chip-filter" data-filter-tipo="prova_e_onus">Provas / Ônus</button>
                                 </div>
                             </div>
+                            <p class="card-subtitle" id="comparador-filtro-feedback" role="status"></p>
                         </div>
 
                         <!-- Split-View de 3 Colunas Sincronizadas -->

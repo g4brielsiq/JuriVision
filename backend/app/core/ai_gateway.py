@@ -5,6 +5,7 @@ Rastreabilidade:
 - MODELING.md: RF-02, RF-04, RF-05, RF-06, RNF-05 (Tolerância a Falhas), RNF-06 (LGPD), RNF-07 (Modularidade), RN-01 a RN-04
 """
 from abc import ABC, abstractmethod
+from collections import Counter
 import hashlib
 import io
 import json
@@ -19,6 +20,7 @@ from pypdf import PdfReader
 from app.core.config import settings
 from app.schemas.comparacao import (
     PontoControvertido,
+    RespostaComparacaoGemini,
     ResultadoComparacaoPecas,
     StatusTese,
     TipoTese,
@@ -430,21 +432,13 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
 
     @staticmethod
     def _find_page_number(annotated_text: str, snippet: Optional[str]) -> Optional[int]:
-        if not snippet or not annotated_text:
-            return 1
-        norm_snippet = " ".join(snippet.split()[:8])
-        pos = annotated_text.find(norm_snippet) if norm_snippet else -1
-        if pos == -1:
-            pos = annotated_text.find(snippet[:30])
-        if pos == -1:
-            m = re.search(r"\[PÁG (\d+)\]", annotated_text)
-            return int(m.group(1)) if m else 1
-        sub = annotated_text[:pos]
-        matches = list(re.finditer(r"\[PÁG (\d+)\]", sub))
-        if matches:
-            return int(matches[-1].group(1))
-        m = re.search(r"\[PÁG (\d+)\]", annotated_text)
-        return int(m.group(1)) if m else 1
+        if not snippet:
+            return None
+        posicao = annotated_text.find(snippet)
+        if posicao == -1:
+            return None
+        paginas = re.findall(r"(?m)^\[PÁG (\d+)\]$", annotated_text[:posicao])
+        return int(paginas[-1]) if paginas else None
 
     def comparar_pecas(
         self,
@@ -458,12 +452,20 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
         lower_init = clean_init.lower()
         lower_cont = clean_cont.lower()
 
+        def trechos(texto: str) -> list[str]:
+            return [linha.strip() for linha in texto.splitlines() if linha.strip()]
+
+        def localizar(candidatos: list[str], *termos: str) -> Optional[str]:
+            return next((s for s in candidatos if any(termo in s.lower() for termo in termos)), None)
+
+        trechos_inicial = trechos(clean_init)
+        trechos_defesa = trechos(clean_cont)
+
         if not numero_processo:
             cnj_m = CNJ_REGEX.search(clean_init) or CNJ_REGEX.search(clean_cont)
             if cnj_m:
                 numero_processo = cnj_m.group(0)
 
-        taxa_base = contexto_historico.taxa_favoravel_juiz if contexto_historico else 0.72
         teses: list[PontoControvertido] = []
         tese_counter = 1
 
@@ -471,27 +473,22 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
         datas_init = re.findall(r"\b(\d{2}/\d{2}/\d{4})\b", clean_init)
         if datas_init:
             data_alvo = datas_init[0]
-            frases_data = [s.strip() for s in re.split(r"[.\n]", clean_init) if data_alvo in s]
-            trecho_autor_data = frases_data[0] if frases_data else f"O descumprimento fático ocorreu na data de {data_alvo}."
+            trecho_autor_data = localizar(trechos_inicial, data_alvo)
             if any(w in lower_cont for w in ("impugna", "diverge", "não ocorreu", "incorret", "falso")):
-                frases_cont = [s.strip() for s in re.split(r"[.\n]", clean_cont) if any(w in s.lower() for w in ("data", "impugna", data_alvo))]
-                trecho_reu_data = frases_cont[0] if frases_cont else f"A ré impugna a cronologia dos fatos alegada e a data de {data_alvo}."
+                trecho_reu_data = localizar(trechos_defesa, "data", "impugna", data_alvo)
                 status_data = StatusTese.DIVERGENTE
-                prob_data = round(min(max(taxa_base * 100 + 4, 15.0), 95.0), 1)
                 forca_aut = "Documental Robusta - Registros de Atendimento"
                 forca_reu = "Alegação Retórica Desprovida de Prova"
                 impacto_data = "Requerer na réplica fixação de ponto incontroverso ou produção de prova testemunhal/documental quanto à data."
             elif data_alvo in clean_cont:
-                trecho_reu_data = f"A ré confirma a ocorrência e cronologia em {data_alvo}."
+                trecho_reu_data = localizar(trechos_defesa, data_alvo)
                 status_data = StatusTese.CONVERGENTE
-                prob_data = 100.0
                 forca_aut = "Fato Admitido Expressamente"
                 forca_reu = "Concordância Fática Expressa"
                 impacto_data = "Ponto incontroverso por convergência fática expressa (art. 374, II do CPC): dispensada dilação probatória."
             else:
                 trecho_reu_data = None
                 status_data = StatusTese.INCONTROVERSO_POR_OMISSAO
-                prob_data = 90.0
                 forca_aut = "Alegação Fática Específica na Petição Inicial"
                 forca_reu = "Ausência de Impugnação Específica (Art. 341 CPC)"
                 impacto_data = "Requerer na réplica a decretação da preclusão e presunção de veracidade (art. 341 do CPC)."
@@ -506,7 +503,6 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
                     status=status_data,
                     forca_probatoria_autor=forca_aut,
                     forca_probatoria_reu=forca_reu,
-                    probabilidade_procedencia_pct=prob_data,
                     fundamentacao_preditiva="Apresentação de cronologia pormenorizada com suporte documental vincula a defesa ao ônus da impugnação específica.",
                     impacto_processual=impacto_data,
                     pagina_autor=self._find_page_number(clean_init, trecho_autor_data),
@@ -515,28 +511,23 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
             )
             tese_counter += 1
 
-        valores_init = re.findall(r"(R\$\s*[\d.,]+)", clean_init)
+        valores_init = re.findall(r"R\$[^\S\n]*\d(?:[\d.,]*\d)?", clean_init)
         if valores_init:
             val_alvo = valores_init[0]
-            frases_val = [s.strip() for s in re.split(r"[.\n]", clean_init) if val_alvo in s]
-            trecho_aut_val = frases_val[0] if frases_val else f"Prejuízo material e pedido indenizatório fixado em {val_alvo}."
+            trecho_aut_val = localizar(trechos_inicial, val_alvo.lower())
             if any(w in lower_cont for w in ("excesso", "desproporcional", "impugna o valor", "valor excessivo")):
-                frases_c_val = [s.strip() for s in re.split(r"[.\n]", clean_cont) if any(w in s.lower() for w in ("valor", "excesso", "desproporcional", "impugna"))]
-                trecho_reu_val = frases_c_val[0] if frases_c_val else "A contestação refuta o montante indenizatório alegando excesso e enriquecimento sem causa."
+                trecho_reu_val = localizar(trechos_defesa, "valor", "excesso", "desproporcional", "impugna")
                 status_val = StatusTese.DIVERGENTE
-                prob_val = round(min(max(taxa_base * 100 - 5, 20.0), 90.0), 1)
                 impacto_val = "Juntar comprovantes fiscais e extratos complementares para demonstrar a exata liquidez do dano."
                 forca_r_val = "Alegação de Excesso de Execução"
             elif val_alvo in clean_cont:
-                trecho_reu_val = f"A ré reconhece o montante de {val_alvo}."
+                trecho_reu_val = localizar(trechos_defesa, val_alvo.lower())
                 status_val = StatusTese.CONVERGENTE
-                prob_val = 100.0
                 impacto_val = "Fato incontroverso quanto ao montante: postular julgamento antecipado parcial do mérito (art. 356 CPC)."
                 forca_r_val = "Reconhecimento do Pedido Parcial"
             else:
                 trecho_reu_val = None
                 status_val = StatusTese.INCONTROVERSO_POR_OMISSAO
-                prob_val = 92.0
                 impacto_val = "Pleitear reconhecimento de veracidade sobre o valor pretendido ante a ausência de impugnação específica (art. 341 CPC)."
                 forca_r_val = "Não Impugnado na Contestação"
 
@@ -550,7 +541,6 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
                     status=status_val,
                     forca_probatoria_autor="Planilha de Cálculos e Comprovantes acostados",
                     forca_probatoria_reu=forca_r_val,
-                    probabilidade_procedencia_pct=prob_val,
                     fundamentacao_preditiva="A impugnação genérica de valores sem apresentação de memória de cálculo desfavorável desqualifica a oposição da ré.",
                     impacto_processual=impacto_val,
                     pagina_autor=self._find_page_number(clean_init, trecho_aut_val),
@@ -560,10 +550,13 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
             tese_counter += 1
 
         # 2. Mérito Principal
-        frases_merito_aut = [s.strip() for s in re.split(r"[.\n]", clean_init) if any(w in s.lower() for w in ("falha", "defeito", "dano moral", "indeniza", "responsabilidade", "inadimplemento")) and len(s.strip()) > 25]
-        trecho_aut_mer = frases_merito_aut[0] if frases_merito_aut else "Configuração de responsabilidade civil objetiva e dever de indenizar pelos transtornos sofridos."
-        frases_merito_reu = [s.strip() for s in re.split(r"[.\n]", clean_cont) if any(w in s.lower() for w in ("exercício regular", "exercicio regular", "mero dissabor", "inexistência", "inexistencia", "não há dano", "improcedente")) and len(s.strip()) > 25]
-        trecho_reu_mer = frases_merito_reu[0] if frases_merito_reu else "A ré sustenta exercício regular de direito e inocorrência de dano moral indenizável (mero dissabor)."
+        trecho_aut_mer = localizar(
+            trechos_inicial, "falha", "defeito", "dano moral", "indeniza", "responsabilidade", "inadimplemento"
+        )
+        trecho_reu_mer = localizar(
+            trechos_defesa, "exercício regular", "exercicio regular", "mero dissabor",
+            "inexistência", "inexistencia", "não há dano", "improcedente",
+        )
 
         teses.append(
             PontoControvertido(
@@ -575,7 +568,6 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
                 status=StatusTese.DIVERGENTE,
                 forca_probatoria_autor="Documental - Falha Operacional Comprovada",
                 forca_probatoria_reu="Defesa de Mero Dissabor Cotidiano",
-                probabilidade_procedencia_pct=round(taxa_base * 100, 1),
                 fundamentacao_preditiva="Jurisprudência consolidada do tribunal local reconhece responsabilidade objetiva do prestador de serviços pelo vício na prestação (art. 14 do CDC).",
                 impacto_processual="Reiterar em réplica a incidência da Súmula do TJAL e precedentes vinculantes favoráveis à reparação integral.",
                 pagina_autor=self._find_page_number(clean_init, trecho_aut_mer),
@@ -586,9 +578,11 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
 
         # 3. Prova e Ônus
         if any(w in lower_init for w in ("inversão", "inversao", "ônus da prova", "onus da prova", "art. 6", "cdc")):
-            trecho_aut_onus = "Requer-se a inversão do ônus da prova nos termos do art. 6º, VIII, do CDC em face da hipossuficiência técnica."
-            if any(w in lower_cont for w in ("descabe", "indevida a inversão", "art. 373", "não cabe inversão")):
-                trecho_reu_onus = "A ré impugna a inversão do ônus da prova aduzindo incumbir ao autor a prova dos fatos constitutivos de seu direito."
+            trecho_aut_onus = localizar(trechos_inicial, "inversão", "inversao", "ônus da prova", "onus da prova")
+            if not trecho_aut_onus:
+                trecho_aut_onus = localizar(trechos_inicial, "art. 6", "cdc")
+            trecho_reu_onus = localizar(trechos_defesa, "descabe", "indevida a inversão", "art. 373", "não cabe inversão")
+            if trecho_reu_onus:
                 status_onus = StatusTese.DIVERGENTE
             else:
                 trecho_reu_onus = None
@@ -604,7 +598,6 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
                     status=status_onus,
                     forca_probatoria_autor="Vulnerabilidade Técnica e Econômica Evidente",
                     forca_probatoria_reu="Resistência Genérica ao Estatuto Consumerista" if trecho_reu_onus else "Não Impugnado na Defesa",
-                    probabilidade_procedencia_pct=85.0,
                     fundamentacao_preditiva="A verossimilhança das alegações somada à hipossuficiência autoriza a inversão do ônus probatório pelo juízo saneador (art. 357, III CPC).",
                     impacto_processual="Requerer expressamente ao magistrado a fixação da inversão probatória na decisão de saneamento processual.",
                     pagina_autor=self._find_page_number(clean_init, trecho_aut_onus),
@@ -615,8 +608,7 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
 
         # 4. VARREDURA REVERSA: Fatos Novos da Defesa (Art. 350 CPC) e Preliminares
         if any(w in lower_cont for w in ("prescrição", "prescricao", "decadência", "decadencia")):
-            frases_presc = [s.strip() for s in re.split(r"[.\n]", clean_cont) if any(w in s.lower() for w in ("prescri", "decad")) and len(s.strip()) > 20]
-            trecho_reu_presc = frases_presc[0] if frases_presc else "A ré suscita prejudicial de mérito arguindo a consumação da prescrição quinquenal."
+            trecho_reu_presc = localizar(trechos_defesa, "prescri", "decad")
             teses.append(
                 PontoControvertido(
                     id_tese=f"TESE-{tese_counter:02d}",
@@ -627,7 +619,6 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
                     status=StatusTese.FATO_NOVO_DEFESA,
                     forca_probatoria_autor="Não Arguido na Petição Inicial (Fato Inédito)",
                     forca_probatoria_reu="Alegação de Decurso de Prazo Legal (Art. 206 CC / Art. 27 CDC)",
-                    probabilidade_procedencia_pct=40.0,
                     fundamentacao_preditiva="Defesa indireta de mérito que desloca o contraditório para a manifestação em réplica (art. 350 do CPC).",
                     impacto_processual="Apresentar réplica comprovando causa interruptiva da prescrição ou termo inicial vinculado ao conhecimento do dano.",
                     pagina_autor=None,
@@ -636,8 +627,7 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
             )
             tese_counter += 1
         elif any(w in lower_cont for w in ("ilegitimidade", "incompetência", "incompetencia", "preliminar")):
-            frases_prelim = [s.strip() for s in re.split(r"[.\n]", clean_cont) if any(w in s.lower() for w in ("ilegitimidade", "incompet", "preliminar")) and len(s.strip()) > 20]
-            trecho_reu_prel = frases_prelim[0] if frases_prelim else "Arguição de preliminar de ilegitimidade passiva ad causam da contestante."
+            trecho_reu_prel = localizar(trechos_defesa, "ilegitimidade", "incompet", "preliminar")
             teses.append(
                 PontoControvertido(
                     id_tese=f"TESE-{tese_counter:02d}",
@@ -648,7 +638,6 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
                     status=StatusTese.FATO_NOVO_DEFESA,
                     forca_probatoria_autor="Não Constante da Causa de Pedir Inicial",
                     forca_probatoria_reu="Preliminar de Defesa (Art. 337 do CPC)",
-                    probabilidade_procedencia_pct=75.0,
                     fundamentacao_preditiva="Pertinência subjetiva da demanda amparada pela teoria da asserção e cadeia de fornecimento solidária (art. 7º, § único, CDC).",
                     impacto_processual="Requerer a rejeição liminar da preliminar com base na responsabilidade solidária da cadeia consumerista.",
                     pagina_autor=None,
@@ -657,8 +646,10 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
             )
             tese_counter += 1
         elif any(w in lower_cont for w in ("culpa exclusiva", "fato de terceiro", "força maior", "forca maior", "caso fortuito", "quitação", "quitacao", "pagamento")):
-            frases_fato_novo = [s.strip() for s in re.split(r"[.\n]", clean_cont) if any(w in s.lower() for w in ("culpa exclusiva", "terceiro", "força maior", "forca maior", "fortuito", "quitação", "pagamento")) and len(s.strip()) > 20]
-            trecho_reu_fn = frases_fato_novo[0] if frases_fato_novo else "Alegação de fato impeditivo consistente em excludente de responsabilidade civil."
+            trecho_reu_fn = localizar(
+                trechos_defesa, "culpa exclusiva", "terceiro", "força maior", "forca maior",
+                "fortuito", "quitação", "quitacao", "pagamento",
+            )
             teses.append(
                 PontoControvertido(
                     id_tese=f"TESE-{tese_counter:02d}",
@@ -669,7 +660,6 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
                     status=StatusTese.FATO_NOVO_DEFESA,
                     forca_probatoria_autor="Inexistência de Prévia Oposição na Inicial",
                     forca_probatoria_reu="Alegação de Excludente de Ilicitude",
-                    probabilidade_procedencia_pct=65.0,
                     fundamentacao_preditiva="Ônus probatório integralmente carreado à ré nos termos do art. 373, II, do CPC, demandando dilação probatória estrita.",
                     impacto_processual="Impugnar o fato extintivo/modificativo em réplica por falta de lastro documental idôneo.",
                     pagina_autor=None,
@@ -684,12 +674,10 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
         total_omiss = sum(1 for t in teses if t.status == StatusTese.INCONTROVERSO_POR_OMISSAO)
         total_fn = sum(1 for t in teses if t.status == StatusTese.FATO_NOVO_DEFESA)
 
-        score_geral = round(sum(t.probabilidade_procedencia_pct for t in teses) / total_teses, 1) if total_teses > 0 else 70.0
-
         resumo_geral = (
             f"Confronto analítico de saneamento processual (art. 357 do CPC): identificadas {total_teses} teses fundamentais, "
-            f"com {total_div} ponto(s) divergente(s), {total_omiss} fato(s) incontroverso(s) por omissão e {total_fn} fato(s) novo(s) da defesa. "
-            f"Favorabilidade global estimada do autor de {score_geral}%."
+            f"com {total_conv} convergência(s), {total_div} divergência(s), "
+            f"{total_omiss} fato(s) incontroverso(s) por omissão e {total_fn} fato(s) novo(s) da defesa."
         )
 
         return ResultadoComparacaoPecas(
@@ -701,7 +689,6 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
             total_divergencias=total_div,
             total_omissoes=total_omiss,
             total_fatos_novos_defesa=total_fn,
-            score_geral_favorabilidade_autor_pct=score_geral,
             teses=teses,
             texto_higienizado_autor=clean_init,
             texto_higienizado_reu=clean_cont,
@@ -743,7 +730,7 @@ class GeminiAIAdapter(AIGatewayPort):
 
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{settings.GEMINI_MODEL}:generateContent?key={api_key}"
+            f"{settings.GEMINI_MODEL}:generateContent"
         )
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
@@ -755,7 +742,7 @@ class GeminiAIAdapter(AIGatewayPort):
 
         try:
             with httpx.Client(timeout=settings.GEMINI_TIMEOUT_SECONDS) as client:
-                res = client.post(url, json=payload)
+                res = client.post(url, headers={"x-goog-api-key": api_key}, json=payload)
                 if res.status_code == 200:
                     data = res.json()
                     candidates = data.get("candidates", [])
@@ -798,9 +785,8 @@ class GeminiAIAdapter(AIGatewayPort):
                 )
         except Exception as exc:
             logger.info(
-                "Chamada ao Gemini API não concluída (%s: %s). Acionando fallback determinístico local (ADR-002).",
+                "Chamada ao Gemini API não concluída (%s). Acionando fallback determinístico local (ADR-002).",
                 exc.__class__.__name__,
-                str(exc),
             )
 
         return base_resp
@@ -816,8 +802,6 @@ class GeminiAIAdapter(AIGatewayPort):
         if not api_key:
             return self._fallback.comparar_pecas(texto_inicial, texto_contestacao, contexto_historico, numero_processo)
 
-        base_resp = self._fallback.comparar_pecas(texto_inicial, texto_contestacao, contexto_historico, numero_processo)
-
         sanitized_init, _, _ = AnonimizadorLGPD.sanitize_text(texto_inicial or "")
         sanitized_cont, _, _ = AnonimizadorLGPD.sanitize_text(texto_contestacao or "")
 
@@ -830,45 +814,65 @@ class GeminiAIAdapter(AIGatewayPort):
             "1. Varredura Direta (Autor -> Réu): Identifique convergências, divergências e fatos incontroversos por ausência de impugnação específica (Art. 341 CPC).\n"
             "2. Varredura Reversa (Réu -> Autor): Identifique preliminares e fatos novos impeditivos/modificativos/extintivos da defesa sem correspondência prévia (Art. 350 CPC).\n"
             "3. Enquadre cada tese nos 7 eixos do TipoTese (preliminar, prejudicial_merito, fato_ou_valor, merito, tutela_provisoria, prova_e_onus, pedido_e_valor_causa) e nos 4 status do StatusTese (convergente, divergente, fato_incontroverso_por_omissao, fato_novo_ou_extintivo_reu).\n"
-            "4. Extraia citações literais exatas e preencha pagina_autor e pagina_reu com base nas marcações [PÁG XX]. Note: trecho_autor deve ser null apenas em fato_novo_ou_extintivo_reu; trecho_reu deve ser null apenas em fato_incontroverso_por_omissao.\n"
-            "5. Calcule probabilidade_procedencia_pct entre 0.0 e 100.0 e gere impacto_processual objetivo para o advogado em réplica.\n"
-            "Responda EXCLUSIVAMENTE em formato JSON compatível com o schema do ResultadoComparacaoPecas."
+            "4. Extraia citações literais exatas e preencha pagina_autor e pagina_reu com base nas marcações [PÁG XX]. Se uma peça não trouxer trecho correspondente, deixe a citação e a página dessa peça como null.\n"
+            "5. Gere impacto_processual objetivo para o advogado em réplica e sintetize o litígio, "
+            "evitando previsões de êxito. Siga o schema JSON da resposta."
         )
 
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{settings.GEMINI_MODEL}:generateContent?key={api_key}"
+            f"{settings.GEMINI_MODEL}:generateContent"
         )
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {
-                "temperature": 0.2,
                 "responseMimeType": "application/json",
+                "responseJsonSchema": RespostaComparacaoGemini.model_json_schema(),
             },
         }
 
         try:
             with httpx.Client(timeout=settings.GEMINI_TIMEOUT_SECONDS) as client:
-                res = client.post(url, json=payload)
-                if res.status_code == 200:
+                res = client.post(url, headers={"x-goog-api-key": api_key}, json=payload)
+                if res.is_success:
                     data = res.json()
-                    candidates = data.get("candidates", [])
-                    if candidates:
-                        parts = candidates[0].get("content", {}).get("parts", [])
-                        if parts:
-                            raw_reply = parts[0].get("text", "").strip()
-                            if raw_reply.startswith("```"):
-                                raw_reply = re.sub(r"^```(?:json)?\s*", "", raw_reply)
-                                raw_reply = re.sub(r"\s*```$", "", raw_reply)
-                            parsed_json = json.loads(raw_reply)
-                            parsed_obj = ResultadoComparacaoPecas.model_validate(parsed_json)
-                            parsed_obj.texto_higienizado_autor = sanitized_init
-                            parsed_obj.texto_higienizado_reu = sanitized_cont
-                            return parsed_obj
+                    for candidate in data.get("candidates", []):
+                        parts = candidate.get("content", {}).get("parts", [])
+                        resposta = "".join(part.get("text", "") for part in parts if not part.get("thought")).strip()
+                        if not resposta:
+                            continue
+                        resposta = re.sub(r"^```(?:json)?\s*|\s*```$", "", resposta)
+                        comparacao = RespostaComparacaoGemini.model_validate_json(resposta)
+                        contagem = Counter(tese.status for tese in comparacao.teses)
+                        cnj = CNJ_REGEX.search(sanitized_init) or CNJ_REGEX.search(sanitized_cont)
+                        return ResultadoComparacaoPecas(
+                            id_comparacao=f"comp-{uuid.uuid4().hex[:8]}",
+                            numero_processo=numero_processo or (cnj.group(0) if cnj else None),
+                            resumo_controvertido_geral=comparacao.resumo_controvertido_geral,
+                            total_teses=len(comparacao.teses),
+                            total_convergencias=contagem[StatusTese.CONVERGENTE],
+                            total_divergencias=contagem[StatusTese.DIVERGENTE],
+                            total_omissoes=contagem[StatusTese.INCONTROVERSO_POR_OMISSAO],
+                            total_fatos_novos_defesa=contagem[StatusTese.FATO_NOVO_DEFESA],
+                            teses=[
+                                PontoControvertido(
+                                    **tese.model_dump(),
+                                    id_tese=f"TESE-{indice:02d}",
+                                    fundamentacao_preditiva="",
+                                )
+                                for indice, tese in enumerate(comparacao.teses, start=1)
+                            ],
+                            motor_analise="gemini",
+                            texto_higienizado_autor=sanitized_init,
+                            texto_higienizado_reu=sanitized_cont,
+                        )
+                    logger.warning("Gemini retornou uma comparação sem texto. Acionando análise local.")
+                else:
+                    logger.warning("Gemini retornou HTTP %d no comparador. Acionando análise local.", res.status_code)
         except Exception as exc:
-            logger.info("Chamada Gemini comparar_pecas não concluída (%s: %s). Acionando fallback local.", exc.__class__.__name__, exc)
+            logger.warning("Comparação com Gemini não concluída (%s). Acionando análise local.", type(exc).__name__)
 
-        return base_resp
+        return self._fallback.comparar_pecas(texto_inicial, texto_contestacao, contexto_historico, numero_processo)
 
 
 class ResilientAIGateway(AIGatewayPort):

@@ -8,7 +8,7 @@ Rastreabilidade:
 """
 from datetime import datetime, timezone
 from enum import Enum
-from typing import List, Optional
+from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -29,10 +29,7 @@ class TipoTese(str, Enum):
     PEDIDO = "pedido_e_valor_causa"
 
 
-class PontoControvertido(BaseModel):
-    id_tese: str = Field(
-        description="Identificador único sequencial, ex: 'TESE-01'."
-    )
+class TeseExtraida(BaseModel):
     tipo: TipoTese = Field(
         description="Categoria jurídica estrita entre os 7 eixos de análise processual."
     )
@@ -41,11 +38,11 @@ class PontoControvertido(BaseModel):
     )
     trecho_autor: Optional[str] = Field(
         default=None,
-        description="Citação literal exata extraída da Petição Inicial (sem alterar palavras). Deve ser null apenas se status='fato_novo_ou_extintivo_reu'."
+        description="Citação literal extraída da Petição Inicial. Null quando não houver citação correspondente."
     )
     trecho_reu: Optional[str] = Field(
         default=None,
-        description="Citação literal exata extraída da Contestação. Deve ser null apenas se status='fato_incontroverso_por_omissao'."
+        description="Citação literal extraída da Contestação. Null quando não houver citação correspondente."
     )
     status: StatusTese = Field(
         description="Classificação do confronto conforme arts. 341 e 350 do CPC."
@@ -55,14 +52,6 @@ class PontoControvertido(BaseModel):
     )
     forca_probatoria_reu: str = Field(
         description="Avaliação objetiva do lastro probatório do réu neste ponto (ex: 'Mera Alegação Retórica' ou 'Não Impugnado')."
-    )
-    probabilidade_procedencia_pct: float = Field(
-        ge=0.0,
-        le=100.0,
-        description="Estimativa percentual de êxito do autor neste ponto."
-    )
-    fundamentacao_preditiva: str = Field(
-        description="Justificativa técnica cruzando provas apresentadas, norma aplicável e histórico jurimétrico."
     )
     impacto_processual: str = Field(
         description="Orientação prática acionável em 1 frase para o advogado (ex: 'Requerer reconhecimento de fato incontroverso em réplica')."
@@ -74,6 +63,28 @@ class PontoControvertido(BaseModel):
     pagina_reu: Optional[int] = Field(
         default=None,
         description="Número inteiro da página extraído da tag [PÁG XX] da Contestação."
+    )
+
+
+class RespostaComparacaoGemini(BaseModel):
+    resumo_controvertido_geral: str = Field(
+        description="Síntese do litígio e dos pontos controvertidos, sem percentuais de êxito."
+    )
+    teses: List[TeseExtraida]
+
+
+class PontoControvertido(TeseExtraida):
+    id_tese: str = Field(
+        description="Identificador único sequencial, ex: 'TESE-01'."
+    )
+    probabilidade_procedencia_pct: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=100.0,
+        description="Estimativa percentual baseada no histórico do tema. Null se o histórico for insuficiente.",
+    )
+    fundamentacao_preditiva: str = Field(
+        description="Base histórica usada para a estimativa ou motivo da indisponibilidade."
     )
 
 
@@ -93,7 +104,16 @@ class ResultadoComparacaoPecas(BaseModel):
     total_divergencias: int = Field(ge=0)
     total_omissoes: int = Field(ge=0)
     total_fatos_novos_defesa: int = Field(ge=0)
-    score_geral_favorabilidade_autor_pct: float = Field(ge=0.0, le=100.0)
+    score_geral_favorabilidade_autor_pct: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=100.0,
+        description="Média das estimativas das teses, disponível quando todas têm base histórica.",
+    )
+    motor_analise: Literal["gemini", "local"] = Field(
+        default="local",
+        description="Motor que produziu a comparação efetivamente retornada.",
+    )
     teses: List[PontoControvertido] = Field(default_factory=list)
     texto_higienizado_autor: Optional[str] = Field(
         default=None,

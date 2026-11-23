@@ -6,25 +6,67 @@ Rastreabilidade:
 - RN-02: Jurimetria Granular por Ponto Controvertido
 - RN-04 / SEC-05: Validação de Entrada e Limites de Payload
 """
+from dataclasses import replace
 import io
+import json
+
+import httpx
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
-from app.core.ai_gateway import ExtratorDocumental
+import app.core.ai_gateway as ai_gateway_module
+from app.core.ai_gateway import ExtratorDocumental, GeminiAIAdapter, LocalDeterministicFallbackAdapter
+from app.core.database import Base
 from app.main import app, init_db_and_seed
+from app.models.entities import Processo
+from app.routers.processos import _aplicar_jurimetria_granular
 from app.routers.relatorios import _build_pdf_document
-from app.schemas.comparacao import ResultadoComparacaoPecas, StatusTese, TipoTese
+from app.schemas.comparacao import RespostaComparacaoGemini, ResultadoComparacaoPecas, StatusTese, TipoTese
 
 
 @pytest.fixture(scope="module")
 def client() -> TestClient:
     init_db_and_seed()
-    with TestClient(app) as test_client:
-        yield test_client
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(ai_gateway_module, "settings", replace(ai_gateway_module.settings, AI_PROVIDER="local"))
+        with TestClient(app) as test_client:
+            yield test_client
 
 
 def _make_pdf(lines: list[str]) -> bytes:
     return _build_pdf_document(lines)
+
+
+def test_comparador_local_preserva_citacoes_literais_e_paginas():
+    inicial = (
+        "[PÁG 1]\nDOS FATOS\n"
+        "[PÁG 2]\nO atraso ocorreu em 10/11/2026.\n"
+        "O prejuízo foi de R$ 1.200,00.\n"
+        "Pede-se a inversão do ônus da prova."
+    )
+    defesa = (
+        "[PÁG 1]\nDA CONTESTAÇÃO\n"
+        "[PÁG 2]\nO evento de 10/11/2026 é admitido.\n"
+        "A requerida admite o prejuízo de R$ 1.200,00."
+    )
+
+    resultado = LocalDeterministicFallbackAdapter().comparar_pecas(inicial, defesa)
+
+    cronologia, valor = [tese for tese in resultado.teses if tese.tipo == TipoTese.FATO_CRONOLOGIA]
+    assert cronologia.trecho_reu == "O evento de 10/11/2026 é admitido."
+    assert valor.trecho_reu == "A requerida admite o prejuízo de R$ 1.200,00."
+    for tese in (cronologia, valor):
+        assert tese.status == StatusTese.CONVERGENTE
+        assert tese.pagina_autor == tese.pagina_reu == 2
+        assert tese.trecho_autor in inicial
+
+    onus = next(tese for tese in resultado.teses if tese.tipo == TipoTese.PROVA_ONUS)
+    assert onus.trecho_autor == "Pede-se a inversão do ônus da prova."
+    assert onus.pagina_autor == 2
+    assert onus.trecho_reu is None
+    assert onus.pagina_reu is None
 
 
 def test_extrator_documental_page_markers_e_macro_secoes():
@@ -87,13 +129,14 @@ def test_comparador_upload_arquivos_validos_retorna_200_e_schema(client: TestCli
     assert parsed.id_comparacao.startswith("comp-")
     assert parsed.numero_processo == "0088990-22.2026.8.02.0001"
     assert parsed.total_teses >= 1
-    assert parsed.score_geral_favorabilidade_autor_pct >= 0.0
+    assert parsed.score_geral_favorabilidade_autor_pct is None
+    assert parsed.motor_analise == "local"
     assert len(parsed.teses) >= 1
 
     tese = parsed.teses[0]
     assert tese.tipo in TipoTese
     assert tese.status in StatusTese
-    assert 0.0 <= tese.probabilidade_procedencia_pct <= 100.0
+    assert tese.probabilidade_procedencia_pct is None
     assert len(tese.impacto_processual) > 10
 
 
@@ -245,9 +288,9 @@ def test_comparador_varredura_bidirecional_e_eixos_juridicos(client: TestClient)
         assert tese_omissao.pagina_reu is None
 
 
-def test_gemini_adapter_fallback_local_resiliente():
+def test_gemini_adapter_fallback_local_resiliente(monkeypatch):
     """Valida o funcionamento do GeminiAIAdapter com fallback determinístico local imediato."""
-    from app.core.ai_gateway import GeminiAIAdapter
+    monkeypatch.setattr(ai_gateway_module, "settings", replace(ai_gateway_module.settings, GEMINI_API_KEY=""))
     adapter = GeminiAIAdapter()
     resultado = adapter.comparar_pecas(
         texto_inicial="Petição inicial alegando inadimplemento em 12/03/2026 com dano de R$ 15.000,00.",
@@ -258,15 +301,44 @@ def test_gemini_adapter_fallback_local_resiliente():
     assert resultado.numero_processo == "0011223-44.2026.8.02.0001"
     assert resultado.total_teses >= 1
     assert resultado.total_divergencias >= 1
+    assert resultado.motor_analise == "local"
+
+
+@pytest.mark.parametrize(("http_status", "motor"), [(200, "gemini"), (503, "local")])
+def test_comparador_identifica_motor_que_retornou_resultado(monkeypatch, http_status, motor):
+    inicial = "Em 10/11/2026 ocorreu o inadimplemento."
+    defesa = "A ré confirma a data de 10/11/2026."
+    base = LocalDeterministicFallbackAdapter().comparar_pecas(inicial, defesa)
+    resposta = RespostaComparacaoGemini.model_validate(base.model_dump())
+
+    def responder(req):
+        assert req.headers["x-goog-api-key"] == "chave-ficticia"
+        assert not req.url.query
+        configuracao = json.loads(req.content)["generationConfig"]
+        assert configuracao["responseJsonSchema"]["required"] == ["resumo_controvertido_geral", "teses"]
+        partes = [
+            {"text": "Raciocínio interno do modelo.", "thought": True},
+            {"text": resposta.model_dump_json()},
+        ]
+        return httpx.Response(http_status, json={"candidates": [{"content": {"parts": partes}}]})
+
+    transporte = httpx.MockTransport(responder)
+    http_client = httpx.Client
+    monkeypatch.setattr(
+        ai_gateway_module, "settings", replace(ai_gateway_module.settings, GEMINI_API_KEY="chave-ficticia")
+    )
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: http_client(transport=transporte, **kwargs))
+
+    resultado = GeminiAIAdapter().comparar_pecas(inicial, defesa, numero_processo="CNJ de teste")
+    assert resultado.motor_analise == motor
+    assert resultado.numero_processo == "CNJ de teste"
+    assert resultado.id_comparacao.startswith("comp-")
+    assert resultado.total_teses == len(resposta.teses)
+    assert resultado.total_convergencias == base.total_convergencias
 
 
 def test_comparador_jurimetria_granular_por_tese(client: TestClient):
-    """
-    Etapa 3: Testa a jurimetria granular por tese (RN-02):
-    - Probabilidade calibrada no intervalo [0.0, 100.0]
-    - Omissão (Art. 341 CPC) com probabilidade elevada (>= 85%) por presunção relativa de veracidade
-    - Presença de fundamentação preditiva e impacto processual estratégico
-    """
+    """A comparação retorna as teses mesmo quando o acervo não sustenta estimativas."""
     linhas_inicial = [
         "Processo: 0044556-77.2026.8.02.0001",
         "Magistrado: Dr. Rafael De Amorim",
@@ -296,15 +368,64 @@ def test_comparador_jurimetria_granular_por_tese(client: TestClient):
     data = resp.json()
     parsed = ResultadoComparacaoPecas.model_validate(data)
 
+    assert parsed.score_geral_favorabilidade_autor_pct is None
+    assert parsed.teses
     for t in parsed.teses:
-        assert 0.0 <= t.probabilidade_procedencia_pct <= 100.0
-        assert len(t.fundamentacao_preditiva) > 15
+        assert t.probabilidade_procedencia_pct is None
+        assert "Histórico insuficiente" in t.fundamentacao_preditiva
         assert len(t.impacto_processual) > 10
 
-    # Ponto de omissão deve ter probabilidade >= 85%
-    omissao = next((t for t in parsed.teses if t.status == StatusTese.INCONTROVERSO_POR_OMISSAO), None)
-    if omissao:
-        assert omissao.probabilidade_procedencia_pct >= 85.0
-        assert "341" in omissao.fundamentacao_preditiva or "341" in omissao.impacto_processual
 
+def test_estimativa_usa_apenas_julgados_do_tema_e_evita_certeza_artificial():
+    resultado = LocalDeterministicFallbackAdapter().comparar_pecas(
+        "O atraso ocorreu em 10/11/2026.", "A defesa admite a data de 10/11/2026."
+    )
+    convergencia = resultado.teses[0]
+    assert convergencia.status == StatusTese.CONVERGENTE
+    resultado.numero_processo = "1111111-00.2026.8.02.0001"
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+
+    def julgado(indice, *, origem="MANUAL", desfecho="Procedente", tema=None, numero=None):
+        return Processo(
+            id_processo=f"teste-{indice}",
+            numero_processo=numero or f"processo-{indice}",
+            arquivo_nome="teste.pdf",
+            origem_ingestao=origem,
+            tema=tema or convergencia.tema,
+            magistrado="Magistrado de teste",
+            autor_anonimizado="Autor",
+            reu_anonimizado="Ré",
+            resumo_nlp="Julgado fictício.",
+            resultado_historico=desfecho,
+        )
+
+    with Session(engine) as db:
+        db.add_all([julgado(indice) for indice in range(4)])
+        db.add_all([
+            julgado(4, origem="PDF"),
+            julgado(5, origem="CSV"),
+            julgado(6, desfecho="Em Analise"),
+            julgado(7, desfecho="Acordo"),
+            julgado(8, tema="Outro tema"),
+            julgado(9, numero=resultado.numero_processo),
+        ])
+        db.flush()
+
+        _aplicar_jurimetria_granular(db, resultado)
+        assert convergencia.probabilidade_procedencia_pct is None
+        assert "4 de 5" in convergencia.fundamentacao_preditiva
+
+        db.add(julgado(10, tema=f"  {convergencia.tema.upper()}  "))
+        db.flush()
+        _aplicar_jurimetria_granular(db, resultado)
+
+        assert convergencia.probabilidade_procedencia_pct == 85.7
+        assert "5 de 5" in convergencia.fundamentacao_preditiva
+        assert resultado.score_geral_favorabilidade_autor_pct is None
+
+        resultado.teses = [convergencia]
+        _aplicar_jurimetria_granular(db, resultado)
+        assert resultado.score_geral_favorabilidade_autor_pct == 85.7
 

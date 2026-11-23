@@ -120,7 +120,8 @@ flowchart LR
    - Adicionar botão de navegação na barra lateral:
      - `id="btn-comparador"`, `role="tab"`, `aria-controls="panel-comparador"`.
    - Adicionar painel correspondente `panel-comparador`:
-     - Área de upload duplo (drag-and-drop acessível) para Petição Inicial e Contestação, com botão de demonstração rápida (1 clique com peças de teste pré-construídas).
+     - Área de upload duplo (drag-and-drop acessível) para Petição Inicial e Contestação.
+     - Demonstração guiada com dois casos fictícios selecionáveis e instruções de leitura no resultado.
      - Componente *Split-View* de 3 colunas:
        - **Coluna Esquerda:** Visualizador da Petição Inicial (com seletor de página e marcação de trecho).
        - **Coluna Central:** Feed de Teses (`PontoControvertido`) com barra de filtros (chips por Eixo Jurídico e Status), barra de progresso do score global, badges semânticos e alertas de `impacto_processual`.
@@ -135,7 +136,6 @@ flowchart LR
    - Classes de *highlight* sincronizado no texto (`.highlight-autor`, `.highlight-reu`).
 3. **`frontend/src/services/api.js` (Modificação):**
    - Adicionar função `compararPecas(fileInicial, fileContestacao)`.
-   - Função utilitária `buildSampleDefensePdfFile()` para permitir teste instantâneo da comparação sem necessidade de arquivo externo do usuário.
 4. **`frontend/src/app.js` (Modificação):**
    - Integrar aba `comparador` nas rotinas de `switchTab` e navegação por teclado (`setupTabKeyboardNavigation` com `ArrowUp/Down`, `Home/End`).
    - Gerenciamento de estado da comparação (`state.comparacaoAtual`).
@@ -143,8 +143,10 @@ flowchart LR
    - Sincronização interativa: clique em um card rola suavemente (`scrollIntoView({ behavior: 'smooth', block: 'center' })`) ambas as colunas para os respectivos trechos e destaca com animação suave.
 5. **`backend/tests/test_frontend_accessibility.py` (Modificação):**
    - Adicionar checagens estáticas para os novos elementos semânticos (`aria-controls`, `role="tab"`, contrastes e labels).
+6. **`frontend/src/components/comparador-demo.js` (Novo):**
+   - Definir os dois casos fictícios e gerar três páginas por peça. A interface envia os arquivos com `compararPecas`, como no upload de peças próprias.
 
-**Critério de Conclusão da Etapa 4:** Interface funcional, responsiva e aprovada na suíte de testes de acessibilidade.
+**Critério de Conclusão da Etapa 4:** Interface funcional, responsiva e aprovada na suíte de testes de acessibilidade. Verificar no navegador os dois casos, as páginas citadas e a combinação dos filtros, conforme o [plano de implementação](./plano_de_implementa_o_visualizador_comparativo_de_pe_as_jur_dicas.md#demonstração-guiada).
 
 ---
 
