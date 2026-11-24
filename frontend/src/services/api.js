@@ -147,8 +147,13 @@ export function logoutAdvogado() {
     }
 }
 
-export async function fetchDashboardMetricas() {
-    const res = await fetch(`${getApiBaseUrl()}/api/v1/dashboard/metricas`, {
+export async function fetchDashboardMetricas({ tema = "", juiz = "" } = {}) {
+    const params = new URLSearchParams();
+    if (tema) params.set("tema", tema);
+    if (juiz) params.set("juiz", juiz);
+    const query = params.toString();
+    const url = `${getApiBaseUrl()}/api/v1/dashboard/metricas${query ? `?${query}` : ""}`;
+    const res = await fetch(url, {
         headers: { ...getAuthHeader() },
     });
     if (!res.ok) throw new Error(`Erro ao carregar métricas: HTTP ${res.status}`);
