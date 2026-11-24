@@ -115,17 +115,43 @@ class DecisaoJuizSchema(BaseModel):
     improcedentes: int = Field(..., ge=0)
 
 
+class DistribuicaoResultadosSchema(BaseModel):
+    procedentes: int = Field(default=0, ge=0)
+    acordos: int = Field(default=0, ge=0)
+    improcedentes: int = Field(default=0, ge=0)
+    em_analise: int = Field(default=0, ge=0)
+
+
 class VolumeTemaSchema(BaseModel):
     tema: str
     percentual: float = Field(..., ge=0.0, le=100.0)
+    total: int = Field(default=0, ge=0)
+    favoraveis: int = Field(default=0, ge=0)
+    decididos: int = Field(default=0, ge=0, description="Decisões do tema com desfecho (base da taxa favorável)")
+    taxa_favoravel: float = Field(default=0.0, ge=0.0, le=100.0)
+    tempo_medio_meses: int = Field(default=12, ge=1)
+
+
+class RecorteAcervoSchema(BaseModel):
+    orgaos_julgadores: List[str] = Field(default_factory=list)
+    total_orgaos_julgadores: int = Field(default=0, ge=0)
+    ano_inicial: Optional[int] = None
+    ano_final: Optional[int] = None
 
 
 class DashboardMetricasResponse(BaseModel):
     taxa_exito_global: float = Field(..., ge=0.0, le=1.0)
     tempo_medio_tramitacao_meses: int = Field(..., ge=1)
     total_processos_analisados: int = Field(..., ge=0)
+    total_decididos: int = Field(
+        default=0, ge=0, description="Decisões com desfecho (procedente, acordo, improcedente): denominador da taxa"
+    )
     decisoes_por_juiz: List[DecisaoJuizSchema]
     volume_por_tema: List[VolumeTemaSchema]
+    distribuicao_resultados: DistribuicaoResultadosSchema = Field(
+        default_factory=DistribuicaoResultadosSchema
+    )
+    recorte: RecorteAcervoSchema = Field(default_factory=RecorteAcervoSchema)
 
 
 # ==============================================================================

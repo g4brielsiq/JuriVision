@@ -51,6 +51,8 @@ class Settings:
     # Modelo de Negócio Freemium e Deploy Cloud (CONAD 2026)
     FREE_PLAN_PDF_LIMIT: int = int(os.getenv("FREE_PLAN_PDF_LIMIT", "3"))
     SERVE_FRONTEND_STATIC: bool = os.getenv("SERVE_FRONTEND_STATIC", "false").lower() in ("1", "true", "yes")
+    # Dados fictícios de demonstração são opt-in: por padrão a base inicia vazia (usuário real).
+    SEED_DEMO_DATA: bool = os.getenv("SEED_DEMO_DATA", "false").lower() in ("1", "true", "yes")
 
     @property
     def postgres_url(self) -> str:

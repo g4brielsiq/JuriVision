@@ -3,10 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JuriVision - Plataforma Jurisprudencial e Jurimetria</title>
+    <title>JuriVision — Pesquisa Jurisprudencial e Jurimetria</title>
+    <link rel="icon" type="image/svg+xml" href="/assets/jurivision-mark.svg">
+    <link rel="alternate icon" type="image/png" href="/assets/jurivision-logo.png">
+    <script>
+        /* Intro da marca (pilastras → JuriVision): uma vez por sessão, nunca com movimento reduzido.
+           ?intro=1 força a exibição (demonstração). Com token salvo, a decisão espera a validação
+           da sessão no app.js: um token expirado não deve esconder a intro de quem cai na landing. */
+        (function () {
+            try {
+                var html = document.documentElement;
+                var reduz = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+                var forcada = /[?&]intro(=|&|$)/.test(window.location.search);
+                var vista = window.sessionStorage && sessionStorage.getItem("jv_intro_vista") === "1";
+                var temToken = (window.localStorage && localStorage.getItem("jurivision_token")) ||
+                    (window.sessionStorage && sessionStorage.getItem("jurivision_token"));
+                window.__jvIntroForcada = forcada && !reduz;
+                window.__jvIntroElegivel = !reduz && (forcada || !vista);
+                if (!window.__jvIntroElegivel) return;
+                if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+                if (temToken && !forcada) {
+                    html.classList.add("jv-intro-adiada");
+                } else {
+                    html.classList.add("jv-intro-on");
+                    window.__jvIntroInicio = performance.now();
+                }
+            } catch (e) { /* armazenamento indisponível: segue sem intro */ }
+        })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,500;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Source+Sans+3:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="./src/components/design-tokens.css">
 </head>
@@ -17,20 +44,471 @@
     <!-- WCAG 4.1.3 — Região Viva para Leitores de Tela -->
     <div id="global-aria-live" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
-    <div class="app-shell">
-        <!-- ================================================================
-             BARRA LATERAL PERSISTENTE (Guia v2 — Clara e Silenciosa)
-             ================================================================ -->
-        <aside class="sidebar" aria-label="Navegação principal da plataforma">
-            <div class="sidebar-brand">
-                <div class="brand-title">JuriVision</div>
-                <span class="brand-subtitle">Acervo · Jurimetria</span>
+    <!-- INTRO DA MARCA: três pilastras se afastam e as letras surgem para formar "JuriVision" -->
+    <div id="jv-intro" class="jv-intro" role="presentation">
+        <div class="jv-intro-stage">
+            <svg class="jv-intro-logo" viewBox="0 0 433 123" width="433" height="123" aria-hidden="true" focusable="false">
+            <g class="jv-letters">
+              <path class="jv-letter" style="--lx:18px;--ring:3" fill="#000" d="M10.176 98.536C8.384 98.536 6.72 98.248 5.184 97.672C3.648 97.16 2.4 96.392 1.44 95.368C0.480001 94.344 1.3411e-06 93.128 1.3411e-06 91.72C1.3411e-06 90.44 0.320001 89.32 0.960001 88.36C1.664 87.336 2.72 86.792 4.128 86.728C5.728 86.6 6.816 87.048 7.392 88.072C8.032 89.032 8.352 89.992 8.352 90.952C8.352 91.208 8.32 91.56 8.256 92.008C8.192 92.392 8.096 92.744 7.968 93.064C8.352 93.704 8.96 94.152 9.792 94.408C10.624 94.6 11.264 94.664 11.712 94.6C13.632 94.536 15.04 93.672 15.936 92.008C16.896 90.344 17.376 87.56 17.376 83.656V42.184C17.376 40.712 17.376 39.272 17.376 37.864C17.376 36.456 17.376 35.048 17.376 33.64C15.776 33.704 14.144 33.768 12.48 33.832C10.88 33.896 9.248 33.96 7.584 34.024V29.8H33.12V32.968C31.008 32.968 29.408 33.384 28.32 34.216C27.296 35.048 26.592 36.2 26.208 37.672C25.888 39.08 25.728 40.68 25.728 42.472V73.576C25.728 82.6 24.512 89.032 22.08 92.872C19.648 96.648 15.68 98.536 10.176 98.536Z"/>
+              <path class="jv-letter" style="--lx:14px;--ring:2" fill="#000" d="M60.4845 98.536C57.0285 98.536 54.1165 97.896 51.7485 96.616C49.4445 95.336 47.6845 93.16 46.4685 90.088C45.3165 87.016 44.7405 82.856 44.7405 77.608V60.52C44.7405 59.496 44.7405 58.472 44.7405 57.448C44.8045 56.424 44.9325 55.368 45.1245 54.28C44.0365 54.344 42.9165 54.408 41.7645 54.472C40.6765 54.472 39.5885 54.504 38.5005 54.568V50.632H41.4765C44.2285 50.632 46.2125 50.376 47.4285 49.864C48.7085 49.288 49.7005 48.68 50.4045 48.04H53.1885V77.32C53.1885 82.824 53.9565 86.952 55.4925 89.704C57.0925 92.392 59.7805 93.704 63.5565 93.64C65.9885 93.576 68.2925 92.84 70.4685 91.432C72.7085 89.96 74.5005 88.232 75.8445 86.248V61.576C75.8445 60.04 75.8765 58.728 75.9405 57.64C76.0045 56.488 76.1325 55.368 76.3245 54.28C75.1725 54.344 74.0205 54.408 72.8685 54.472C71.7165 54.472 70.5645 54.504 69.4125 54.568V50.632H72.3885C75.1405 50.632 77.1245 50.376 78.3405 49.864C79.6205 49.288 80.6125 48.68 81.3165 48.04H84.1005L84.0045 84.328C84.0045 85.352 83.9725 86.792 83.9085 88.648C83.8445 90.504 83.7485 92.072 83.6205 93.352C84.7725 93.288 85.9245 93.224 87.0765 93.16C88.2285 93.096 89.3805 93.032 90.5325 92.968V97H76.8045C76.6125 95.912 76.4525 94.888 76.3245 93.928C76.2605 92.968 76.1965 92.072 76.1325 91.24C74.1485 93.224 71.7485 94.952 68.9325 96.424C66.1165 97.832 63.3005 98.536 60.4845 98.536Z"/>
+              <path class="jv-letter" style="--lx:10px;--ring:1" fill="#000" d="M97.5098 94.12C99.4938 94.12 100.87 93.64 101.638 92.68C102.406 91.656 102.854 90.28 102.982 88.552C103.11 86.76 103.174 84.712 103.174 82.408V60.52C103.174 59.496 103.174 58.472 103.174 57.448C103.238 56.424 103.366 55.368 103.558 54.28C102.406 54.344 101.254 54.408 100.102 54.472C99.0137 54.472 97.8938 54.504 96.7418 54.568V50.632H99.7178C102.47 50.632 104.358 50.376 105.382 49.864C106.47 49.288 107.366 48.68 108.07 48.04H110.854C110.982 49.064 111.078 50.344 111.142 51.88C111.206 53.352 111.27 55.24 111.334 57.544C112.294 55.944 113.606 54.376 115.27 52.84C116.934 51.304 118.79 50.024 120.838 49C122.95 47.976 125.158 47.464 127.462 47.464C129.254 47.464 130.822 47.944 132.166 48.904C133.51 49.864 134.182 51.4 134.182 53.512C134.182 54.024 134.022 54.664 133.702 55.432C133.382 56.136 132.87 56.776 132.166 57.352C131.462 57.864 130.534 58.12 129.382 58.12C127.974 58.056 126.854 57.512 126.022 56.488C125.19 55.4 124.87 54.152 125.062 52.744C123.462 52.68 121.798 53.096 120.07 53.992C118.406 54.888 116.838 56.136 115.366 57.736C113.894 59.272 112.582 61.096 111.43 63.208L111.526 86.824C111.526 88.104 111.494 89.256 111.43 90.28C111.43 91.24 111.334 92.264 111.142 93.352C112.166 93.288 113.158 93.256 114.118 93.256C115.142 93.192 116.166 93.128 117.19 93.064V97H97.5098V94.12Z"/>
+              <path class="jv-letter" style="--lx:0px;--ring:0" fill="#000" d="M190.948 97.96L169.156 46.888C167.748 43.624 166.756 41 166.18 39.016C165.604 36.968 165.22 35.24 165.028 33.832C164.132 33.896 163.236 33.928 162.34 33.928C161.444 33.928 160.548 33.96 159.652 34.024V29.8H181.924L181.828 33.064C178.628 33.256 176.708 34.248 176.068 36.04C175.428 37.768 175.748 40.232 177.028 43.432C178.564 47.208 180.036 50.856 181.444 54.376C182.852 57.896 184.42 61.704 186.148 65.8C187.684 69.384 189.156 72.84 190.564 76.168C192.036 79.432 193.156 82.152 193.924 84.328H194.116C194.82 82.088 195.524 79.944 196.228 77.896C196.996 75.848 197.892 73.416 198.916 70.6C200.836 65.224 202.436 60.68 203.716 56.968C205.06 53.256 206.212 50.088 207.172 47.464C208.132 44.84 208.932 42.6 209.572 40.744C210.148 39.08 210.66 37.672 211.108 36.52C211.556 35.368 211.972 34.408 212.356 33.64C211.14 33.704 209.924 33.768 208.708 33.832C207.492 33.896 206.244 33.96 204.964 34.024V29.8H224.452V32.968C221.636 33.096 219.46 33.832 217.924 35.176C216.452 36.52 215.108 38.92 213.892 42.376C213.764 42.696 213.604 43.144 213.412 43.72C213.22 44.232 212.9 45.096 212.452 46.312C212.004 47.528 211.364 49.32 210.532 51.688C209.7 53.992 208.548 57.128 207.076 61.096C205.668 65.064 203.844 70.056 201.604 76.072C199.428 82.088 196.772 89.384 193.636 97.96H190.948Z"/>
+              <path class="jv-letter" style="--lx:0px;--ring:0" fill="#000" d="M271.877 98.536C268.677 98.536 265.829 98.088 263.333 97.192C260.837 96.36 258.789 95.4 257.189 94.312L257.573 97.672H253.541L252.965 81.16H255.941C256.069 83.784 256.805 86.152 258.149 88.264C259.493 90.312 261.221 91.912 263.333 93.064C265.445 94.216 267.717 94.792 270.149 94.792C271.813 94.792 273.445 94.536 275.045 94.024C276.645 93.448 277.989 92.616 279.077 91.528C280.165 90.376 280.709 88.936 280.709 87.208C280.709 85.416 280.165 83.944 279.077 82.792C278.053 81.576 276.677 80.52 274.949 79.624C273.221 78.728 271.365 77.896 269.381 77.128C267.461 76.36 265.541 75.56 263.621 74.728C261.701 73.896 259.909 72.904 258.245 71.752C256.645 70.6 255.365 69.192 254.405 67.528C253.445 65.864 252.965 63.816 252.965 61.384C252.965 60.04 253.221 58.568 253.733 56.968C254.245 55.368 255.109 53.864 256.325 52.456C257.541 50.984 259.205 49.8 261.317 48.904C263.429 47.944 266.117 47.464 269.381 47.464C271.109 47.464 273.029 47.752 275.141 48.328C277.253 48.904 279.301 49.992 281.285 51.592L281.093 47.944H285.125V64.744H282.053C281.925 62.504 281.413 60.36 280.517 58.312C279.621 56.2 278.309 54.472 276.581 53.128C274.853 51.72 272.613 51.016 269.861 51.016C266.917 51.016 264.613 51.752 262.949 53.224C261.285 54.696 260.453 56.392 260.453 58.312C260.453 60.296 261.061 61.96 262.277 63.304C263.557 64.584 265.189 65.704 267.173 66.664C269.157 67.624 271.269 68.552 273.509 69.448C275.941 70.472 278.309 71.592 280.613 72.808C282.917 74.024 284.805 75.56 286.277 77.416C287.749 79.208 288.485 81.544 288.485 84.424C288.485 87.624 287.653 90.28 285.989 92.392C284.389 94.504 282.309 96.04 279.749 97C277.253 98.024 274.629 98.536 271.877 98.536Z"/>
+              <path class="jv-letter" style="--lx:-10px;--ring:1" fill="#000" d="M345.662 98.536C341.182 98.536 337.118 97.512 333.469 95.464C329.821 93.352 326.91 90.472 324.734 86.824C322.622 83.112 321.566 78.888 321.566 74.152C321.566 69.096 322.622 64.552 324.734 60.52C326.846 56.488 329.726 53.32 333.373 51.016C337.021 48.648 341.118 47.464 345.662 47.464C350.141 47.464 354.205 48.552 357.854 50.728C361.502 52.84 364.413 55.72 366.589 59.368C368.766 63.016 369.854 67.176 369.854 71.848C369.854 76.776 368.766 81.288 366.589 85.384C364.477 89.416 361.598 92.616 357.95 94.984C354.301 97.352 350.205 98.536 345.662 98.536ZM346.429 94.696C349.822 94.696 352.51 93.736 354.494 91.816C356.477 89.896 357.886 87.4 358.718 84.328C359.614 81.256 360.062 78.024 360.062 74.632C360.062 71.752 359.774 68.936 359.197 66.184C358.686 63.368 357.854 60.84 356.701 58.6C355.55 56.296 354.046 54.472 352.189 53.128C350.398 51.784 348.222 51.112 345.662 51.112C342.334 51.112 339.614 52.072 337.502 53.992C335.39 55.912 333.821 58.408 332.798 61.48C331.838 64.552 331.357 67.848 331.357 71.368C331.357 75.336 331.902 79.112 332.99 82.696C334.077 86.216 335.742 89.096 337.981 91.336C340.222 93.576 343.037 94.696 346.429 94.696Z"/>
+              <path class="jv-letter" style="--lx:-14px;--ring:2" fill="#000" d="M378.01 97V94.12C379.994 94.12 381.37 93.64 382.138 92.68C382.906 91.656 383.354 90.28 383.482 88.552C383.61 86.76 383.674 84.712 383.674 82.408L383.77 60.52C383.77 59.496 383.77 58.472 383.77 57.448C383.834 56.424 383.962 55.368 384.154 54.28C383.002 54.344 381.85 54.408 380.698 54.472C379.61 54.536 378.49 54.6 377.338 54.664V50.632C380.154 50.632 382.266 50.504 383.674 50.248C385.146 49.992 386.234 49.672 386.938 49.288C387.642 48.904 388.218 48.488 388.666 48.04H391.45C391.514 48.488 391.546 49 391.546 49.576C391.61 50.152 391.674 50.792 391.738 51.496C391.802 52.2 391.834 53 391.834 53.896C393.242 52.68 394.778 51.592 396.442 50.632C398.17 49.672 399.962 48.904 401.818 48.328C403.738 47.752 405.626 47.464 407.482 47.464C413.05 47.464 417.114 49.224 419.674 52.744C422.234 56.2 423.514 61.608 423.514 68.968V86.824C423.514 88.104 423.482 89.256 423.418 90.28C423.418 91.24 423.322 92.264 423.13 93.352C424.154 93.288 425.146 93.256 426.106 93.256C427.13 93.192 428.154 93.128 429.178 93.064V97H409.594V94.12C411.578 94.12 412.954 93.64 413.722 92.68C414.49 91.656 414.938 90.28 415.066 88.552C415.194 86.76 415.258 84.712 415.258 82.408V68.968C415.194 63.464 414.266 59.304 412.474 56.488C410.746 53.672 407.994 52.296 404.218 52.36C401.914 52.424 399.642 53.032 397.402 54.184C395.226 55.336 393.402 56.808 391.93 58.6C391.994 59.112 392.026 59.688 392.026 60.328C392.026 60.968 392.026 61.64 392.026 62.344L391.93 86.824C391.93 88.104 391.898 89.256 391.834 90.28C391.834 91.24 391.738 92.264 391.546 93.352C392.57 93.288 393.562 93.256 394.522 93.256C395.546 93.192 396.57 93.128 397.594 93.064V97H378.01Z"/>
+            </g>
+            <g transform="translate(0 0)">
+              <g class="jv-pillar" style="--dx:42.81px;--s:0.75;--dy:9px;--k:0">
+                <g class="jv-pillar-rise">
+                  <g class="jv-pillar-head">
+                    <circle cx="151.192" cy="39" r="6" fill="black"/>
+                    <path d="M160.975 50H141.409C141.289 50 141.192 50.0954 141.192 50.2131V51.2786C141.192 51.3963 141.289 51.4917 141.409 51.4917H160.975C161.095 51.4917 161.192 51.3963 161.192 51.2786V50.2131C161.192 50.0954 161.095 50 160.975 50Z" fill="#1A1A1A"/>
+                    <path d="M158.366 51.4917H144.018V52.7703H158.366V51.4917Z" fill="#1A1A1A"/>
+                    <path d="M158.257 52.7703H144.127C143.466 52.7703 142.931 53.295 142.931 53.9423C142.931 54.5896 143.466 55.1144 144.127 55.1144H158.257C158.918 55.1144 159.453 54.5896 159.453 53.9423C159.453 53.295 158.918 52.7703 158.257 52.7703Z" fill="#1A1A1A"/>
+                    <path d="M157.279 55.5406H145.105C144.745 55.5406 144.453 55.8268 144.453 56.1799C144.453 56.5329 144.745 56.8192 145.105 56.8192H157.279C157.639 56.8192 157.931 56.5329 157.931 56.1799C157.931 55.8268 157.639 55.5406 157.279 55.5406Z" fill="#1A1A1A"/>
+                  </g>
+                  <path class="jv-pillar-shaft" d="M145.192 56H157.192V92H145.192V56ZM147.317 59.018C147.317 58.8464 147.396 58.682 147.537 58.5607C147.677 58.4394 147.868 58.3713 148.067 58.3713C148.266 58.3713 148.457 58.4394 148.597 58.5607C148.738 58.682 148.817 58.8464 148.817 59.018V88.982C148.817 89.1536 148.738 89.318 148.597 89.4393C148.457 89.5606 148.266 89.6287 148.067 89.6287C147.868 89.6287 147.677 89.5606 147.537 89.4393C147.396 89.318 147.317 89.1536 147.317 88.982V59.018ZM150.442 59.018C150.442 58.8464 150.521 58.682 150.662 58.5607C150.802 58.4394 150.993 58.3713 151.192 58.3713C151.391 58.3713 151.582 58.4394 151.722 58.5607C151.863 58.682 151.942 58.8464 151.942 59.018V88.982C151.942 89.1536 151.863 89.318 151.722 89.4393C151.582 89.5606 151.391 89.6287 151.192 89.6287C150.993 89.6287 150.802 89.5606 150.662 89.4393C150.521 89.318 150.442 89.1536 150.442 88.982V59.018ZM153.567 59.018C153.567 58.8464 153.646 58.682 153.787 58.5607C153.927 58.4394 154.118 58.3713 154.317 58.3713C154.516 58.3713 154.707 58.4394 154.847 58.5607C154.988 58.682 155.067 58.8464 155.067 59.018V88.982C155.067 89.1536 154.988 89.318 154.847 89.4393C154.707 89.5606 154.516 89.6287 154.317 89.6287C154.118 89.6287 153.927 89.5606 153.787 89.4393C153.646 89.318 153.567 89.1536 153.567 88.982V59.018Z" fill-rule="evenodd" clip-rule="evenodd" fill="#1A1A1A"/>
+                  <g>
+                    <path d="M160.975 96.8817H141.409C141.289 96.8817 141.192 96.9771 141.192 97.0948V98.1603C141.192 98.278 141.289 98.3734 141.409 98.3734H160.975C161.095 98.3734 161.192 98.278 161.192 98.1603V97.0948C161.192 96.9771 161.095 96.8817 160.975 96.8817Z" fill="#1A1A1A"/>
+                    <path d="M158.366 95.6031H144.018V96.8817H158.366V95.6031Z" fill="#1A1A1A"/>
+                    <path d="M158.257 93.259H144.127C143.466 93.259 142.931 93.7838 142.931 94.4311C142.931 95.0784 143.466 95.6031 144.127 95.6031H158.257C158.918 95.6031 159.453 95.0784 159.453 94.4311C159.453 93.7838 158.918 93.259 158.257 93.259Z" fill="#1A1A1A"/>
+                    <path d="M157.279 91.5542H145.105C144.745 91.5542 144.453 91.8405 144.453 92.1935C144.453 92.5466 144.745 92.8328 145.105 92.8328H157.279C157.639 92.8328 157.931 92.5466 157.931 92.1935C157.931 91.8405 157.639 91.5542 157.279 91.5542Z" fill="#1A1A1A"/>
+                  </g>
+                </g>
+              </g>
+            </g>
+            <g transform="translate(85 0)">
+              <g class="jv-pillar" style="--dx:-19.19px;--s:1;--dy:0px;--k:1">
+                <g class="jv-pillar-rise">
+                  <g class="jv-pillar-head">
+                    <circle cx="151.192" cy="39" r="6" fill="black"/>
+                    <path d="M160.975 50H141.409C141.289 50 141.192 50.0954 141.192 50.2131V51.2786C141.192 51.3963 141.289 51.4917 141.409 51.4917H160.975C161.095 51.4917 161.192 51.3963 161.192 51.2786V50.2131C161.192 50.0954 161.095 50 160.975 50Z" fill="#1A1A1A"/>
+                    <path d="M158.366 51.4917H144.018V52.7703H158.366V51.4917Z" fill="#1A1A1A"/>
+                    <path d="M158.257 52.7703H144.127C143.466 52.7703 142.931 53.295 142.931 53.9423C142.931 54.5896 143.466 55.1144 144.127 55.1144H158.257C158.918 55.1144 159.453 54.5896 159.453 53.9423C159.453 53.295 158.918 52.7703 158.257 52.7703Z" fill="#1A1A1A"/>
+                    <path d="M157.279 55.5406H145.105C144.745 55.5406 144.453 55.8268 144.453 56.1799C144.453 56.5329 144.745 56.8192 145.105 56.8192H157.279C157.639 56.8192 157.931 56.5329 157.931 56.1799C157.931 55.8268 157.639 55.5406 157.279 55.5406Z" fill="#1A1A1A"/>
+                  </g>
+                  <path class="jv-pillar-shaft" d="M145.192 56H157.192V92H145.192V56ZM147.317 59.018C147.317 58.8464 147.396 58.682 147.537 58.5607C147.677 58.4394 147.868 58.3713 148.067 58.3713C148.266 58.3713 148.457 58.4394 148.597 58.5607C148.738 58.682 148.817 58.8464 148.817 59.018V88.982C148.817 89.1536 148.738 89.318 148.597 89.4393C148.457 89.5606 148.266 89.6287 148.067 89.6287C147.868 89.6287 147.677 89.5606 147.537 89.4393C147.396 89.318 147.317 89.1536 147.317 88.982V59.018ZM150.442 59.018C150.442 58.8464 150.521 58.682 150.662 58.5607C150.802 58.4394 150.993 58.3713 151.192 58.3713C151.391 58.3713 151.582 58.4394 151.722 58.5607C151.863 58.682 151.942 58.8464 151.942 59.018V88.982C151.942 89.1536 151.863 89.318 151.722 89.4393C151.582 89.5606 151.391 89.6287 151.192 89.6287C150.993 89.6287 150.802 89.5606 150.662 89.4393C150.521 89.318 150.442 89.1536 150.442 88.982V59.018ZM153.567 59.018C153.567 58.8464 153.646 58.682 153.787 58.5607C153.927 58.4394 154.118 58.3713 154.317 58.3713C154.516 58.3713 154.707 58.4394 154.847 58.5607C154.988 58.682 155.067 58.8464 155.067 59.018V88.982C155.067 89.1536 154.988 89.318 154.847 89.4393C154.707 89.5606 154.516 89.6287 154.317 89.6287C154.118 89.6287 153.927 89.5606 153.787 89.4393C153.646 89.318 153.567 89.1536 153.567 88.982V59.018Z" fill-rule="evenodd" clip-rule="evenodd" fill="#1A1A1A"/>
+                  <g>
+                    <path d="M160.975 96.8817H141.409C141.289 96.8817 141.192 96.9771 141.192 97.0948V98.1603C141.192 98.278 141.289 98.3734 141.409 98.3734H160.975C161.095 98.3734 161.192 98.278 161.192 98.1603V97.0948C161.192 96.9771 161.095 96.8817 160.975 96.8817Z" fill="#1A1A1A"/>
+                    <path d="M158.366 95.6031H144.018V96.8817H158.366V95.6031Z" fill="#1A1A1A"/>
+                    <path d="M158.257 93.259H144.127C143.466 93.259 142.931 93.7838 142.931 94.4311C142.931 95.0784 143.466 95.6031 144.127 95.6031H158.257C158.918 95.6031 159.453 95.0784 159.453 94.4311C159.453 93.7838 158.918 93.259 158.257 93.259Z" fill="#1A1A1A"/>
+                    <path d="M157.279 91.5542H145.105C144.745 91.5542 144.453 91.8405 144.453 92.1935C144.453 92.5466 144.745 92.8328 145.105 92.8328H157.279C157.639 92.8328 157.931 92.5466 157.931 92.1935C157.931 91.8405 157.639 91.5542 157.279 91.5542Z" fill="#1A1A1A"/>
+                  </g>
+                </g>
+              </g>
+            </g>
+            <g transform="translate(156 0)">
+              <g class="jv-pillar" style="--dx:-68.19px;--s:1.139;--dy:-5px;--k:2">
+                <g class="jv-pillar-rise">
+                  <g class="jv-pillar-head">
+                    <circle cx="151.192" cy="39" r="6" fill="black"/>
+                    <path d="M160.975 50H141.409C141.289 50 141.192 50.0954 141.192 50.2131V51.2786C141.192 51.3963 141.289 51.4917 141.409 51.4917H160.975C161.095 51.4917 161.192 51.3963 161.192 51.2786V50.2131C161.192 50.0954 161.095 50 160.975 50Z" fill="#1A1A1A"/>
+                    <path d="M158.366 51.4917H144.018V52.7703H158.366V51.4917Z" fill="#1A1A1A"/>
+                    <path d="M158.257 52.7703H144.127C143.466 52.7703 142.931 53.295 142.931 53.9423C142.931 54.5896 143.466 55.1144 144.127 55.1144H158.257C158.918 55.1144 159.453 54.5896 159.453 53.9423C159.453 53.295 158.918 52.7703 158.257 52.7703Z" fill="#1A1A1A"/>
+                    <path d="M157.279 55.5406H145.105C144.745 55.5406 144.453 55.8268 144.453 56.1799C144.453 56.5329 144.745 56.8192 145.105 56.8192H157.279C157.639 56.8192 157.931 56.5329 157.931 56.1799C157.931 55.8268 157.639 55.5406 157.279 55.5406Z" fill="#1A1A1A"/>
+                  </g>
+                  <path class="jv-pillar-shaft" d="M145.192 56H157.192V92H145.192V56ZM147.317 59.018C147.317 58.8464 147.396 58.682 147.537 58.5607C147.677 58.4394 147.868 58.3713 148.067 58.3713C148.266 58.3713 148.457 58.4394 148.597 58.5607C148.738 58.682 148.817 58.8464 148.817 59.018V88.982C148.817 89.1536 148.738 89.318 148.597 89.4393C148.457 89.5606 148.266 89.6287 148.067 89.6287C147.868 89.6287 147.677 89.5606 147.537 89.4393C147.396 89.318 147.317 89.1536 147.317 88.982V59.018ZM150.442 59.018C150.442 58.8464 150.521 58.682 150.662 58.5607C150.802 58.4394 150.993 58.3713 151.192 58.3713C151.391 58.3713 151.582 58.4394 151.722 58.5607C151.863 58.682 151.942 58.8464 151.942 59.018V88.982C151.942 89.1536 151.863 89.318 151.722 89.4393C151.582 89.5606 151.391 89.6287 151.192 89.6287C150.993 89.6287 150.802 89.5606 150.662 89.4393C150.521 89.318 150.442 89.1536 150.442 88.982V59.018ZM153.567 59.018C153.567 58.8464 153.646 58.682 153.787 58.5607C153.927 58.4394 154.118 58.3713 154.317 58.3713C154.516 58.3713 154.707 58.4394 154.847 58.5607C154.988 58.682 155.067 58.8464 155.067 59.018V88.982C155.067 89.1536 154.988 89.318 154.847 89.4393C154.707 89.5606 154.516 89.6287 154.317 89.6287C154.118 89.6287 153.927 89.5606 153.787 89.4393C153.646 89.318 153.567 89.1536 153.567 88.982V59.018Z" fill-rule="evenodd" clip-rule="evenodd" fill="#1A1A1A"/>
+                  <g>
+                    <path d="M160.975 96.8817H141.409C141.289 96.8817 141.192 96.9771 141.192 97.0948V98.1603C141.192 98.278 141.289 98.3734 141.409 98.3734H160.975C161.095 98.3734 161.192 98.278 161.192 98.1603V97.0948C161.192 96.9771 161.095 96.8817 160.975 96.8817Z" fill="#1A1A1A"/>
+                    <path d="M158.366 95.6031H144.018V96.8817H158.366V95.6031Z" fill="#1A1A1A"/>
+                    <path d="M158.257 93.259H144.127C143.466 93.259 142.931 93.7838 142.931 94.4311C142.931 95.0784 143.466 95.6031 144.127 95.6031H158.257C158.918 95.6031 159.453 95.0784 159.453 94.4311C159.453 93.7838 158.918 93.259 158.257 93.259Z" fill="#1A1A1A"/>
+                    <path d="M157.279 91.5542H145.105C144.745 91.5542 144.453 91.8405 144.453 92.1935C144.453 92.5466 144.745 92.8328 145.105 92.8328H157.279C157.639 92.8328 157.931 92.5466 157.931 92.1935C157.931 91.8405 157.639 91.5542 157.279 91.5542Z" fill="#1A1A1A"/>
+                  </g>
+                </g>
+              </g>
+            </g>
+            </svg>
+        </div>
+        <button type="button" id="btn-jv-intro-pular" class="jv-intro-skip">Pular animação</button>
+    </div>
+
+    <!-- ====================================================================
+         LANDING PAGE INSTITUCIONAL (Entrada para Visitantes e Novos Usuários)
+         ==================================================================== -->
+    <div id="landing-view" class="landing-view">
+        <header class="lp-header">
+            <div class="lp-header-inner">
+                <a href="#lp-hero" class="brand-lockup" aria-label="JuriVision — Início">
+                    <img
+                        src="/assets/jurivision-logo.svg"
+                        alt="JuriVision"
+                        width="433"
+                        height="123"
+                        class="brand-logo-img"
+                    >
+                    <span class="brand-divider" aria-hidden="true"></span>
+                    <span class="brand-descriptor">Inteligência Jurídica</span>
+                </a>
+
+                <nav class="lp-nav" aria-label="Navegação da página inicial">
+                    <a href="#lp-objetivo" class="lp-nav-link">Por onde começar</a>
+                    <a href="#lp-demonstracao" class="lp-nav-link">A plataforma</a>
+                    <a href="#lp-confianca" class="lp-nav-link">Segurança jurídica</a>
+                    <a href="#lp-planos" class="lp-nav-link">Planos</a>
+                </nav>
+
+                <div class="lp-header-actions">
+                    <button type="button" id="btn-lp-login" class="btn btn-secondary btn-sm">
+                        Entrar
+                    </button>
+                    <button type="button" id="btn-lp-register" class="btn btn-primary btn-sm">
+                        Criar conta gratuita
+                    </button>
+                </div>
             </div>
+        </header>
 
-            <nav class="sidebar-nav" aria-label="Áreas de trabalho jurídico">
-                <div class="nav-section" id="sidebar-tablist" role="tablist" aria-orientation="vertical" aria-label="Módulos principais">
-                    <div class="nav-section-title">Navegação Principal</div>
+        <section id="lp-hero" class="lp-hero">
+            <div class="lp-container lp-hero-grid">
+                <div class="lp-hero-copy">
+                    <span class="lp-hero-kicker">Pesquisa Jurisprudencial · Jurimetria · DataJud (CNJ)</span>
+                    <h1 class="lp-hero-title">
+                        Decisões estratégicas com lastro em precedentes reais.
+                    </h1>
+                    <p class="lp-hero-subtitle">
+                        Pesquise jurisprudência por magistrado ou matéria, acompanhe indicadores jurimétricos transparentes e confronte petições em PDF em uma interface pensada para a rotina da advocacia.
+                    </p>
+                    <div class="lp-hero-actions">
+                        <button type="button" id="btn-lp-hero-register" class="btn btn-primary">
+                            Criar conta gratuita
+                        </button>
+                        <button type="button" id="btn-lp-explore" class="btn btn-secondary">
+                            Explorar plataforma
+                        </button>
+                    </div>
+                    <p class="lp-hero-reassurance">
+                        Cadastro com inscrição OAB · Sem cartão de crédito · 3 análises gratuitas de petições em PDF
+                    </p>
+                </div>
 
+                <div class="lp-hero-visual" aria-label="Exemplo ilustrativo da interface de pesquisa e jurimetria">
+                    <div class="lp-preview-card">
+                        <div class="lp-preview-topbar">
+                            <span class="lp-preview-badge">Exemplo ilustrativo de leitura</span>
+                            <span class="lp-preview-tribunal">TJAL · Consulta integrada DataJud</span>
+                        </div>
+                        <div class="lp-preview-search-bar">
+                            <span class="lp-preview-query">Dano moral · Responsabilidade civil</span>
+                            <span class="lp-preview-search-btn">Pesquisar</span>
+                        </div>
+                        <div class="lp-preview-metrics-row">
+                            <div class="lp-preview-metric">
+                                <span class="lp-preview-metric-label">Base consultada</span>
+                                <strong class="lp-preview-metric-value">Lastro auditável</strong>
+                                <span class="lp-preview-metric-sub">Denominador sempre visível</span>
+                            </div>
+                            <div class="lp-preview-metric">
+                                <span class="lp-preview-metric-label">Desfechos</span>
+                                <strong class="lp-preview-metric-value lp-preview-fav">Procedente / Acordo</strong>
+                                <span class="lp-preview-metric-sub">Separação por juízo e tema</span>
+                            </div>
+                        </div>
+                        <div class="lp-preview-doc-row">
+                            <div class="lp-preview-doc-meta">Órgão julgador · Magistrado(a) · Número CNJ</div>
+                            <div class="lp-preview-doc-title">Ementa estruturada com acesso imediato à decisão</div>
+                            <div class="lp-preview-doc-actions">
+                                <span>Ler decisão →</span>
+                                <span>Copiar referência</span>
+                                <span>Exportar PDF</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Seção 1: Entrada guiada por objetivo (inspirada no fluxo direto de escolha) -->
+        <section id="lp-objetivo" class="lp-section lp-reveal">
+            <div class="lp-container">
+                <div class="lp-section-header">
+                    <span class="lp-section-eyebrow">Por onde começar</span>
+                    <h2 class="lp-section-title">Comece pelo que você precisa resolver agora</h2>
+                    <p class="lp-section-desc">
+                        Selecione seu foco principal para criar a conta já no módulo correspondente ou abrir a interface diretamente.
+                    </p>
+                </div>
+
+                <div class="lp-goals-grid" role="group" aria-label="Escolha seu objetivo inicial">
+                    <button type="button" class="lp-goal-card is-selected" data-lp-goal="historico" aria-pressed="true">
+                        <span class="lp-goal-tag">01 · Pesquisa</span>
+                        <strong class="lp-goal-title">Pesquisar precedentes e DataJud (CNJ)</strong>
+                        <span class="lp-goal-desc">
+                            Consulte decisões por assunto, magistrado ou número CNJ e sincronize julgados diretamente da base pública do tribunal.
+                        </span>
+                    </button>
+
+                    <button type="button" class="lp-goal-card" data-lp-goal="dashboard" aria-pressed="false">
+                        <span class="lp-goal-tag">02 · Jurimetria</span>
+                        <strong class="lp-goal-title">Analisar perfil de magistrados</strong>
+                        <span class="lp-goal-desc">
+                            Compare proporções de procedência, acordos e improcedências por juízo e por matéria com filtros dinâmicos.
+                        </span>
+                    </button>
+
+                    <button type="button" class="lp-goal-card" data-lp-goal="upload" aria-pressed="false">
+                        <span class="lp-goal-tag">03 · Petições</span>
+                        <strong class="lp-goal-title">Confrontar petição em PDF</strong>
+                        <span class="lp-goal-desc">
+                            Envie uma peça processual para extrair metadados, resguardar dados pessoais e gerar relatório analítico em PDF.
+                        </span>
+                    </button>
+                </div>
+
+                <div id="lp-goal-cta-bar" class="lp-goal-cta-bar">
+                    <div class="lp-goal-cta-info">
+                        <span class="lp-goal-cta-kicker">Objetivo selecionado</span>
+                        <strong id="lp-goal-selected-label">Pesquisar precedentes e DataJud (CNJ)</strong>
+                    </div>
+                    <div class="lp-goal-cta-actions">
+                        <button type="button" id="btn-lp-goal-register" class="btn btn-primary btn-sm">
+                            Criar conta e iniciar neste módulo
+                        </button>
+                        <button type="button" id="btn-lp-goal-explore" class="btn btn-secondary btn-sm">
+                            Explorar módulo agora →
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Seção 2: Demonstração interativa dos módulos (inspirada na prévia funcional clara) -->
+        <section id="lp-demonstracao" class="lp-section lp-section-alt lp-reveal">
+            <div class="lp-container">
+                <div class="lp-section-header">
+                    <span class="lp-section-eyebrow">A plataforma na prática</span>
+                    <h2 class="lp-section-title">Conheça os módulos antes de criar sua conta</h2>
+                    <p class="lp-section-desc">
+                        Alterne entre as três áreas do JuriVision para ver como as informações são organizadas sem menus ocultos nem jargões de engenharia.
+                    </p>
+                </div>
+
+                <div class="lp-demo-tabs" role="tablist" aria-label="Prévia dos módulos da plataforma">
+                    <button type="button" role="tab" class="lp-demo-tab active" data-lp-demo="historico" aria-selected="true">
+                        Pesquisa Jurisprudencial
+                    </button>
+                    <button type="button" role="tab" class="lp-demo-tab" data-lp-demo="dashboard" aria-selected="false">
+                        Análise Jurimétrica
+                    </button>
+                    <button type="button" role="tab" class="lp-demo-tab" data-lp-demo="upload" aria-selected="false">
+                        Análise de Petição
+                    </button>
+                </div>
+
+                <div class="lp-demo-stage">
+                    <div class="lp-demo-panel active" data-lp-demo-panel="historico">
+                        <div class="lp-demo-visual">
+                            <span class="lp-demo-illustration-tag">Prévia ilustrativa da interface</span>
+                            <div class="lp-demo-mock-search">
+                                <div class="lp-demo-mock-input">Buscar por tese, assunto, magistrado ou número CNJ...</div>
+                                <div class="lp-demo-mock-filters">
+                                    <span>Assunto</span>
+                                    <span>Magistrado(a)</span>
+                                    <span>Ordenação</span>
+                                    <span>Acervo</span>
+                                </div>
+                            </div>
+                            <div class="lp-demo-mock-card">
+                                <div class="lp-demo-mock-meta">TJAL · Vara Cível · Número CNJ · Data de julgamento</div>
+                                <strong>Leitura documental em Cartões ou Tabela</strong>
+                                <p>Visualize a síntese factual, salve decisões de referência, copie a citação formatada ou gere o relatório em PDF.</p>
+                            </div>
+                        </div>
+                        <div class="lp-demo-highlights">
+                            <h3>Pesquisa direta com vocabulário forense</h3>
+                            <ul class="lp-demo-list">
+                                <li>Busca unificada por termos livres, assunto, magistrado ou número CNJ.</li>
+                                <li>Consulta individual e sincronização de julgados pela API Pública do DataJud (CNJ).</li>
+                                <li>Cadastro e edição manual de julgados do próprio escritório em conta isolada.</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="lp-demo-panel" data-lp-demo-panel="dashboard" hidden>
+                        <div class="lp-demo-visual">
+                            <span class="lp-demo-illustration-tag">Prévia ilustrativa da interface</span>
+                            <div class="lp-demo-mock-charts">
+                                <div class="lp-demo-mock-box">
+                                    <strong>Desfecho das Decisões</strong>
+                                    <div class="lp-demo-bars">
+                                        <span class="lp-bar-row"><i style="width: 60%; background: #185A43;"></i> Procedentes</span>
+                                        <span class="lp-bar-row"><i style="width: 15%; background: #2B598A;"></i> Acordos</span>
+                                        <span class="lp-bar-row"><i style="width: 25%; background: #C2555E;"></i> Improcedentes</span>
+                                    </div>
+                                </div>
+                                <div class="lp-demo-mock-box">
+                                    <strong>Perfil por Magistrado e Assunto</strong>
+                                    <p>Alterne entre Quantidade e Percentual (%) e clique diretamente nas barras para abrir os processos.</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="lp-demo-highlights">
+                            <h3>Indicadores claros e rastreáveis</h3>
+                            <ul class="lp-demo-list">
+                                <li>Separação real entre sentenças procedentes, acordos homologados e improcedências.</li>
+                                <li>Filtros dinâmicos por assunto e magistrado atualizam todo o painel na hora.</li>
+                                <li>Cada percentual informa o total de decisões analisadas no recorte.</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="lp-demo-panel" data-lp-demo-panel="upload" hidden>
+                        <div class="lp-demo-visual">
+                            <span class="lp-demo-illustration-tag">Prévia ilustrativa da interface</span>
+                            <div class="lp-demo-mock-steps">
+                                <span>1. Envio (.PDF ou .CSV)</span>
+                                <span>2. Sigilo de Dados</span>
+                                <span>3. Extração</span>
+                                <span>4. Precedentes do Juízo</span>
+                                <span>5. Parecer Comparativo</span>
+                            </div>
+                            <div class="lp-demo-mock-card">
+                                <strong>Parecer estruturado pronto para exportação</strong>
+                                <p>Extrai órgão julgador, magistrado e síntese factual, confrontando com o histórico do tribunal.</p>
+                            </div>
+                        </div>
+                        <div class="lp-demo-highlights">
+                            <h3>Confronto ágil de petições e planilhas</h3>
+                            <ul class="lp-demo-list">
+                                <li>Envio de petições em PDF (até 15MB) e importação em lote via CSV.</li>
+                                <li>Ocultação automática de identificadores pessoais antes da análise.</li>
+                                <li>Exportação de relatório estratégico em PDF pronto para o processo.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Seção 3: Confiança jurídica e conforto entre gerações -->
+        <section id="lp-confianca" class="lp-section lp-reveal">
+            <div class="lp-container">
+                <div class="lp-section-header">
+                    <span class="lp-section-eyebrow">Segurança jurídica</span>
+                    <h2 class="lp-section-title">Solidez para o advogado experiente, agilidade para a nova geração</h2>
+                    <p class="lp-section-desc">
+                        Projetado para unir a previsibilidade documental que o contencioso exige à fluidez de uma ferramenta web moderna.
+                    </p>
+                </div>
+
+                <div class="lp-trust-grid">
+                    <article class="lp-trust-card">
+                        <h3>Transparência sem caixa-preta</h3>
+                        <p>Todo indicador informa o número exato de julgados considerados e leva diretamente às decisões que originaram o cálculo.</p>
+                    </article>
+                    <article class="lp-trust-card">
+                        <h3>Vocabulário jurídico real</h3>
+                        <p>Rótulos diretos — Número CNJ, Órgão Julgador, Magistrado, Ementa — e tipografia pensada para leitura prolongada sem fadiga visual.</p>
+                    </article>
+                    <article class="lp-trust-card">
+                        <h3>Sigilo documental integrado</h3>
+                        <p>Nomes completos, CPFs, RGs e contatos de pessoas físicas são ocultados localmente antes da indexação ou análise.</p>
+                    </article>
+                    <article class="lp-trust-card">
+                        <h3>Acervo isolado por OAB</h3>
+                        <p>Cada advogado mantém sua base privada protegida por autenticação, com cadastro próprio de julgados e relatórios em PDF.</p>
+                    </article>
+                </div>
+            </div>
+        </section>
+
+        <!-- Seção 4: Planos transparentes -->
+        <section id="lp-planos" class="lp-section lp-section-alt lp-reveal">
+            <div class="lp-container">
+                <div class="lp-section-header">
+                    <span class="lp-section-eyebrow">Planos</span>
+                    <h2 class="lp-section-title">Comece gratuitamente e evolua no ritmo do seu escritório</h2>
+                    <p class="lp-section-desc">
+                        Crie sua conta em menos de um minuto informando sua inscrição na OAB.
+                    </p>
+                </div>
+
+                <div class="lp-plans-grid">
+                    <article class="lp-plan-card">
+                        <div class="lp-plan-head">
+                            <h3>Plano Gratuito (FREE)</h3>
+                            <strong class="lp-plan-price">R$ 0</strong>
+                        </div>
+                        <p class="lp-plan-subtitle">Ideal para experimentar a pesquisa, jurimetria e análise de petições.</p>
+                        <ul class="lp-plan-list">
+                            <li>Até 3 análises de petições em PDF</li>
+                            <li>Pesquisa jurisprudencial e consulta ao DataJud (CNJ)</li>
+                            <li>Painel de análise jurimétrica com filtros dinâmicos</li>
+                            <li>Cadastro manual de julgados do escritório</li>
+                        </ul>
+                        <button type="button" id="btn-lp-plan-free" class="btn btn-secondary btn-full">
+                            Criar conta gratuita
+                        </button>
+                    </article>
+
+                    <article class="lp-plan-card lp-plan-card-featured">
+                        <div class="lp-plan-head">
+                            <div>
+                                <span class="lp-plan-badge">Recomendado para bancas</span>
+                                <h3>Plano Escritório (PRO)</h3>
+                            </div>
+                            <strong class="lp-plan-price">Cortesia CONAD 2026</strong>
+                        </div>
+                        <p class="lp-plan-subtitle">Uso completo sem limites para advogados e escritórios.</p>
+                        <ul class="lp-plan-list">
+                            <li>Análises ilimitadas de petições em PDF</li>
+                            <li>Importação em lote de acervos via planilha CSV</li>
+                            <li>Tese estratégica e precedentes correlatos completos</li>
+                            <li>Exportação ilimitada de relatórios em PDF</li>
+                        </ul>
+                        <button type="button" id="btn-lp-plan-pro" class="btn btn-primary btn-full">
+                            Criar conta e conhecer o PRO
+                        </button>
+                    </article>
+                </div>
+
+                <p class="lp-pricing-reassurance">
+                    Sem cartão de crédito · Acesso imediato após o cadastro · Seus processos permanecem isolados na sua conta
+                </p>
+            </div>
+        </section>
+
+        <footer class="site-footer lp-footer">
+            <div class="site-footer-inner">
+                <div class="footer-brand-col">
+                    <img
+                        src="/assets/jurivision-logo.svg"
+                        alt="JuriVision"
+                        width="433"
+                        height="123"
+                        class="brand-logo-img brand-logo-inverted"
+                    >
+                    <span class="footer-note">Pesquisa Jurisprudencial e Jurimetria · Integração DataJud (CNJ)</span>
+                </div>
+
+                <nav class="footer-nav-links" aria-label="Navegação do rodapé">
+                    <a href="#lp-objetivo" class="footer-link-btn">Por onde começar</a>
+                    <a href="#lp-demonstracao" class="footer-link-btn">A plataforma</a>
+                    <a href="#lp-planos" class="footer-link-btn">Planos</a>
+                    <button type="button" class="footer-link-btn" data-footer-action="methodology">Sobre os dados e privacidade</button>
+                </nav>
+            </div>
+        </footer>
+    </div>
+
+    <div id="app-shell" class="app-shell hidden">
+        <!-- ================================================================
+             CABEÇALHO ARQUITETURAL UNIFICADO (Logo Oficial + Navegação)
+             ================================================================ -->
+        <header class="site-header">
+            <div class="site-header-inner">
+                <button type="button" id="btn-brand-home" class="brand-lockup" aria-label="Voltar para a página inicial do JuriVision">
+                    <img
+                        src="/assets/jurivision-logo.svg"
+                        alt="JuriVision"
+                        width="433"
+                        height="123"
+                        class="brand-logo-img"
+                    >
+                    <span class="brand-divider" aria-hidden="true"></span>
+                    <span class="brand-descriptor">Inteligência Jurídica</span>
+                </button>
+
+                <nav class="primary-tabs" id="sidebar-tablist" role="tablist" aria-orientation="horizontal" aria-label="Módulos principais">
                     <button
                         type="button"
                         role="tab"
@@ -38,13 +516,10 @@
                         aria-selected="true"
                         aria-controls="panel-historico"
                         tabindex="0"
-                        class="nav-item active"
+                        class="primary-tab-btn active"
                     >
-                        <span class="nav-item-label">
-                            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-                            <span>Pesquisar Jurisprudência</span>
-                        </span>
-                        <span id="sidebar-total-count" class="nav-count">10</span>
+                        <span>Pesquisa Jurisprudencial</span>
+                        <span id="sidebar-total-count" class="nav-count">0</span>
                     </button>
 
                     <button
@@ -54,12 +529,9 @@
                         aria-selected="false"
                         aria-controls="panel-dashboard"
                         tabindex="-1"
-                        class="nav-item"
+                        class="primary-tab-btn"
                     >
-                        <span class="nav-item-label">
-                            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>
-                            <span>Análise Jurimétrica</span>
-                        </span>
+                        <span>Análise Jurimétrica</span>
                     </button>
 
                     <button
@@ -69,96 +541,47 @@
                         aria-selected="false"
                         aria-controls="panel-upload"
                         tabindex="-1"
-                        class="nav-item"
+                        class="primary-tab-btn"
                     >
-                        <span class="nav-item-label">
-                            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/></svg>
-                            <span>Análise de Petição</span>
-                        </span>
+                        <span>Análise de Petição</span>
                     </button>
-                </div>
+                </nav>
 
-                <!-- Biblioteca do Escritório e Metodologia -->
-                <div class="nav-section">
-                    <div class="nav-section-title">Biblioteca e Apoio</div>
-
-                    <button type="button" class="nav-item" id="btn-nav-saved-decisions">
-                        <span class="nav-item-label">
-                            <span>Decisões Salvas</span>
-                        </span>
-                        <span id="sidebar-saved-count" class="nav-count">2</span>
+                <div class="header-account-actions">
+                    <button
+                        type="button"
+                        id="btn-open-upgrade-modal"
+                        class="plan-badge-btn plan-badge-free hidden"
+                        aria-label="Gerenciar plano de assinatura e cotas"
+                    >
+                        <span id="plan-status-badge">Plano FREE · 0/3</span>
                     </button>
-
-                    <button type="button" class="nav-item" id="btn-nav-export-pdf">
-                        <span class="nav-item-label">
-                            <span>Relatórios e Exportação</span>
-                        </span>
+                    <button type="button" id="btn-open-register" class="btn btn-secondary btn-sm">
+                        Criar conta
                     </button>
-
-                    <button type="button" class="nav-item" id="btn-open-methodology">
-                        <span class="nav-item-label">
-                            <span>Ajuda e Metodologia</span>
-                        </span>
-                    </button>
-                </div>
-
-                <div class="sidebar-corpus-note">
-                    <span class="sidebar-saved-desc">Acervo TJAL · Maceió</span>
-                    <span class="sidebar-corpus-sub">Cível e Trabalhista</span>
-                </div>
-            </nav>
-
-            <div class="sidebar-footer">
-                <div class="lawyer-profile">
-                    <div class="lawyer-info">
-                        <strong id="sidebar-user-name">Dr. Lucas Gabriel</strong>
-                        <span id="sidebar-user-oab">OAB/AL 12.345</span>
-                    </div>
                     <button
                         type="button"
                         id="btn-open-login"
-                        class="btn btn-ghost btn-sm"
+                        class="btn btn-primary btn-sm"
                         aria-label="Gerenciar conta e autenticação do advogado"
                     >
-                        Conta
+                        <span id="account-profile-info" class="account-profile-info hidden">
+                            <strong id="sidebar-user-name"></strong>
+                            <span id="sidebar-user-oab" class="lawyer-oab-tag"></span>
+                            <span class="profile-chevron" aria-hidden="true">▾</span>
+                        </span>
+                        <span id="account-login-label">Entrar</span>
                     </button>
                 </div>
-                <button type="button" id="btn-open-register" class="btn btn-secondary btn-sm">
-                    Criar conta
-                </button>
             </div>
-        </aside>
+        </header>
 
         <!-- ================================================================
              ÁREA DE TRABALHO PRINCIPAL
              ================================================================ -->
         <main id="main-content" class="main-workspace">
-            <!-- Cabeçalho de Localização e Contexto -->
-            <header class="context-header">
-                <nav class="breadcrumb-bar" aria-label="Localização na plataforma">
-                    <span>JuriVision</span>
-                    <span aria-hidden="true">/</span>
-                    <span class="breadcrumb-current" id="header-title">Pesquisa Jurisprudencial</span>
-                </nav>
-
-                <div class="header-meta-group">
-                    <button
-                        type="button"
-                        id="btn-open-upgrade-modal"
-                        class="plan-badge-btn plan-badge-pro"
-                        aria-label="Gerenciar plano de assinatura e cotas"
-                    >
-                        <span id="plan-status-badge">Plano PRO · Ilimitado</span>
-                    </button>
-                    <span id="api-status-badge" class="status-inline" role="status">
-                        <span class="dot dot-neutral" aria-hidden="true"></span>
-                        <span>Verificando base...</span>
-                    </span>
-                </div>
-            </header>
-
             <!-- ============================================================
-                 TELA 1 — PESQUISA JURISPRUDENCIAL E RESULTADOS DOCUMENTAIS
+                 TELA 1 — PESQUISA JURISPRUDENCIAL (Layout em Barra Superior)
                  (#panel-historico)
                  ============================================================ -->
             <section
@@ -168,170 +591,161 @@
                 tabindex="0"
                 class="tab-panel active"
             >
-                <div class="page-container">
-                    <div class="page-intro">
+                <div class="workspace-container">
+                    <div class="search-page-header">
                         <div>
-                            <div class="page-eyebrow">Acervo TJAL · Maceió</div>
                             <h1 class="page-title">Pesquisa de Precedentes</h1>
                             <p class="page-description">
-                                Consulte decisões judiciais por tese, matéria, magistrado ou número do processo.
+                                Consulte as decisões do seu acervo por tese, matéria, magistrado ou número CNJ.
                             </p>
                         </div>
-                        <div class="page-intro-actions">
-                            <button type="button" class="btn btn-ghost btn-sm" id="btn-go-jurimetria-from-search">
-                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>
-                                <span>Ver na Jurimetria</span>
-                            </button>
-                        </div>
+
+                        <button type="button" class="btn btn-secondary btn-sm" id="btn-go-jurimetria-from-search">
+                            <span>Ver indicadores na Jurimetria →</span>
+                        </button>
                     </div>
 
-                    <!-- Câmara de Pesquisa Simples e Refinamento Progressivo -->
-                    <form id="form-filtros-historico" class="search-chamber" aria-label="Formulário de pesquisa jurisprudencial">
-                        <div class="field-group">
-                            <label for="filtro-busca" class="field-label">
-                                Termo de busca ou número CNJ
-                            </label>
-                            <div class="primary-search-row">
-                                <div class="search-input-wrapper">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-                                    <input
-                                        id="filtro-busca"
-                                        type="text"
-                                        placeholder="Ex.: dano moral atraso de voo, negativação indevida ou 0088210-12.2026.8.02.0001"
-                                        class="search-input-large"
-                                    >
+                    <form id="form-filtros-historico" class="search-console-pane" aria-label="Formulário de pesquisa jurisprudencial">
+                            <div class="field-group">
+                                <label for="filtro-busca" class="field-label">
+                                    Termo de busca ou número CNJ
+                                </label>
+                                <div class="primary-search-row">
+                                    <div class="search-input-wrapper">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                                        <input
+                                            id="filtro-busca"
+                                            type="text"
+                                            placeholder="Ex.: dano moral atraso de voo, negativação indevida ou 0088210-12.2026.8.02.0001"
+                                            class="search-input-large"
+                                        >
+                                    </div>
+                                    <button type="submit" class="btn btn-primary btn-search-submit">
+                                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                                        <span>Pesquisar</span>
+                                    </button>
                                 </div>
-                                <button type="submit" class="btn btn-primary btn-search-submit">
-                                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-                                    <span>Pesquisar</span>
+                                <p class="search-helper-hint">
+                                    Pesquise por palavra-chave, nome do magistrado ou informe um número CNJ para consultar metadados no DataJud.
+                                </p>
+                            </div>
+
+                            <div class="search-filters-grid">
+                                <div class="field-group">
+                                    <label for="filtro-tema" class="field-label">Assunto</label>
+                                    <select id="filtro-tema" class="control-select">
+                                        <option value="">Todos os assuntos</option>
+                                    </select>
+                                </div>
+
+                                <div class="field-group">
+                                    <label for="filtro-juiz" class="field-label">Magistrado(a)</label>
+                                    <select id="filtro-juiz" class="control-select">
+                                        <option value="">Todos os magistrados</option>
+                                    </select>
+                                </div>
+
+                                <div class="field-group">
+                                    <label for="filtro-ordenacao" class="field-label">Ordenação</label>
+                                    <select id="filtro-ordenacao" class="control-select">
+                                        <option value="recentes">Mais recentes primeiro</option>
+                                        <option value="antigas">Mais antigas primeiro</option>
+                                        <option value="assunto">Por assunto (A–Z)</option>
+                                    </select>
+                                </div>
+
+                                <div class="field-group">
+                                    <label for="filtro-colecao" class="field-label">Acervo</label>
+                                    <select id="filtro-colecao" class="control-select">
+                                        <option value="todos">Todo o acervo</option>
+                                        <option value="salvos">Decisões salvas</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="search-secondary-bar">
+                                <div class="search-secondary-actions">
+                                    <button
+                                        type="button"
+                                        id="btn-consultar-datajud"
+                                        class="btn-text-action"
+                                        title="Consultar metadados oficiais do processo na API Pública do DataJud (CNJ)"
+                                    >
+                                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><circle cx="11.5" cy="14.5" r="2.5"/><path d="M13.3 16.3 15 18"/></svg>
+                                        <span>Consultar no DataJud (CNJ)</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        id="btn-sincronizar-datajud"
+                                        class="btn-text-action"
+                                        title="Coletar automaticamente lote de decisões recentes do DataJud (CNJ) e atualizar a base local"
+                                    >
+                                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                                        <span>Sincronizar lote DataJud</span>
+                                    </button>
+                                </div>
+
+                                <button type="button" id="btn-limpar-filtros" class="btn-text-action btn-text-muted">
+                                    <span>Limpar filtros</span>
                                 </button>
                             </div>
-                        </div>
 
-                        <!-- Filtros Compactos -->
-                        <div class="search-filters-grid">
-                            <div class="field-group">
-                                <label for="filtro-tema" class="field-label">Assunto</label>
-                                <select id="filtro-tema" class="control-select">
-                                    <option value="">Todos os assuntos</option>
-                                    <option value="Dano Moral">Responsabilidade Civil / Dano Moral</option>
-                                    <option value="Atraso de Voo">Direito do Consumidor / Transporte Aéreo</option>
-                                    <option value="Direito Trabalhista">Direito do Trabalho</option>
-                                    <option value="Plano de Saúde">Direito à Saúde / Plano de Saúde</option>
-                                    <option value="Tributário">Direito Tributário</option>
-                                </select>
-                            </div>
-
-                            <div class="field-group">
-                                <label for="filtro-juiz" class="field-label">Magistrado(a)</label>
-                                <select id="filtro-juiz" class="control-select">
-                                    <option value="">Todos os magistrados</option>
-                                    <option value="Rafael De Amorim">Dr. Rafael De Amorim (1ª Cível / 2ª VT)</option>
-                                    <option value="Maria Silva">Dra. Maria Silva (1ª Cível)</option>
-                                    <option value="Carlos Souza">Dr. Carlos Souza (3ª Cível)</option>
-                                </select>
-                            </div>
-
-                            <div class="field-group">
-                                <label for="filtro-ordenacao" class="field-label">Ordenação</label>
-                                <select id="filtro-ordenacao" class="control-select">
-                                    <option value="recentes">Mais recentes primeiro</option>
-                                    <option value="antigas">Mais antigas primeiro</option>
-                                    <option value="assunto">Por assunto (A–Z)</option>
-                                </select>
-                            </div>
-
-                            <div class="field-group">
-                                <label for="filtro-colecao" class="field-label">Acervo</label>
-                                <select id="filtro-colecao" class="control-select">
-                                    <option value="todos">Todo o acervo</option>
-                                    <option value="salvos">Decisões salvas</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <!-- Linha Discreta de Ações Secundárias -->
-                        <div class="search-secondary-bar">
-                            <button
-                                type="button"
-                                id="btn-consultar-datajud"
-                                class="btn-text-action"
-                                title="Consultar metadados oficiais do processo na API Pública do DataJud (CNJ)"
-                            >
-                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><circle cx="11.5" cy="14.5" r="2.5"/><path d="M13.3 16.3 15 18"/></svg>
-                                <span>Consultar no DataJud (CNJ)</span>
-                            </button>
-
-                            <button
-                                type="button"
-                                id="btn-sincronizar-datajud"
-                                class="btn-text-action"
-                                title="Coletar automaticamente lote de decisões recentes do DataJud (CNJ) e atualizar a base local"
-                            >
-                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                                <span>Sincronizar lote DataJud</span>
-                            </button>
-
-                            <button type="button" id="btn-limpar-filtros" class="btn-text-action btn-text-muted">
-                                <span>Limpar filtros</span>
-                            </button>
-                        </div>
-
-                        <!-- Retorno da Consulta Oficial ao DataJud (CNJ) -->
-                        <div id="datajud-result-box" class="datajud-panel hidden">
-                            <div class="datajud-header">
-                                <div class="datajud-meta-badges">
-                                    <span class="datajud-tribunal-tag" id="dj-badge-tribunal">CNJ · TJAL</span>
-                                    <span id="dj-badge-fonte" class="datajud-source">Índice Público Nacional DataJud</span>
+                            <!-- Retorno DataJud (CNJ) -->
+                            <div id="datajud-result-box" class="datajud-panel hidden">
+                                <div class="datajud-header">
+                                    <div class="datajud-meta-badges">
+                                        <span class="datajud-tribunal-tag" id="dj-badge-tribunal">CNJ · TJAL</span>
+                                        <span id="dj-badge-fonte" class="datajud-source">Índice Público Nacional DataJud</span>
+                                    </div>
+                                    <button type="button" id="btn-fechar-datajud" class="btn-text-action btn-text-muted">Ocultar</button>
                                 </div>
-                                <button type="button" id="btn-fechar-datajud" class="btn-text-action btn-text-muted">Ocultar</button>
+
+                                <h3 id="dj-numero-processo" class="datajud-title"></h3>
+
+                                <div class="datajud-grid">
+                                    <div class="datajud-field">
+                                        <span class="datajud-field-label">Classe Processual</span>
+                                        <span id="dj-classe" class="datajud-field-value"></span>
+                                    </div>
+                                    <div class="datajud-field">
+                                        <span class="datajud-field-label">Assunto Principal</span>
+                                        <span id="dj-assunto" class="datajud-field-value"></span>
+                                    </div>
+                                    <div class="datajud-field">
+                                        <span class="datajud-field-label">Órgão Julgador</span>
+                                        <span id="dj-orgao" class="datajud-field-value"></span>
+                                    </div>
+                                    <div class="datajud-field">
+                                        <span class="datajud-field-label">Data de Ajuizamento</span>
+                                        <span id="dj-data" class="datajud-field-value"></span>
+                                    </div>
+                                </div>
+
+                                <div id="dj-movimentacoes-wrap" class="datajud-movements">
+                                    <strong class="datajud-movements-heading">Últimas Movimentações Processuais Registradas:</strong>
+                                    <ul id="dj-movimentacoes-list" class="datajud-movements-list"></ul>
+                                </div>
+
+                                <div id="dj-mensagem-status" class="datajud-status"></div>
                             </div>
-
-                            <h3 id="dj-numero-processo" class="datajud-title"></h3>
-
-                            <div class="datajud-grid">
-                                <div class="datajud-field">
-                                    <span class="datajud-field-label">Classe Processual</span>
-                                    <span id="dj-classe" class="datajud-field-value"></span>
-                                </div>
-                                <div class="datajud-field">
-                                    <span class="datajud-field-label">Assunto Principal</span>
-                                    <span id="dj-assunto" class="datajud-field-value"></span>
-                                </div>
-                                <div class="datajud-field">
-                                    <span class="datajud-field-label">Órgão Julgador</span>
-                                    <span id="dj-orgao" class="datajud-field-value"></span>
-                                </div>
-                                <div class="datajud-field">
-                                    <span class="datajud-field-label">Data de Ajuizamento</span>
-                                    <span id="dj-data" class="datajud-field-value"></span>
-                                </div>
-                            </div>
-
-                            <div id="dj-movimentacoes-wrap" class="datajud-movements">
-                                <strong class="datajud-movements-heading">Últimas Movimentações Processuais Registradas:</strong>
-                                <ul id="dj-movimentacoes-list" class="datajud-movements-list"></ul>
-                            </div>
-
-                            <div id="dj-mensagem-status" class="datajud-status"></div>
-                        </div>
                     </form>
 
-                    <!-- Chips de Condições e Filtros Ativos (visível apenas quando há filtros aplicados) -->
+                    <!-- Chips de Filtros Ativos -->
                     <div id="active-filters-bar" class="active-filters-strip hidden" aria-label="Filtros aplicados na pesquisa">
                         <span class="active-filters-label">Filtros ativos:</span>
                         <span id="dynamic-filter-chips" class="dynamic-filter-chips"></span>
                     </div>
 
-                    <!-- Linha Editorial de Quantidade e Alternância de Exibição -->
+                    <!-- Panorama de Resultados e Ações -->
                     <div class="results-scope-toolbar">
                         <div class="scope-summary-text">
                             <strong id="historico-total-label" role="status">Carregando decisões...</strong>
-                            <span class="scope-origin-meta">· TJAL (Maceió)</span>
+                            <span id="scope-origin-meta" class="scope-origin-meta"></span>
                         </div>
 
                         <div class="results-view-wrap">
-                            <div class="segmented-tabs results-view-toggle" role="group" aria-label="Formato de exibição dos resultados">
+                            <div class="segmented-tabs" role="group" aria-label="Formato de exibição dos resultados">
                                 <button type="button" id="btn-view-cards" class="segmented-btn active" aria-pressed="true">
                                     Cartões
                                 </button>
@@ -339,25 +753,25 @@
                                     Tabela
                                 </button>
                             </div>
-                            <button type="button" id="btn-novo-julgado" class="btn btn-primary">Cadastrar julgado</button>
+                            <button type="button" id="btn-novo-julgado" class="btn btn-primary btn-sm">Cadastrar julgado</button>
                         </div>
                     </div>
 
-                    <!-- Visão Documental Padrão: Fichas de Decisão -->
+                    <!-- Listagem Densa de Decisões -->
                     <div id="decisions-cards-container" class="decisions-list" aria-label="Lista de decisões judiciais em formato documental"></div>
 
-                    <!-- Visão Alternativa: Tabela Comparativa Semântica -->
+                    <!-- Tabela Comparativa Semântica -->
                     <div id="decisions-table-container" class="table-wrapper hidden">
                         <table class="data-table" aria-label="Tabela comparativa de decisões judiciais">
                             <caption class="sr-only">
-                                Decisões judiciais estruturadas com número do processo, assunto, órgão julgador, partes anonimizadas e resultado classificado
+                                Decisões judiciais estruturadas com número do processo, assunto, órgão julgador, partes e resultado classificado
                             </caption>
                             <thead>
                                 <tr>
                                     <th scope="col">Processo e Data de Julgamento</th>
                                     <th scope="col">Assunto / Matéria</th>
                                     <th scope="col">Órgão Julgador e Magistrado(a)</th>
-                                    <th scope="col">Partes (Proteção LGPD)</th>
+                                    <th scope="col">Partes</th>
                                     <th scope="col">Resultado Classificado</th>
                                     <th scope="col" class="text-right">Ações Documentais</th>
                                 </tr>
@@ -378,8 +792,8 @@
             </section>
 
             <!-- ============================================================
-                 TELA 2 — ÁREA DE JURIMETRIA E ANÁLISE ESTATÍSTICA
-                 (#panel-dashboard — Seções 13, 14 e 21 do Guia | RF-07)
+                 TELA 2 — ANÁLISE JURIMÉTRICA (Azul-Marinho + Neutros)
+                 (#panel-dashboard — RF-07)
                  ============================================================ -->
             <section
                 id="panel-dashboard"
@@ -389,88 +803,164 @@
                 hidden
                 class="tab-panel"
             >
-                <div class="page-container">
-                    <div class="page-intro">
+                <!-- 1. Contextualização em Banda Azul-Marinho -->
+                <div class="jurimetria-intro-band">
+                    <div class="jurimetria-intro-grid">
                         <div>
-                            <div class="page-eyebrow">Jurimetria · TJAL</div>
-                            <h2 class="page-title">Painel Analítico de Decisões</h2>
-                            <p class="page-description">
-                                Padrões decisórios, distribuição por matéria e tempos médios observados no acervo.
+                            <div class="jurimetria-eyebrow">Análise Jurimétrica</div>
+                            <h2 class="jurimetria-title">Painel Analítico de Decisões</h2>
+                            <p class="jurimetria-desc">
+                                Leitura progressiva dos padrões decisórios, distribuição temática por matéria e prazos observados no acervo consultado.
                             </p>
                         </div>
-                        <div style="display: flex; gap: var(--space-2); flex-wrap: wrap;">
-                            <button type="button" class="btn btn-secondary" id="btn-overview-ver-todos">
-                                <span>Ver decisões na Pesquisa</span>
+
+                        <div class="jurimetria-context-col">
+                            <span id="jurimetria-scope-note" class="jurimetria-scope-note">
+                                Carregando recorte do acervo…
+                            </span>
+                            <button type="button" class="btn btn-slate btn-sm" id="btn-overview-ver-todos">
+                                <span>Ver decisões na Pesquisa →</span>
                             </button>
                         </div>
                     </div>
+                </div>
 
-                    <!-- Cabeçalho Metodológico Enxuto (Seção 13.2) -->
-                    <div class="methodology-scope-banner" role="region" aria-label="Escopo da análise jurimétrica">
-                        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; flex-wrap: wrap; gap: var(--space-3);">
-                            <div>
-                                <strong style="font-size: var(--text-sm); color: var(--color-navy);">Varas Cíveis e Trabalhistas de Maceió (TJAL)</strong>
-                                <span style="font-size: var(--text-xs); color: var(--text-secondary); margin-left: var(--space-2);">· Recorte temporal: 2025–2026</span>
-                            </div>
-                            <div class="scope-metadata-pills" style="margin-top: 0;">
-                                <span class="badge-editorial badge-lgpd">Dados anonimizados (LGPD)</span>
-                            </div>
+                <!-- Estado vazio: acervo sem decisões (usuário novo) -->
+                <div id="dashboard-empty-state" class="workspace-container hidden">
+                    <div class="decisions-empty-state dashboard-empty-state">
+                        <strong class="decisions-empty-title">Ainda não há decisões para analisar</strong>
+                        <p class="decisions-empty-text">
+                            A Jurimetria se monta a partir do seu acervo. Sincronize precedentes públicos do DataJud (CNJ), cadastre um julgado ou analise uma petição, e os indicadores aparecem aqui.
+                        </p>
+                        <div class="empty-onboarding-actions">
+                            <button type="button" id="btn-dash-empty-sync" class="btn btn-primary btn-sm">Sincronizar DataJud (CNJ)</button>
+                            <button type="button" id="btn-dash-empty-julgado" class="btn btn-secondary btn-sm">Cadastrar julgado</button>
+                            <button type="button" id="btn-dash-empty-upload" class="btn btn-secondary btn-sm">Analisar petição PDF</button>
                         </div>
                     </div>
+                </div>
 
-                    <!-- Cards de Indicadores com Denominador e Contexto (Seção 13.4) -->
+                <div id="dashboard-content">
+                <!-- 2. Filtros Dinâmicos da Jurimetria -->
+                <div class="dashboard-filters-band">
+                    <div class="dashboard-filters-bar" role="region" aria-label="Filtros dinâmicos da análise jurimétrica">
+                        <div class="dashboard-filters-fields">
+                            <div class="field-group">
+                                <label for="dash-filtro-tema" class="field-label">Filtrar por assunto</label>
+                                <select id="dash-filtro-tema" class="control-select">
+                                    <option value="">Todos os assuntos</option>
+                                </select>
+                            </div>
+                            <div class="field-group">
+                                <label for="dash-filtro-juiz" class="field-label">Filtrar por magistrado(a)</label>
+                                <select id="dash-filtro-juiz" class="control-select">
+                                    <option value="">Todos os magistrados</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="dashboard-filters-meta">
+                            <span id="dash-filter-summary" class="dash-filter-summary">Exibindo todo o acervo analisado</span>
+                            <button type="button" id="btn-dash-limpar-filtros" class="btn btn-secondary btn-sm hidden">
+                                Limpar filtros
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Indicadores Gerais -->
+                <div class="indicators-band">
                     <div class="indicators-grid" role="region" aria-label="Indicadores principais do conjunto analisado">
                         <article class="indicator-card">
                             <span class="indicator-name">Decisões Analisadas</span>
-                            <strong id="kpi-total-processos" class="indicator-value">10</strong>
-                            <span class="indicator-denominator">10 no recorte · 100% analisadas</span>
+                            <strong id="kpi-total-processos" class="indicator-value">0</strong>
+                            <span id="kpi-total-denominador" class="indicator-denominator">Aguardando acervo para análise</span>
                         </article>
 
                         <article class="indicator-card">
                             <span class="indicator-name">Proporção Favorável</span>
-                            <strong id="kpi-taxa-exito" class="indicator-value">70.0%</strong>
-                            <span id="kpi-taxa-denominador" class="indicator-denominator">Procedentes e acordos homologados</span>
+                            <strong id="kpi-taxa-exito" class="indicator-value indicator-value-favorable">0.0%</strong>
+                            <span id="kpi-taxa-denominador" class="indicator-denominator">Sem decisões no recorte atual</span>
                         </article>
 
                         <article class="indicator-card">
                             <span class="indicator-name">Tempo Mediano</span>
-                            <strong id="kpi-tempo-medio" class="indicator-value">12 Meses</strong>
+                            <strong id="kpi-tempo-medio" class="indicator-value">—</strong>
                             <span class="indicator-denominator">Da distribuição à sentença</span>
                         </article>
 
                         <article class="indicator-card">
-                            <span class="indicator-name">Classificação</span>
-                            <strong id="kpi-motor-ia" class="indicator-value" style="font-size: 20px; padding: 5px 0;">Estruturada</strong>
-                            <span class="indicator-denominator">Motor determinístico auditado</span>
+                            <span class="indicator-name">Em Análise</span>
+                            <strong id="kpi-em-analise" class="indicator-value">0</strong>
+                            <span id="kpi-em-analise-denominador" class="indicator-denominator">Sem desfecho · fora do cálculo da proporção</span>
                         </article>
                     </div>
+                </div>
 
-                    <!-- Painéis de Visualização de Dados (Seções 13.6, 13.10 e 14) -->
-                    <div class="analytics-panels-grid">
-                        <!-- Painel 1: Comparação entre Órgãos Julgadores / Magistrados -->
+                <div class="workspace-container">
+                    <!-- 4. Gráficos Complementares e Interativos -->
+                    <div class="analytics-panels-top-grid">
                         <div class="analytical-panel">
-                            <div>
-                                <h3 class="panel-question-title">
-                                    Distribuição por Magistrado
-                                </h3>
+                            <div class="panel-header-stack">
+                                <span class="panel-eyebrow">Composição de resultados</span>
+                                <h3 class="panel-question-title">Desfecho das Decisões</h3>
                                 <p class="panel-context-subtitle">
-                                    Proporção de procedência e improcedência por juízo.
+                                    Separação entre sentenças procedentes, acordos homologados e improcedências.
                                 </p>
                             </div>
 
-                            <div id="judge-matrix-list"></div>
+                            <div class="chart-box chart-box-donut">
+                                <canvas
+                                    id="chartResultados"
+                                    role="img"
+                                    aria-label="Gráfico de rosca com a distribuição entre procedentes, acordos e improcedentes"
+                                ></canvas>
+                            </div>
 
-                            <div class="chart-box">
+                            <div id="resultados-legend-list" class="donut-legend-list"></div>
+
+                            <details class="a11y-details">
+                                <summary>Tabela detalhada de desfechos (Acessibilidade)</summary>
+                                <div class="table-wrapper a11y-table-wrap">
+                                    <table class="data-table">
+                                        <thead>
+                                            <tr>
+                                                <th scope="col">Desfecho</th>
+                                                <th scope="col">Julgados</th>
+                                                <th scope="col">Participação (%)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="a11y-table-resultados"></tbody>
+                                    </table>
+                                </div>
+                            </details>
+                        </div>
+
+                        <div class="analytical-panel">
+                            <div class="panel-header-stack panel-header-with-toggle">
+                                <div>
+                                    <span class="panel-eyebrow">Comparação por juízo</span>
+                                    <h3 class="panel-question-title">Perfil Decisório por Magistrado</h3>
+                                    <p class="panel-context-subtitle">
+                                        Clique em uma barra para abrir os julgados do magistrado na Pesquisa.
+                                    </p>
+                                </div>
+                                <div class="segmented-tabs" role="group" aria-label="Unidade do gráfico por magistrado">
+                                    <button type="button" id="btn-juiz-mode-qtd" class="segmented-btn active" aria-pressed="true">Quantidade</button>
+                                    <button type="button" id="btn-juiz-mode-pct" class="segmented-btn" aria-pressed="false">Percentual (%)</button>
+                                </div>
+                            </div>
+
+                            <div class="chart-box chart-box-tall">
                                 <canvas
                                     id="chartJuizes"
                                     role="img"
-                                    aria-label="Gráfico de barras comparando decisões favoráveis e improcedentes por magistrado"
+                                    aria-label="Gráfico de barras horizontais comparando decisões favoráveis e improcedentes por magistrado"
                                 ></canvas>
                             </div>
 
                             <details class="a11y-details">
                                 <summary>Tabela detalhada por magistrado (Acessibilidade)</summary>
-                                <div class="table-wrapper" style="margin-top: 8px;">
+                                <div class="table-wrapper a11y-table-wrap">
                                     <table class="data-table">
                                         <thead>
                                             <tr>
@@ -484,54 +974,58 @@
                                 </div>
                             </details>
                         </div>
-
-                        <!-- Painel 2: Distribuição por Assunto / Matéria -->
-                        <div class="analytical-panel">
-                            <div>
-                                <h3 class="panel-question-title">
-                                    Distribuição por Assunto
-                                </h3>
-                                <p class="panel-context-subtitle">
-                                    Frequência de matérias no acervo consultado.
-                                </p>
-                            </div>
-
-                            <div id="theme-matrix-list"></div>
-
-                            <div class="chart-box">
-                                <canvas
-                                    id="chartTemas"
-                                    role="img"
-                                    aria-label="Gráfico de barras horizontais mostrando a participação percentual por assunto jurídico"
-                                ></canvas>
-                            </div>
-
-                            <details class="a11y-details">
-                                <summary>Tabela detalhada por assunto (Acessibilidade)</summary>
-                                <div class="table-wrapper" style="margin-top: 8px;">
-                                    <table class="data-table">
-                                        <thead>
-                                            <tr>
-                                                <th scope="col">Assunto Jurídico</th>
-                                                <th scope="col">Participação (%)</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="a11y-table-temas"></tbody>
-                                    </table>
-                                </div>
-                            </details>
-                        </div>
                     </div>
 
-                    <!-- Decisões que Compõem os Indicadores (Seção 13.10) -->
                     <div class="analytical-panel">
-                        <div style="display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap;">
+                        <div class="panel-header-stack panel-header-with-toggle">
                             <div>
-                                <h3 class="panel-question-title">Amostra de Julgados do Painel</h3>
+                                <span class="panel-eyebrow">Distribuição temática</span>
+                                <h3 class="panel-question-title">Panorama por Assunto</h3>
                                 <p class="panel-context-subtitle">
-                                    Decisões recentes consideradas no cálculo dos indicadores acima.
+                                    Compare o volume ou a taxa favorável por matéria. Clique em uma barra para abrir os precedentes.
                                 </p>
                             </div>
+                            <div class="segmented-tabs" role="group" aria-label="Métrica do gráfico por assunto">
+                                <button type="button" id="btn-tema-mode-vol" class="segmented-btn active" aria-pressed="true">Volume</button>
+                                <button type="button" id="btn-tema-mode-taxa" class="segmented-btn" aria-pressed="false">Taxa Favorável (%)</button>
+                            </div>
+                        </div>
+
+                        <div class="chart-box chart-box-medium">
+                            <canvas
+                                id="chartTemas"
+                                role="img"
+                                aria-label="Gráfico de barras horizontais mostrando volume e taxa favorável por assunto jurídico"
+                            ></canvas>
+                        </div>
+
+                        <details class="a11y-details">
+                            <summary>Tabela detalhada por assunto (Acessibilidade)</summary>
+                            <div class="table-wrapper a11y-table-wrap">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col">Assunto Jurídico</th>
+                                            <th scope="col">Julgados</th>
+                                            <th scope="col">Participação (%)</th>
+                                            <th scope="col">Taxa Favorável (%)</th>
+                                            <th scope="col">Prazo Médio</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="a11y-table-temas"></tbody>
+                                </table>
+                            </div>
+                        </details>
+                    </div>
+
+                    <!-- 5. Amostra de Decisões -->
+                    <div class="sample-ledger-section">
+                        <div class="panel-header-stack">
+                            <span class="panel-eyebrow">Lastro documental</span>
+                            <h3 class="panel-question-title">Amostra de Julgados do Painel</h3>
+                            <p class="panel-context-subtitle">
+                                Decisões recentes consideradas no cálculo dos indicadores acima.
+                            </p>
                         </div>
 
                         <div class="table-wrapper">
@@ -541,9 +1035,9 @@
                                         <th scope="col">Processo</th>
                                         <th scope="col">Assunto</th>
                                         <th scope="col">Magistrado(a)</th>
-                                        <th scope="col">Partes (LGPD)</th>
+                                        <th scope="col">Partes</th>
                                         <th scope="col">Resultado</th>
-                                        <th scope="col" style="text-align: right;">Ação</th>
+                                        <th scope="col" class="text-right">Ação</th>
                                     </tr>
                                 </thead>
                                 <tbody id="overview-recent-tbody"></tbody>
@@ -551,38 +1045,51 @@
                         </div>
                     </div>
 
-                    <!-- Transparência Metodológica e Limitações (Seções 13.5 e 21.3) -->
-                    <details class="methodology-card a11y-details" aria-label="Nota metodológica e limitações da análise">
-                        <summary style="font-family: var(--font-serif); font-size: 16px; font-weight: 600; color: var(--color-navy); cursor: pointer; padding: 4px 0;">
-                            Metodologia dos Indicadores e Limitações da Leitura ▾
-                        </summary>
-                        <div class="methodology-columns">
-                            <div>
-                                <strong style="font-size: var(--text-sm); color: var(--color-navy);">1. Unidade e Classificação</strong>
-                                <p style="font-size: var(--text-xs); color: var(--text-secondary); margin-top: 4px; line-height: 1.55;">
-                                    Cada unidade contada corresponde a um processo judicial. Procedências e acordos compõem o grupo favorável; improcedências são apuradas separadamente.
-                                </p>
+                    <!-- 6. Metodologia e Limitações -->
+                    <div class="methodology-split">
+                        <div class="methodology-title-col">
+                            <div class="section-kicker">
+                                <span>Nota Metodológica</span>
                             </div>
-                            <div>
-                                <strong style="font-size: var(--text-sm); color: var(--color-navy);">2. Comparação de Juízos</strong>
-                                <p style="font-size: var(--text-xs); color: var(--text-secondary); margin-top: 4px; line-height: 1.55;">
-                                    Taxas calculadas sobre amostras pequenas podem oscilar. Sempre avalie o número total de decisões ao lado de cada magistrado.
-                                </p>
-                            </div>
-                            <div>
-                                <strong style="font-size: var(--text-sm); color: var(--color-navy);">3. Uso Profissional</strong>
-                                <p style="font-size: var(--text-xs); color: var(--text-secondary); margin-top: 4px; line-height: 1.55;">
-                                    A frequência estatística histórica descreve precedentes e não substitui o exame individual das provas de cada caso concreto.
-                                </p>
-                            </div>
+                            <h3 class="panel-question-title">Critérios de Apuração e Limitações</h3>
+                            <p class="page-description">
+                                Transparência amostral sobre como as proporções são calculadas a partir do acervo histórico.
+                            </p>
                         </div>
-                    </details>
+
+                        <details class="methodology-card a11y-details" aria-label="Nota metodológica e limitações da análise">
+                            <summary class="methodology-summary">
+                                <span>Metodologia dos Indicadores e Limitações da Leitura</span>
+                            </summary>
+                            <div class="methodology-columns">
+                                <div>
+                                    <strong class="methodology-heading">1. Unidade e Classificação</strong>
+                                    <p class="methodology-text">
+                                        Cada unidade contada corresponde a um processo judicial. Procedências e acordos compõem o grupo favorável; improcedências, o desfavorável. Processos ainda em análise aparecem à parte e não entram no cálculo da proporção.
+                                    </p>
+                                </div>
+                                <div>
+                                    <strong class="methodology-heading">2. Comparação de Juízos</strong>
+                                    <p class="methodology-text">
+                                        Taxas calculadas sobre amostras pequenas podem oscilar. Sempre avalie o número total de decisões ao lado de cada magistrado.
+                                    </p>
+                                </div>
+                                <div>
+                                    <strong class="methodology-heading">3. Uso Profissional</strong>
+                                    <p class="methodology-text">
+                                        A frequência estatística histórica descreve precedentes e não substitui o exame individual das provas de cada caso concreto.
+                                    </p>
+                                </div>
+                            </div>
+                        </details>
+                    </div>
+                </div>
                 </div>
             </section>
 
             <!-- ============================================================
-                 TELA 3 — ANÁLISE DE PETIÇÃO E IMPORTAÇÃO DE ACERVO
-                 (#panel-upload — Seções 13.9, 16 e 21 do Guia | RF-02 a RF-06)
+                 TELA 3 — ANÁLISE DE PETIÇÃO (Fluxo Sequencial Institucional)
+                 (#panel-upload — RF-02 a RF-06)
                  ============================================================ -->
             <section
                 id="panel-upload"
@@ -592,25 +1099,56 @@
                 hidden
                 class="tab-panel"
             >
-                <div class="page-container">
-                    <div class="page-intro">
+                <div class="workspace-container">
+                    <div class="petition-header-grid">
                         <div>
-                            <div class="page-eyebrow">Análise & Ingestão</div>
                             <h2 class="page-title">Análise Comparativa de Petição</h2>
-                            <p class="page-description">
-                                Extraia metadados da petição em PDF, proteja dados sensíveis e compare com precedentes semelhantes do juízo.
-                            </p>
                         </div>
+                        <p class="petition-lead-note">
+                            Acompanhe as etapas do processamento: sigilo de dados pessoais, extração de metadados processuais e confronto com precedentes semelhantes do juízo.
+                        </p>
                     </div>
 
+                    <!-- Rastreador Sequencial Real das 6 Etapas -->
+                    <ol id="petition-pipeline-tracker" class="pipeline-tracker" aria-label="Etapas do processamento da petição">
+                        <li class="step-item is-current" data-pipeline-step="1">
+                            <span class="step-num">1</span>
+                            <span class="step-title">Envio do Documento</span>
+                            <span class="step-status-label">Aguardando arquivo</span>
+                        </li>
+                        <li class="step-item" data-pipeline-step="2">
+                            <span class="step-num">2</span>
+                            <span class="step-title">Sigilo de Dados</span>
+                            <span class="step-status-label">Pendente</span>
+                        </li>
+                        <li class="step-item" data-pipeline-step="3">
+                            <span class="step-num">3</span>
+                            <span class="step-title">Extração Estruturada</span>
+                            <span class="step-status-label">Pendente</span>
+                        </li>
+                        <li class="step-item" data-pipeline-step="4">
+                            <span class="step-num">4</span>
+                            <span class="step-title">Metadados Jurídicos</span>
+                            <span class="step-status-label">Pendente</span>
+                        </li>
+                        <li class="step-item" data-pipeline-step="5">
+                            <span class="step-num">5</span>
+                            <span class="step-title">Precedentes do Juízo</span>
+                            <span class="step-status-label">Pendente</span>
+                        </li>
+                        <li class="step-item" data-pipeline-step="6">
+                            <span class="step-num">6</span>
+                            <span class="step-title">Parecer Comparativo</span>
+                            <span class="step-status-label">Pendente</span>
+                        </li>
+                    </ol>
+
                     <div class="case-analysis-grid">
-                        <!-- Coluna Esquerda: Submissão de Documento -->
+                        <!-- Coluna Esquerda: Submissão -->
                         <aside class="submission-panel" aria-label="Submissão de documentos jurídicos">
-                            <div>
-                                <h3 class="serif-heading" style="font-size: 18px; font-weight: 600; color: var(--color-navy);">
-                                    Modalidade de Entrada
-                                </h3>
-                                <p style="font-size: var(--text-xs); color: var(--text-secondary); margin-top: 2px;">
+                            <div class="submission-header">
+                                <h3 class="submission-title">Modalidade de Entrada</h3>
+                                <p class="submission-subtitle">
                                     Análise individual em PDF ou importação em lote em CSV.
                                 </p>
                             </div>
@@ -635,23 +1173,21 @@
                             </div>
 
                             <div id="upload-selection-container">
-                                <!-- Submissão de PDF -->
                                 <div id="upload-box-pdf" class="upload-drop-card">
                                     <div class="upload-drop-icon" aria-hidden="true">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
                                     </div>
-                                    <strong style="font-size: var(--text-base); color: var(--color-navy); font-weight: 600;">
+                                    <strong class="upload-drop-title">
                                         Petição Inicial ou Decisão (.PDF)
                                     </strong>
-                                    <p style="font-size: var(--text-xs); color: var(--text-secondary); line-height: 1.45; max-width: 280px;">
+                                    <p class="upload-drop-desc">
                                         Arraste o arquivo PDF ou selecione no seu dispositivo. Documentos até 15MB.
                                     </p>
 
                                     <label
                                         for="file-input-pdf"
                                         tabindex="0"
-                                        class="btn btn-primary"
-                                        style="width: 100%; cursor: pointer;"
+                                        class="btn btn-primary btn-full"
                                     >
                                         <span>Selecionar arquivo PDF</span>
                                     </label>
@@ -668,30 +1204,27 @@
                                     <button
                                         type="button"
                                         id="btn-sample-pdf"
-                                        class="btn btn-secondary btn-sm"
-                                        style="width: 100%;"
+                                        class="btn btn-secondary btn-sm btn-full"
                                     >
                                         <span>Testar petição de exemplo</span>
                                     </button>
                                 </div>
 
-                                <!-- Submissão de CSV -->
                                 <div id="upload-box-csv" class="upload-drop-card hidden">
-                                    <div class="upload-drop-icon" aria-hidden="true" style="background: var(--color-sage-subtle); color: var(--color-sage);">
+                                    <div class="upload-drop-icon upload-drop-icon-slate" aria-hidden="true">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" x2="16" y1="13" y2="13"/><line x1="8" x2="16" y1="17" y2="17"/></svg>
                                     </div>
-                                    <strong style="font-size: var(--text-base); color: var(--color-navy); font-weight: 600;">
+                                    <strong class="upload-drop-title">
                                         Planilha de Julgados (.CSV)
                                     </strong>
-                                    <p style="font-size: var(--text-xs); color: var(--text-secondary); line-height: 1.45; max-width: 280px;">
+                                    <p class="upload-drop-desc">
                                         Importação em lote de precedentes. Colunas: <code class="font-mono">numero_processo, tema, magistrado...</code>
                                     </p>
 
                                     <label
                                         for="file-input-csv"
                                         tabindex="0"
-                                        class="btn btn-primary"
-                                        style="width: 100%; cursor: pointer;"
+                                        class="btn btn-primary btn-full"
                                     >
                                         <span>Selecionar planilha CSV</span>
                                     </label>
@@ -708,42 +1241,41 @@
                                     <button
                                         type="button"
                                         id="btn-sample-csv"
-                                        class="btn btn-secondary btn-sm"
-                                        style="width: 100%;"
+                                        class="btn btn-secondary btn-sm btn-full"
                                     >
                                         <span>Testar planilha de exemplo</span>
                                     </button>
                                 </div>
                             </div>
 
-                            <!-- Estado de Carregamento (Seção 18.2) -->
-                            <div id="loading-state" role="status" aria-live="polite" class="upload-drop-card hidden" style="align-items: center; text-align: center;">
+                            <!-- Estado de Carregamento -->
+                            <div id="loading-state" role="status" aria-live="polite" class="upload-drop-card upload-state-centered hidden">
                                 <div class="loader-spinner" aria-hidden="true"></div>
-                                <strong style="font-size: var(--text-sm); color: var(--color-navy);">
+                                <strong class="upload-state-title">
                                     Processando documento...
                                 </strong>
-                                <span style="font-size: var(--text-xs); color: var(--text-secondary);">
-                                    Higienização LGPD e estruturação de metadados.
+                                <span class="upload-state-desc">
+                                    Ocultando dados pessoais, extraindo metadados e consultando histórico.
                                 </span>
                             </div>
 
-                            <!-- Estado de Erro Traduzido para o Usuário (Seção 18.4) -->
-                            <div id="error-state" role="alert" aria-live="assertive" class="upload-drop-card hidden" style="border-color: var(--status-error-border); background: var(--status-error-bg);">
-                                <strong style="font-size: var(--text-sm); color: var(--status-error-fg);">
+                            <!-- Estado de Erro -->
+                            <div id="error-state" role="alert" aria-live="assertive" class="upload-drop-card upload-state-error hidden">
+                                <strong class="upload-state-title">
                                     Não foi possível ler o arquivo
                                 </strong>
-                                <p id="error-message-text" style="font-size: var(--text-xs); color: var(--status-error-fg); line-height: 1.5;"></p>
+                                <p id="error-message-text" class="upload-state-desc"></p>
                                 <button type="button" id="btn-retry-error" class="btn btn-secondary btn-sm">
                                     Tentar novamente
                                 </button>
                             </div>
 
-                            <!-- Confirmação de Importação CSV (Seção 18.5) -->
-                            <div id="csv-result-state" role="status" aria-live="polite" class="upload-drop-card hidden" style="border-color: var(--color-sage-border); background: var(--color-sage-subtle);">
-                                <strong style="font-size: var(--text-sm); color: #2F4F44;">
+                            <!-- Confirmação de Importação CSV -->
+                            <div id="csv-result-state" role="status" aria-live="polite" class="upload-drop-card upload-state-success hidden">
+                                <strong class="upload-state-title">
                                     Planilha incorporada com sucesso
                                 </strong>
-                                <div style="font-size: var(--text-xs); display: grid; grid-template-columns: 140px 1fr; gap: 4px;">
+                                <div class="csv-summary-grid">
                                     <span>Arquivo:</span>
                                     <strong id="csv-res-arquivo" class="font-mono"></strong>
                                     <span>Registros lidos:</span>
@@ -759,172 +1291,152 @@
                             </div>
                         </aside>
 
-                        <!-- Estado Inicial Vazio / Receptivo (Posicionado verticalmente abaixo do upload) -->
+                        <!-- Coluna Direita: Estado Inicial Estruturado -->
                         <div id="result-empty-state" class="result-empty-card" role="region" aria-label="Aguardando envio de documento">
-                            <div class="result-empty-icon" aria-hidden="true">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="width: 30px; height: 30px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/></svg>
+                            <div>
+                                <div class="section-kicker">
+                                    <span>Fluxo de Análise</span>
+                                </div>
+                                <h3 class="result-empty-title">
+                                    Aguardando Envio de Petição
+                                </h3>
+                                <p class="result-empty-desc">
+                                    Ao submeter um arquivo PDF ou utilizar a petição de exemplo ao lado, o servidor executa duas camadas integradas para compor o parecer abaixo:
+                                </p>
                             </div>
-                            <h3 class="serif-heading" style="font-size: 20px; font-weight: 600; color: var(--color-navy); margin-top: var(--space-1);">
-                                Aguardando Envio de Petição
-                            </h3>
-                            <p style="font-size: var(--text-sm); color: var(--text-secondary); max-width: 480px; line-height: 1.55;">
-                                Selecione uma petição inicial em PDF acima ou teste o modelo de exemplo para gerar o parecer comparativo com extração de metadados e jurimetria do juízo.
-                            </p>
 
-                            <div class="result-empty-features">
-                                <div class="result-empty-feature-item">
-                                    <div class="result-empty-feature-title">
-                                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 15px; height: 15px; color: var(--color-sage);"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                                        <span>Barreira LGPD Local</span>
-                                    </div>
-                                    <p class="result-empty-feature-desc">
-                                        Sanitização determinística prévia de CPFs, RGs e nomes de pessoas físicas.
+                            <div class="empty-zones-grid">
+                                <div class="empty-zone-block empty-zone-slate">
+                                    <span class="empty-zone-kicker">Etapa 1 · Privacidade e Extração</span>
+                                    <h4 class="empty-zone-title">Sigilo e Extração Documental</h4>
+                                    <p class="empty-zone-text">
+                                        O texto é extraído localmente e dados de identificação de pessoas físicas (como CPFs, RGs e nomes completos) são ocultados antes da análise.
                                     </p>
                                 </div>
-                                <div class="result-empty-feature-item">
-                                    <div class="result-empty-feature-title">
-                                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 15px; height: 15px; color: var(--color-navy);"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                                        <span>Extração Estruturada</span>
-                                    </div>
-                                    <p class="result-empty-feature-desc">
-                                        Identificação automática de comarca, magistrado, síntese factual e polos.
-                                    </p>
-                                </div>
-                                <div class="result-empty-feature-item">
-                                    <div class="result-empty-feature-title">
-                                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 15px; height: 15px; color: var(--color-gold);"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>
-                                        <span>Confronto Histórico</span>
-                                    </div>
-                                    <p class="result-empty-feature-desc">
-                                        Probabilidade de deferimento e tempo estimado até a sentença no juízo.
+
+                                <div class="empty-zone-block empty-zone-plum">
+                                    <span class="empty-zone-kicker">Etapa 2 · Confronto de Precedentes</span>
+                                    <h4 class="empty-zone-title">Confronto de Precedentes</h4>
+                                    <p class="empty-zone-text">
+                                        Cruzamento dos fatos extraídos com decisões semelhantes do juízo para apurar proporção favorável, prazo mediano e tese recorrente.
                                     </p>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Coluna Direita: Estudo Comparativo e Parecer Analítico (Seções 13.9, 16 e 21) -->
+                        <!-- Coluna Direita: Dossiê de Resultado -->
                         <div id="result-state" class="document-sheet hidden" role="region" aria-label="Parecer comparativo do documento analisado">
                             <div class="document-sheet-header">
-                                <div>
-                                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                                        <span class="badge-editorial" id="res-id-processo">Ref. proc-1004</span>
-                                        <span class="badge-editorial font-mono" id="res-numero-cnj">0088210-12.2026.8.02.0001</span>
-                                        <span id="res-lgpd-badge" class="badge-editorial badge-lgpd">
-                                            LGPD Ativa
+                                <div class="document-sheet-meta">
+                                    <div class="document-sheet-badges">
+                                        <span class="badge-editorial" id="res-id-processo">—</span>
+                                        <span class="badge-editorial font-mono" id="res-numero-cnj">—</span>
+                                        <span id="res-lgpd-badge" class="badge-editorial">
+                                            Dados pessoais protegidos
                                         </span>
                                     </div>
-                                    <h3 class="serif-heading" style="font-size: 22px; font-weight: 600; color: var(--color-navy); margin-top: 6px;" id="res-tema">
-                                        Atraso de Voo / Indenização
+                                    <h3 class="document-sheet-title" id="res-tema">
+                                        —
                                     </h3>
                                 </div>
 
-                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                                    <button type="button" id="btn-reset-upload" class="btn btn-secondary btn-sm">
+                                <div class="document-sheet-actions">
+                                    <button type="button" id="btn-reset-upload" class="btn btn-slate btn-sm">
                                         <span>Nova Análise</span>
                                     </button>
-                                    <button type="button" id="btn-result-export-pdf" class="btn btn-primary btn-sm">
+                                    <button type="button" id="btn-result-export-pdf" class="btn btn-secondary btn-sm">
                                         <span>Exportar PDF</span>
                                     </button>
                                 </div>
                             </div>
 
-                            <!-- 1. Metadados Extraídos do Documento (Seção 21.1) -->
-                            <div class="document-section">
-                                <div class="document-section-header">
-                                    <h4 class="document-section-title">Metadados Processuais</h4>
-                                    <span class="badge-editorial">Fonte: Documento</span>
-                                </div>
-                                <dl class="metadata-dl">
-                                    <div class="metadata-item">
-                                        <dt>Órgão Julgador</dt>
-                                        <dd id="res-comarca">1ª Vara Cível de Maceió</dd>
+                            <div class="document-sheet-body">
+                                <div class="document-section dossier-reveal-section">
+                                    <div class="document-section-header">
+                                        <h4 class="document-section-title">Metadados Processuais</h4>
+                                        <span class="badge-editorial">Fonte: Documento</span>
                                     </div>
-                                    <div class="metadata-item">
-                                        <dt>Magistrado(a)</dt>
-                                        <dd id="res-magistrado">Dr. Rafael De Amorim</dd>
-                                    </div>
-                                    <div class="metadata-item">
-                                        <dt>Polo Ativo (LGPD)</dt>
-                                        <dd id="res-autor">Lucas G. ***</dd>
-                                    </div>
-                                    <div class="metadata-item">
-                                        <dt>Polo Passivo</dt>
-                                        <dd id="res-reu">Companhia Aérea Linhas Brasil S.A.</dd>
-                                    </div>
-                                </dl>
-                            </div>
-
-                            <!-- 2. Resumo Factual Produzido pelo Sistema (Seção 11.5 e 21.1) -->
-                            <div class="document-section">
-                                <div class="document-section-header">
-                                    <h4 class="document-section-title">Síntese Factual</h4>
-                                    <span class="badge-editorial">Síntese estruturada</span>
-                                </div>
-                                <div class="decision-excerpt-box">
-                                    <p id="res-resumo-nlp" class="legal-prose">
-                                        Ação de reparação civil contra transportadora aérea decorrente de cancelamento abusivo de voo internacional sem assistência emergencial ao passageiro.
-                                    </p>
-                                </div>
-                            </div>
-
-                            <!-- 3. Estimativa e Comparação com o Histórico de Decisões (Seção 13.9) -->
-                            <div class="document-section">
-                                <div class="document-section-header">
-                                    <h4 class="document-section-title">Indicadores de Precedentes</h4>
-                                    <span class="badge-editorial">Confronto histórico</span>
-                                </div>
-
-                                <div class="indicators-grid case-indicators-grid">
-                                    <div class="indicator-card" style="padding: var(--space-4);">
-                                        <span class="indicator-name">Proporção Favorável</span>
-                                        <strong id="res-probabilidade" class="indicator-value" style="font-size: 24px; color: var(--color-sage);">75%</strong>
-                                        <span id="res-margem" class="indicator-denominator">±8% na amostra</span>
-                                    </div>
-                                    <div class="indicator-card" style="padding: var(--space-4);">
-                                        <span class="indicator-name">Precedentes Similares</span>
-                                        <strong id="res-similares" class="indicator-value" style="font-size: 24px;">—</strong>
-                                        <span class="indicator-denominator">Decisões comparadas</span>
-                                    </div>
-                                    <div class="indicator-card" style="padding: var(--space-4);">
-                                        <span class="indicator-name">Tempo Mediano</span>
-                                        <strong id="res-prazo" class="indicator-value" style="font-size: 24px;">9 meses</strong>
-                                        <span class="indicator-denominator">Até a sentença</span>
-                                    </div>
-                                    <div class="indicator-card" style="padding: var(--space-4);">
-                                        <span class="indicator-name">Origem da Análise</span>
-                                        <strong id="res-provedor-ia" class="indicator-value" style="font-size: 16px; padding-top: 4px;">Estatística Local</strong>
-                                        <span class="indicator-denominator">Determinística</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- 4. Entendimento e Fundamentação Recorrente (Seção 13.8) -->
-                            <div class="document-section">
-                                <div class="document-section-header">
-                                    <h4 class="document-section-title">Tese e Fundamentação Recorrente</h4>
-                                    <span class="badge-editorial">Orientação</span>
-                                </div>
-                                <div id="res-thesis-card" class="thesis-card">
-                                    <div class="thesis-blur-target">
-                                        <p id="res-tese-recomendada" class="legal-prose" style="font-weight: 500; color: var(--color-navy);">
-                                            Aplicação prioritária do Código de Defesa do Consumidor e súmula sobre danos presumidos por falta de assistência material.
-                                        </p>
-                                        <p id="res-tendencia-juiz" style="font-size: var(--text-xs); color: var(--text-secondary); margin-top: var(--space-1);">
-                                            Histórico de 75% de decisões favoráveis ao consumidor neste padrão fático.
-                                        </p>
-                                    </div>
-                                    <div id="thesis-pro-lock-banner" class="thesis-pro-lock-banner hidden">
-                                        <div>
-                                            <strong style="font-size: var(--text-xs); color: var(--color-navy); display: block;">
-                                                Tese Estratégica Completa e Precedentes Correlatos — Exclusivo JuriVision PRO
-                                            </strong>
-                                            <span style="font-size: var(--text-xs); color: var(--text-secondary);">
-                                                Desbloqueie o parecer jurídico completo e análises ilimitadas com o plano PRO.
-                                            </span>
+                                    <dl class="metadata-dl">
+                                        <div class="metadata-item">
+                                            <dt>Órgão Julgador</dt>
+                                            <dd id="res-comarca">—</dd>
                                         </div>
-                                        <button type="button" id="btn-unlock-thesis-pro" class="btn btn-primary btn-sm">
-                                            Desbloquear Tese Estratégica Completa — Plano PRO
-                                        </button>
+                                        <div class="metadata-item">
+                                            <dt>Magistrado(a)</dt>
+                                            <dd id="res-magistrado">—</dd>
+                                        </div>
+                                        <div class="metadata-item">
+                                            <dt>Polo Ativo</dt>
+                                            <dd id="res-autor">—</dd>
+                                        </div>
+                                        <div class="metadata-item">
+                                            <dt>Polo Passivo</dt>
+                                            <dd id="res-reu">—</dd>
+                                        </div>
+                                    </dl>
+                                </div>
+
+                                <div class="document-section dossier-reveal-section">
+                                    <div class="document-section-header">
+                                        <h4 class="document-section-title">Síntese Factual</h4>
+                                        <span class="badge-editorial">Síntese estruturada</span>
+                                    </div>
+                                    <p id="res-resumo-nlp" class="legal-prose"></p>
+                                </div>
+
+                                <div class="document-section dossier-reveal-section">
+                                    <div class="document-section-header">
+                                        <h4 class="document-section-title">Indicadores de Precedentes</h4>
+                                        <span class="badge-editorial badge-lgpd">Confronto histórico</span>
+                                    </div>
+
+                                    <div class="case-indicators-grid">
+                                        <div class="indicator-card">
+                                            <span class="indicator-name">Proporção Favorável</span>
+                                            <strong id="res-probabilidade" class="indicator-value indicator-value-favorable">—</strong>
+                                            <span id="res-margem" class="indicator-denominator">Na amostra</span>
+                                        </div>
+                                        <div class="indicator-card">
+                                            <span class="indicator-name">Precedentes Similares</span>
+                                            <strong id="res-similares" class="indicator-value">—</strong>
+                                            <span class="indicator-denominator">Decisões comparadas</span>
+                                        </div>
+                                        <div class="indicator-card">
+                                            <span class="indicator-name">Tempo Mediano</span>
+                                            <strong id="res-prazo" class="indicator-value">—</strong>
+                                            <span class="indicator-denominator">Até a sentença</span>
+                                        </div>
+                                        <div class="indicator-card">
+                                            <span class="indicator-name">Origem da Análise</span>
+                                            <strong id="res-provedor-ia" class="indicator-value indicator-value-source">—</strong>
+                                            <span class="indicator-denominator">Determinística</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="document-section dossier-reveal-section">
+                                    <div class="document-section-header">
+                                        <h4 class="document-section-title">Tese e Fundamentação Recorrente</h4>
+                                        <span class="badge-editorial badge-saved">Orientação</span>
+                                    </div>
+                                    <div id="res-thesis-card" class="thesis-card">
+                                        <div class="thesis-blur-target">
+                                            <p id="res-tese-recomendada" class="legal-prose thesis-text-main"></p>
+                                            <p id="res-tendencia-juiz" class="thesis-text-sub"></p>
+                                        </div>
+                                        <div id="thesis-pro-lock-banner" class="thesis-pro-lock-banner hidden">
+                                            <div>
+                                                <strong class="thesis-lock-title">
+                                                    Tese Estratégica Completa e Precedentes Correlatos — Exclusivo JuriVision PRO
+                                                </strong>
+                                                <span class="thesis-lock-desc">
+                                                    Desbloqueie o parecer jurídico completo e análises ilimitadas com o plano PRO.
+                                                </span>
+                                            </div>
+                                            <button type="button" id="btn-unlock-thesis-pro" class="btn btn-primary btn-sm">
+                                                Desbloquear Tese Estratégica Completa — Plano PRO
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -933,12 +1445,40 @@
                 </div>
             </section>
         </main>
+
+        <!-- ================================================================
+             RODAPÉ INSTITUCIONAL (Logo Oficial Invertida Monocromaticamente)
+             ================================================================ -->
+        <footer class="site-footer">
+            <div class="site-footer-inner">
+                <div class="footer-brand-col">
+                    <img
+                        src="/assets/jurivision-logo.svg"
+                        alt="JuriVision"
+                        width="433"
+                        height="123"
+                        class="brand-logo-img brand-logo-inverted"
+                    >
+                    <span id="footer-acervo-note" class="footer-note sidebar-saved-desc">Acervo pessoal</span>
+                    <span id="api-status-badge" class="status-inline status-inline-footer" role="status">
+                        <span class="dot dot-neutral" aria-hidden="true"></span>
+                        <span>Verificando base...</span>
+                    </span>
+                </div>
+
+                <nav class="footer-nav-links" aria-label="Links institucionais">
+                    <button type="button" class="footer-link-btn" data-footer-action="landing">Página inicial</button>
+                    <button type="button" class="footer-link-btn" data-footer-tab="historico">Pesquisa Jurisprudencial</button>
+                    <button type="button" class="footer-link-btn" data-footer-tab="dashboard">Análise Jurimétrica</button>
+                    <button type="button" class="footer-link-btn" data-footer-tab="upload">Análise de Petição</button>
+                    <button type="button" class="footer-link-btn" data-footer-action="methodology">Sobre os dados e privacidade</button>
+                </nav>
+            </div>
+        </footer>
     </div>
 
     <!-- ================================================================
-         TELA INDIVIDUAL DE LEITURA DE DECISÃO (Seção 12 do Guia)
-         Mantém id="drawer-processo" para compatibilidade estrutural,
-         mas apresenta-se como uma Folha Documental de Leitura Confortável
+         TELA INDIVIDUAL DE LEITURA DE DECISÃO (#drawer-processo)
          ================================================================ -->
     <aside
         id="drawer-processo"
@@ -953,8 +1493,8 @@
                     <button type="button" id="btn-close-drawer" class="btn btn-secondary btn-sm" aria-label="Voltar aos resultados da pesquisa">
                         ← Voltar
                     </button>
-                    <span class="badge-editorial" id="drawer-proc-id">proc-1004</span>
-                    <span class="badge-editorial badge-lgpd">TJAL · LGPD</span>
+                    <span class="badge-editorial" id="drawer-proc-id">—</span>
+                    <span class="badge-editorial badge-lgpd">TJAL</span>
                 </div>
 
                 <div class="reader-topbar-group julgado-acoes">
@@ -970,11 +1510,10 @@
             </div>
 
             <div class="reader-body">
-                <!-- Cabeçalho Documental (Seção 12.2) -->
                 <div class="reader-doc-header">
-                    <div class="page-eyebrow">Documento Judicial · TJAL</div>
+                    <div class="reader-doc-eyebrow">Documento Judicial · TJAL</div>
                     <h2 id="drawer-proc-cnj" class="serif-heading reader-doc-title">
-                        Processo nº 0088210-12.2026.8.02.0001
+                        Processo nº —
                     </h2>
                     <p class="reader-doc-subtitle">
                         Metadados oficiais e síntese factual do julgado.
@@ -995,7 +1534,7 @@
                         <dd id="drawer-proc-juiz"></dd>
                     </div>
                     <div class="metadata-item">
-                        <dt>Polo Ativo (LGPD)</dt>
+                        <dt>Polo Ativo</dt>
                         <dd id="drawer-proc-autor"></dd>
                     </div>
                     <div class="metadata-item">
@@ -1013,9 +1552,7 @@
                         <h3 class="document-section-title">Síntese Factual</h3>
                         <span class="badge-editorial">Ementa estruturada</span>
                     </div>
-                    <div class="decision-excerpt-box">
-                        <p id="drawer-proc-resumo" class="legal-prose"></p>
-                    </div>
+                    <p id="drawer-proc-resumo" class="legal-prose"></p>
                 </div>
 
                 <div class="document-section">
@@ -1028,8 +1565,8 @@
             </div>
 
             <div class="reader-footer">
-                <span class="reader-footer-note">
-                    Acervo TJAL · Maceió
+                <span id="drawer-footer-note" class="reader-footer-note">
+                    Acervo pessoal
                 </span>
                 <div class="reader-footer-actions">
                     <button type="button" id="btn-drawer-open-dossier" class="btn btn-secondary btn-sm">
@@ -1121,6 +1658,17 @@
                 Fechar
             </button>
         </div>
+        <div id="account-session-panel" class="modal-body account-session-panel" hidden>
+            <div class="account-session-card">
+                <span class="account-session-kicker">Sessão autenticada</span>
+                <strong id="session-user-name" class="account-session-name"></strong>
+                <span id="session-user-oab" class="account-session-meta"></span>
+                <span id="session-user-plan" class="account-session-plan"></span>
+            </div>
+            <button type="button" id="btn-session-manage-plan" class="btn btn-secondary">Gerenciar plano</button>
+            <button type="button" id="btn-switch-account" class="btn btn-secondary">Entrar com outra conta</button>
+            <button type="button" id="btn-logout-account" class="btn btn-ghost btn-sm">Encerrar sessão atual</button>
+        </div>
         <form id="login-form" class="modal-body">
             <div class="field-group">
                 <label for="login-email" class="field-label">E-mail profissional</label>
@@ -1129,7 +1677,7 @@
                     type="email"
                     autocomplete="username"
                     required
-                    value="advogado@escritorio.com"
+                    placeholder="nome@escritorio.com.br"
                     class="control-input"
                 >
             </div>
@@ -1140,7 +1688,7 @@
                     type="password"
                     autocomplete="current-password"
                     required
-                    value="senhaSegura123"
+                    placeholder="Digite sua senha"
                     class="control-input"
                 >
             </div>
@@ -1149,7 +1697,6 @@
                 Entrar
             </button>
             <button type="button" id="btn-switch-to-register" class="btn btn-secondary">Criar conta</button>
-            <button type="button" id="btn-logout-account" class="btn btn-ghost btn-sm">Encerrar sessão atual</button>
         </form>
         <form id="register-form" class="modal-body" method="post" hidden>
             <div class="field-group">
@@ -1192,13 +1739,13 @@
         <div class="modal-body">
             <p id="upgrade-reason-banner" class="account-feedback hidden" data-error="true" role="alert"></p>
             <p id="upgrade-quota-summary" class="account-hint">
-                Plano atual: PRO · Análises ilimitadas e exportação completa habilitadas.
+                Plano atual: FREE · Até 3 análises gratuitas de petições PDF incluídas.
             </p>
 
             <div class="plans-comparison-grid">
                 <section class="plan-tier-card" aria-label="Plano Gratuito FREE">
                     <h3 class="plan-tier-title">Plano Gratuito (FREE)</h3>
-                    <p class="account-hint">Ideal para experimentar a plataforma com proteção LGPD.</p>
+                    <p class="account-hint">Ideal para experimentar a plataforma.</p>
                     <ul class="plan-tier-list">
                         <li>Até 3 análises de petições PDF gratuitas</li>
                         <li>Pesquisa jurisprudencial e DataJud (CNJ)</li>
@@ -1233,7 +1780,7 @@
     </dialog>
 
     <!-- ================================================================
-         MODAL DE AJUDA E METODOLOGIA (Seção 7.1 item 6 e Seção 21.3)
+         MODAL DE AJUDA E METODOLOGIA
          ================================================================ -->
     <div
         id="methodology-modal"
@@ -1245,9 +1792,9 @@
         <div class="modal-dialog modal-dialog-wide">
             <div class="modal-header">
                 <h2 id="methodology-modal-title" class="serif-heading modal-title">
-                    Guia de Metodologia, Fontes e Transparência Jurídica
+                    Sobre os dados, fontes e privacidade
                 </h2>
-                <button type="button" id="btn-close-methodology" class="btn btn-ghost btn-sm" aria-label="Fechar guia de metodologia">
+                <button type="button" id="btn-close-methodology" class="btn btn-ghost btn-sm" aria-label="Fechar janela de informações e privacidade">
                     Fechar
                 </button>
             </div>
@@ -1275,7 +1822,7 @@
     </div>
 
     <!-- ================================================================
-         TOAST DE CONFIRMAÇÃO DISCRETO (Seção 18.5)
+         TOAST DE CONFIRMAÇÃO DISCRETO
          ================================================================ -->
     <div id="status-toast" class="status-toast" role="status" aria-live="polite">
         <span id="status-toast-text">Operação concluída.</span>

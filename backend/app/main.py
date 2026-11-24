@@ -44,18 +44,19 @@ def _ensure_usuario_freemium_columns() -> None:
                 conn.execute(text(stmt))
 
 
-def init_db_and_seed() -> None:
-    """Garante criação de tabelas relacionais, migração incremental e carga idempotente inicial."""
+def init_db_and_seed(seed_demo: bool = False) -> None:
+    """Garante criação de tabelas relacionais, migração incremental e, só se pedido, a carga fictícia de demonstração."""
     Base.metadata.create_all(bind=engine)
     _ensure_usuario_freemium_columns()
-    with SessionLocal() as db:
-        seed_initial_data(db)
+    if seed_demo:
+        with SessionLocal() as db:
+            seed_initial_data(db)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Inicializando JuriVision API Core (%s)...", settings.APP_VERSION)
-    init_db_and_seed()
+    init_db_and_seed(seed_demo=settings.SEED_DEMO_DATA)
     yield
     logger.info("Encerrando JuriVision API Core.")
 
