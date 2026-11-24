@@ -369,6 +369,29 @@ erDiagram
 }
 ```
 
+#### 8.3.1 Campos de NLP processual em `metadados_extraidos` (Card #18)
+
+Além dos campos acima, o objeto `metadados_extraidos` passa a trazer (todos opcionais, compatíveis com clientes antigos):
+
+```json
+"caracteristicas": {
+  "classe_processual": "Ação de Indenização por Danos Morais",
+  "valor_causa": 10000.0,
+  "tutela_urgencia": true,
+  "justica_gratuita": true,
+  "danos_morais": true,
+  "danos_materiais": false,
+  "inversao_onus_prova": true,
+  "prioridade_tramitacao": false,
+  "pedidos": ["a concessão da justiça gratuita", "a condenação do réu em danos morais"]
+},
+"confianca_classificacao": 0.93,
+"campos_nao_identificados": ["numero_processo", "magistrado"]
+```
+
+* **Regra de não invenção:** quando uma informação não está no documento, o motor local não preenche valor fictício. Usa `"Não identificado"` / `"Não identificada"` (magistrado, comarca, partes), `"Não classificado"` (tema) e um identificador interno `SEM-CNJ-XXXXXXXXXX` no lugar do número CNJ. Cada campo ausente é listado em `campos_nao_identificados`.
+* **Implementação:** `backend/app/core/nlp_processual.py` (limpeza, extração, classificação, características e resumo). A qualidade é medida por `scripts/avaliar_nlp.py` sobre `backend/tests/fixtures/peticoes_nlp.json`.
+
 ### 8.4 Ingestão em Lote via Planilha CSV (`RF-03`, `RF-04`)
 
 * **Rota:** `POST /api/v1/processos/upload-csv`
