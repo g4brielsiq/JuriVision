@@ -23,3 +23,11 @@
 - Implementação das rotas `POST /api/v1/processos` e `PUT /api/v1/processos/{id}` com anonimização LGPD obrigatória.
 - Criação de 9 testes automatizados (CT-10 a CT-13) e documentação do contrato na Seção 8.5.1 do `ARCHITECTURE.md`.
 - **Status:** Aguardando revisão (PR para `dev`).
+
+### [2026-11-24] — Processamento de Documentos e NLP (Card #18)
+- **Branch de Atuação:** `Processamento-de-documentos-e-NLP/manu`
+- **Atividades Realizadas:**
+- Criação do módulo `nlp_processual.py`: limpeza de texto, identificação de informações processuais, classificação por assunto com confiança, características processuais e resumo estruturado.
+- Remoção dos dados fictícios que eram preenchidos quando a informação não existia no documento.
+- Criação de 31 testes automatizados (CT-NLP-01 a CT-NLP-07), conjunto de petições anotadas e script de avaliação de qualidade.
+- **Status:** Em desenvolvimento local (ainda sem PR).

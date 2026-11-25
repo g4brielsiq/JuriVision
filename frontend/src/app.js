@@ -8,11 +8,13 @@
  */
 
 import { configurarFormularioJulgado } from "./components/julgado-form.js";
+import { casosComparador, criarPecasDemonstrativas } from "./components/comparador-demo.js";
 import {
     atualizarPlanoAssinatura,
     buildSampleBatchCsvFile,
     buildSamplePetitionPdfFile,
     checkApiHealth,
+    compararPecas,
     consultarProcessoDatajud,
     excluirProcesso,
     fetchDashboardMetricas,
@@ -208,7 +210,7 @@ function refreshScrollReveal(scope = document) {
 
 export function switchTab(tabId, moveFocus = false) {
     state.activeTab = tabId;
-    const tabs = ["historico", "dashboard", "upload"];
+    const tabs = ["historico", "dashboard", "upload", "comparador"];
     let activePanel = null;
 
     tabs.forEach((id) => {
@@ -239,6 +241,7 @@ export function switchTab(tabId, moveFocus = false) {
         historico: "Pesquisa Jurisprudencial",
         dashboard: "Análise Jurimétrica do Conjunto",
         upload: "Análise Comparativa de Petição e Importação",
+        comparador: "Comparador de Peças",
     };
     const headerTitle = document.getElementById("header-title");
     if (headerTitle) headerTitle.textContent = titles[tabId] || "JuriVision";
@@ -257,7 +260,7 @@ export function switchTab(tabId, moveFocus = false) {
 }
 
 function setupTabKeyboardNavigation() {
-    const tabOrder = ["historico", "dashboard", "upload"];
+    const tabOrder = ["historico", "dashboard", "upload", "comparador"];
     const tablist = document.getElementById("sidebar-tablist");
     if (!tablist) return;
 
@@ -2413,6 +2416,394 @@ function configurarModalUpgrade() {
 }
 
 /* ==========================================================================
+   10. Visualizador Comparativo de Peças (Petição Inicial vs. Contestação)
+   ========================================================================== */
+function setupComparadorInteractions() {
+    let fileInicial = null;
+    let fileContestacao = null;
+    let processando = false;
+    let tesesAtuais = [];
+    let teseSelecionada = null;
+
+    const btnExecutar = document.getElementById("btn-executar-comparacao");
+    const statusFeedback = document.getElementById("comparador-status-feedback");
+    const infoInicial = document.getElementById("file-info-inicial");
+    const infoContestacao = document.getElementById("file-info-contestacao");
+    const inputInicial = document.getElementById("input-peticao-inicial");
+    const inputContestacao = document.getElementById("input-contestacao");
+    const dropInicial = document.getElementById("dropzone-inicial");
+    const dropContestacao = document.getElementById("dropzone-contestacao");
+    const btnSelectInicial = document.getElementById("btn-select-inicial");
+    const btnSelectContestacao = document.getElementById("btn-select-contestacao");
+    const btnDemo = document.getElementById("btn-demo-comparador");
+    const selectDemo = document.getElementById("select-demo-comparador");
+    const descricaoDemo = document.getElementById("comparador-demo-descricao");
+    const statusDemo = document.getElementById("comparador-demo-status");
+    const guiaDemo = document.getElementById("comparador-demo-guia");
+    const tituloGuiaDemo = document.getElementById("comparador-demo-guia-titulo");
+    const resultados = document.getElementById("comparador-resultados");
+    const formComparador = document.getElementById("form-comparador-pecas");
+    const botoesFiltro = Array.from(resultados.querySelectorAll(".chip-filter"));
+    const feedbackFiltro = document.getElementById("comparador-filtro-feedback");
+
+    function atualizarEstadoBotao() {
+        if (btnExecutar) {
+            btnExecutar.disabled = processando || !(fileInicial && fileContestacao);
+        }
+        btnDemo.disabled = processando;
+        selectDemo.disabled = processando;
+    }
+
+    for (const [id, caso] of Object.entries(casosComparador)) {
+        selectDemo.add(new Option(caso.titulo, id));
+    }
+    function atualizarDescricaoDemo() {
+        descricaoDemo.textContent = casosComparador[selectDemo.value].descricao;
+        statusDemo.textContent = "";
+    }
+    selectDemo.addEventListener("change", atualizarDescricaoDemo);
+    atualizarDescricaoDemo();
+
+    btnSelectInicial?.addEventListener("click", () => inputInicial?.click());
+    btnSelectContestacao?.addEventListener("click", () => inputContestacao?.click());
+
+    inputInicial?.addEventListener("change", (e) => {
+        if (e.target.files && e.target.files[0]) {
+            fileInicial = e.target.files[0];
+            if (infoInicial) infoInicial.textContent = fileInicial.name;
+            atualizarEstadoBotao();
+        }
+    });
+
+    inputContestacao?.addEventListener("change", (e) => {
+        if (e.target.files && e.target.files[0]) {
+            fileContestacao = e.target.files[0];
+            if (infoContestacao) infoContestacao.textContent = fileContestacao.name;
+            atualizarEstadoBotao();
+        }
+    });
+
+    // Drag & drop Inicial
+    dropInicial?.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        dropInicial.classList.add("dragover");
+    });
+    dropInicial?.addEventListener("dragleave", () => dropInicial.classList.remove("dragover"));
+    dropInicial?.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dropInicial.classList.remove("dragover");
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            fileInicial = e.dataTransfer.files[0];
+            if (infoInicial) infoInicial.textContent = fileInicial.name;
+            atualizarEstadoBotao();
+        }
+    });
+
+    // Drag & drop Contestação
+    dropContestacao?.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        dropContestacao.classList.add("dragover");
+    });
+    dropContestacao?.addEventListener("dragleave", () => dropContestacao.classList.remove("dragover"));
+    dropContestacao?.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dropContestacao.classList.remove("dragover");
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            fileContestacao = e.dataTransfer.files[0];
+            if (infoContestacao) infoContestacao.textContent = fileContestacao.name;
+            atualizarEstadoBotao();
+        }
+    });
+
+    btnDemo.addEventListener("click", async () => {
+        const idCaso = selectDemo.value;
+        const pecas = criarPecasDemonstrativas(idCaso);
+        await executarComparacao(pecas.inicial, pecas.contestacao, casosComparador[idCaso]);
+    });
+
+    formComparador?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        await executarComparacao(fileInicial, fileContestacao);
+    });
+
+    async function executarComparacao(inicial, contestacao, casoDemo) {
+        if (processando || !inicial || !contestacao) return;
+
+        processando = true;
+        atualizarEstadoBotao();
+        resultados.classList.add("hidden");
+        statusDemo.textContent = "";
+        statusFeedback.textContent = "";
+        const feedback = casoDemo ? statusDemo : statusFeedback;
+        feedback.textContent = "Comparando as peças…";
+
+        try {
+            const data = await compararPecas(inicial, contestacao);
+            renderizarResultadosComparacao(data, casoDemo);
+            feedback.textContent = "Comparação concluída.";
+        } catch (err) {
+            console.error("Erro na comparação:", err);
+            feedback.textContent = err instanceof TypeError
+                ? "Não foi possível conectar à API. Verifique a conexão e tente novamente."
+                : err.message || "Erro ao processar as peças.";
+        } finally {
+            processando = false;
+            atualizarEstadoBotao();
+        }
+    }
+
+    function renderizarResultadosComparacao(data, casoDemo) {
+        resultados.classList.remove("hidden");
+        guiaDemo.classList.toggle("hidden", !casoDemo);
+        if (casoDemo) {
+            tituloGuiaDemo.textContent = casoDemo.titulo;
+            document.getElementById("comparador-demo-guia-texto").textContent = casoDemo.guia;
+        }
+
+        const cnjBadge = document.getElementById("badge-comparador-cnj");
+        if (cnjBadge) {
+            const rotulo = casoDemo ? "CNJ fictício" : "CNJ";
+            cnjBadge.textContent = `${rotulo}: ${data.numero_processo || "Não identificado"}`;
+        }
+
+        document.getElementById("badge-comparador-motor").textContent =
+            data.motor_analise === "gemini" ? "Gemini" : "Análise local";
+
+        const scoreVal = document.getElementById("score-geral-valor");
+        const score = data.score_geral_favorabilidade_autor_pct;
+        const temScore = Number.isFinite(score);
+        scoreVal.textContent = temScore ? `${score}%` : "Estimativa indisponível";
+        scoreVal.classList.toggle("estimativa-indisponivel", !temScore);
+
+        const resumoTexto = document.getElementById("resumo-controvertido-geral");
+        if (resumoTexto) resumoTexto.textContent = data.resumo_controvertido_geral;
+
+        // Atualizar chips
+        const chipTotal = document.getElementById("chip-total-teses");
+        if (chipTotal) chipTotal.textContent = data.total_teses;
+        const chipConv = document.getElementById("chip-total-conv");
+        if (chipConv) chipConv.textContent = data.total_convergencias;
+        const chipDiv = document.getElementById("chip-total-div");
+        if (chipDiv) chipDiv.textContent = data.total_divergencias;
+        const chipOmiss = document.getElementById("chip-total-omiss");
+        if (chipOmiss) chipOmiss.textContent = data.total_omissoes;
+        const chipFn = document.getElementById("chip-total-fn");
+        if (chipFn) chipFn.textContent = data.total_fatos_novos_defesa;
+
+        // Renderizar Colunas
+        renderizarColunaTexto("texto-peticao-inicial", data.texto_higienizado_autor || "");
+        renderizarColunaTexto("texto-contestacao", data.texto_higienizado_reu || "");
+        tesesAtuais = data.teses || [];
+        teseSelecionada = null;
+        renderizarFeedTeses(tesesAtuais);
+        for (const botao of botoesFiltro) {
+            atualizarBotaoFiltro(botao, (botao.dataset.filterStatus || botao.dataset.filterTipo) === "todos");
+        }
+        aplicarFiltros();
+
+        if (document.getElementById("panel-comparador").hidden) return;
+        if (casoDemo) tituloGuiaDemo.focus({ preventScroll: true });
+        const reduzirMovimento = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        resultados.scrollIntoView({ behavior: reduzirMovimento ? "instant" : "smooth", block: "start" });
+    }
+
+    function renderizarColunaTexto(elementId, fullText) {
+        const container = document.getElementById(elementId);
+        if (!container) return;
+        container.replaceChildren();
+        container.scrollTop = 0;
+
+        const partes = fullText.split(/^\[PÁG (\d+)\][ \t]*\r?$/m);
+        for (let i = 0; i < partes.length; i += 2) {
+            const pagina = i === 0 ? "" : String(Number(partes[i - 1]));
+            if (pagina) {
+                const marcador = document.createElement("div");
+                marcador.className = "page-marker-pill";
+                marcador.textContent = `Página ${pagina}`;
+                container.append(marcador);
+            }
+
+            const texto = partes[i].trim();
+            if (!texto) continue;
+            const paragrafo = document.createElement("p");
+            paragrafo.className = "comparador-texto-pagina";
+            paragrafo.dataset.pagina = pagina;
+            paragrafo.textContent = texto;
+            container.append(paragrafo);
+        }
+
+        if (!container.hasChildNodes()) {
+            const mensagem = document.createElement("p");
+            mensagem.textContent = "Nenhum texto disponível.";
+            container.append(mensagem);
+        }
+    }
+
+    function destacarTrecho(elementId, trecho, pagina) {
+        const coluna = document.getElementById(elementId);
+        const destaqueAnterior = coluna.querySelector(".highlight-snippet");
+        if (destaqueAnterior) {
+            const paragrafo = destaqueAnterior.parentNode;
+            destaqueAnterior.replaceWith(destaqueAnterior.textContent);
+            paragrafo.normalize();
+        }
+        if (!trecho?.trim()) return;
+
+        const palavras = trecho.trim().split(/\s+/u);
+        const padrao = palavras.map((palavra) => palavra.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+");
+        const cita = new RegExp(padrao, "iu");
+        const paginas = Array.from(coluna.querySelectorAll(".comparador-texto-pagina"));
+        const paginaIndicada = paginas.find((item) => item.dataset.pagina === String(pagina));
+        const candidatas = paginaIndicada
+            ? [paginaIndicada, ...paginas.filter((item) => item !== paginaIndicada)]
+            : paginas;
+
+        for (const paragrafo of candidatas) {
+            const correspondencia = cita.exec(paragrafo.textContent);
+            if (!correspondencia) continue;
+
+            const { index } = correspondencia;
+            const range = document.createRange();
+            range.setStart(paragrafo.firstChild, index);
+            range.setEnd(paragrafo.firstChild, index + correspondencia[0].length);
+            const destaque = document.createElement("mark");
+            destaque.className = "highlight-snippet";
+            range.surroundContents(destaque);
+
+            const topoRelativo = destaque.getBoundingClientRect().top - coluna.getBoundingClientRect().top;
+            const reduzirMovimento = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+            coluna.scrollTo({
+                top: coluna.scrollTop + topoRelativo - coluna.clientHeight / 2,
+                behavior: reduzirMovimento ? "instant" : "smooth",
+            });
+            break;
+        }
+    }
+
+    function renderizarFeedTeses(teses) {
+        const feed = document.getElementById("feed-teses-comparacao");
+        if (!feed) return;
+        feed.innerHTML = "";
+
+        const statusLabels = {
+            convergente: "Convergente",
+            divergente: "Divergente",
+            fato_incontroverso_por_omissao: "Incontroverso (Art. 341 CPC)",
+            fato_novo_ou_extintivo_reu: "Fato Novo Réu (Art. 350 CPC)",
+        };
+
+        const tipoLabels = {
+            preliminar: "Preliminar",
+            prejudicial_merito: "Prejudicial",
+            fato_ou_valor: "Fato / Valor",
+            merito: "Mérito",
+            tutela_provisoria: "Tutela de Urgência",
+            prova_e_onus: "Provas / Ônus",
+            pedido_e_valor_causa: "Pedido / Valor",
+        };
+
+        teses.forEach((tese) => {
+            const card = document.createElement("article");
+            card.className = "tese-card";
+            card.setAttribute("tabindex", "0");
+            card.setAttribute("role", "article");
+            card.setAttribute("aria-label", `${tese.id_tese}: ${tese.tema}`);
+            card.dataset.idTese = tese.id_tese;
+            card.dataset.status = tese.status;
+            card.dataset.tipo = tese.tipo;
+
+            const statusClass = `status-${tese.status}`;
+            const statusLabel = statusLabels[tese.status] || tese.status;
+            const tipoLabel = tipoLabels[tese.tipo] || tese.tipo;
+            const probabilidade = tese.probabilidade_procedencia_pct;
+            const estimativa = Number.isFinite(probabilidade)
+                ? `<div class="tese-prob-bar-track" aria-hidden="true">
+                        <div class="tese-prob-bar-fill" style="width: ${probabilidade}%;"></div>
+                    </div>
+                    <span class="tese-prob-label">${probabilidade}%</span>`
+                : '<span class="estimativa-indisponivel">Estimativa indisponível</span>';
+
+            card.innerHTML = `
+                <div class="tese-header-row">
+                    <span class="tese-id">${escapeHtml(tese.id_tese)}</span>
+                    <span class="tese-tipo-badge">${escapeHtml(tipoLabel)}</span>
+                </div>
+                <div class="tese-title">${escapeHtml(tese.tema)}</div>
+                <div>
+                    <span class="tese-status-badge ${statusClass}">
+                        <span>●</span>
+                        <span>${escapeHtml(statusLabel)}</span>
+                    </span>
+                </div>
+                <p class="card-subtitle">${[
+                    Number.isInteger(tese.pagina_autor) && `Inicial, pág. ${tese.pagina_autor}`,
+                    Number.isInteger(tese.pagina_reu) && `Contestação, pág. ${tese.pagina_reu}`,
+                ].filter(Boolean).join(" · ")}</p>
+                <div class="tese-prob-row">
+                    <span class="tese-prob-title">Êxito do autor</span>
+                    ${estimativa}
+                </div>
+                <p class="tese-prob-fundamentacao">${escapeHtml(tese.fundamentacao_preditiva)}</p>
+                <div class="tese-impacto-alert" role="note">
+                    <strong>Orientação:</strong> ${escapeHtml(tese.impacto_processual)}
+                </div>
+            `;
+
+            card.addEventListener("click", () => selecionarTese(tese));
+            card.addEventListener("keydown", (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    selecionarTese(tese);
+                }
+            });
+
+            feed.appendChild(card);
+        });
+    }
+
+    function selecionarTese(tese) {
+        teseSelecionada = tese || null;
+        resultados.querySelectorAll(".tese-card").forEach((c) => {
+            c.classList.toggle("active-tese", c.dataset.idTese === tese?.id_tese);
+        });
+
+        destacarTrecho("texto-peticao-inicial", tese?.trecho_autor, tese?.pagina_autor);
+        destacarTrecho("texto-contestacao", tese?.trecho_reu, tese?.pagina_reu);
+    }
+
+    function atualizarBotaoFiltro(botao, ativo) {
+        botao.classList.toggle("active", ativo);
+        botao.setAttribute("aria-pressed", String(ativo));
+    }
+
+    function aplicarFiltros() {
+        const status = resultados.querySelector("[data-filter-status].active").dataset.filterStatus;
+        const tipo = resultados.querySelector("[data-filter-tipo].active").dataset.filterTipo;
+        const visiveis = tesesAtuais.filter((tese) =>
+            (status === "todos" || tese.status === status) && (tipo === "todos" || tese.tipo === tipo),
+        );
+        const idsVisiveis = new Set(visiveis.map((tese) => tese.id_tese));
+        resultados.querySelectorAll(".tese-card").forEach((card) => {
+            card.classList.toggle("hidden", !idsVisiveis.has(card.dataset.idTese));
+        });
+        feedbackFiltro.textContent = visiveis.length
+            ? `${visiveis.length} de ${tesesAtuais.length} teses exibidas.`
+            : "Nenhuma tese encontrada para os filtros selecionados.";
+        if (!visiveis.includes(teseSelecionada)) selecionarTese(visiveis[0]);
+    }
+
+    for (const botao of botoesFiltro) {
+        botao.addEventListener("click", () => {
+            const grupo = botao.closest(".filter-group");
+            for (const item of grupo.querySelectorAll(".chip-filter")) {
+                atualizarBotaoFiltro(item, item === botao);
+            }
+            aplicarFiltros();
+        });
+    }
+}
+
+/* ==========================================================================
    9. Inicialização de Eventos da Aplicação
    ========================================================================== */
 async function initApp() {
@@ -2427,6 +2818,10 @@ async function initApp() {
     document.getElementById("btn-historico")?.addEventListener("click", () => switchTab("historico"));
     document.getElementById("btn-dashboard")?.addEventListener("click", () => switchTab("dashboard"));
     document.getElementById("btn-upload")?.addEventListener("click", () => switchTab("upload"));
+    document.getElementById("btn-comparador")?.addEventListener("click", () => switchTab("comparador"));
+
+    // Inicialização do módulo de comparação de peças
+    setupComparadorInteractions();
 
     // Ações de navegação contextual
     document.getElementById("btn-go-jurimetria-from-search")?.addEventListener("click", () => {

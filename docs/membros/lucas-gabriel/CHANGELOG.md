@@ -49,3 +49,13 @@
     - Integração do botão **"Sincronizar lote DataJud"** na Pesquisa de Precedentes e ampliação da suíte para **39 testes automatizados aprovados**.
 - **Status:** Entregue e homologado com sucesso.
 
+### [2026-11-24] — Integração e Refinamento do Comparador de Peças para PDFs Sujos e Fallback Gemini 503 (Card #55)
+- **Branch de Atuação:** `Comparador/Ygor` (atuação conjunta com Ygor Vasconcelos)
+- **Atividades Realizadas:**
+  - Resolução de conflitos e unificação da branch `Comparador/Ygor` com a `dev` (pós-PRs #12, #13, #14 e #15), unificando a extração por marcadores de página `[PÁG XX]` com o fallback de OCR (`#56`) e o pipeline de NLP (`#18`).
+  - Implementação de `_normalizar_peca_com_paginas()` e `_extrair_trechos_comparacao()` em `backend/app/core/ai_gateway.py`, integrando o `LimpadorTexto` ao comparador local para reconstruir frases quebradas no meio da coluna do PDF, desfazer hifenização, remover rodapés PJe/e-SAJ e avaliar impugnações no escopo da sentença.
+  - Implementação de cadeia de fallback multi-modelo em `GeminiAIAdapter.comparar_pecas()` (`gemini-2.5-flash` → `gemini-2.5-flash-lite` → `gemini-2.0-flash`) para contornar erros `HTTP 503` no Free Tier.
+  - Criação dos testes `test_comparador_local_resiliente_a_pdf_sujo_com_quebras_e_hifenizacao` e `test_comparador_gemini_recupera_de_503_via_modelo_fallback`, totalizando **97 testes automatizados aprovados**.
+- **Status:** Entregue e PR aberto para `dev`.
+
+
