@@ -429,3 +429,96 @@ def test_estimativa_usa_apenas_julgados_do_tema_e_evita_certeza_artificial():
         _aplicar_jurimetria_granular(db, resultado)
         assert resultado.score_geral_favorabilidade_autor_pct == 85.7
 
+
+def test_comparador_local_resiliente_a_pdf_sujo_com_quebras_e_hifenizacao():
+    """
+    Valida que o comparador local limpa ruídos de PDFs jurídicos reais (PJe/e-SAJ),
+    desfazendo hifenização de quebra de linha, reconstruindo frases cortadas na coluna do PDF
+    e removendo rodapés de assinatura digital sem perder a referência de página [PÁG XX].
+    """
+    inicial_suja = (
+        "[PÁG 01]\n"
+        "PJe - Processo Judicial Eletrônico - Documento assinado digitalmente\n"
+        "DOS FATOS\n"
+        "[PÁG 02]\n"
+        "O grave inadimple-\n"
+        "mento contratual ocorreu em\n"
+        "10/11/2026 causando prejuízo material de R$\n"
+        "1.200,00 ao consumidor.\n"
+        "Pede-se a inver-\n"
+        "sao do onus da prova nos termos do CDC.\n"
+        "Página 2 de 5\n"
+    )
+    defesa_suja = (
+        "[PÁG 01]\n"
+        "Documento assinado eletronicamente conforme MP 2.200-2/2001\n"
+        "DA CONTESTAÇÃO\n"
+        "[PÁG 02]\n"
+        "O evento de\n"
+        "10/11/2026 é admitido pela ré.\n"
+        "A requerida impugna o valor por ex-\n"
+        "cesso manifesto na cobrança.\n"
+        "Argui ainda pres-\n"
+        "crição trienal da pretensão.\n"
+        "fls. 18\n"
+    )
+
+    resultado = LocalDeterministicFallbackAdapter().comparar_pecas(inicial_suja, defesa_suja)
+
+    # Rodapés do PJe e numeração solta de página foram removidos do texto higienizado
+    assert "Processo Judicial Eletrônico" not in (resultado.texto_higienizado_autor or "")
+    assert "Página 2 de 5" not in (resultado.texto_higienizado_autor or "")
+    assert "fls. 18" not in (resultado.texto_higienizado_reu or "")
+
+    # Palavras hifenizadas e linhas quebradas no meio da frase foram reconstruídas
+    cronologia = next(t for t in resultado.teses if "Cronologia" in t.tema)
+    assert cronologia.status == StatusTese.CONVERGENTE
+    assert cronologia.pagina_autor == 2
+    assert cronologia.pagina_reu == 2
+    assert "inadimplemento contratual ocorreu em 10/11/2026" in (cronologia.trecho_autor or "")
+    assert "10/11/2026 é admitido pela ré." in (cronologia.trecho_reu or "")
+
+    valor = next(t for t in resultado.teses if "Valor" in t.tema)
+    assert valor.status == StatusTese.DIVERGENTE
+    assert "excesso manifesto" in (valor.trecho_reu or "")
+
+    onus = next(t for t in resultado.teses if t.tipo == TipoTese.PROVA_ONUS)
+    assert "inversao do onus da prova" in (onus.trecho_autor or "")
+
+    presc = next(t for t in resultado.teses if t.tipo == TipoTese.PREJUDICIAL_MERITO)
+    assert presc.status == StatusTese.FATO_NOVO_DEFESA
+    assert "prescrição trienal" in (presc.trecho_reu or "")
+
+
+def test_comparador_gemini_recupera_de_503_via_modelo_fallback(monkeypatch):
+    """
+    Valida que quando o modelo primário do Gemini retorna HTTP 503 (sobrecarregado no Free Tier),
+    o GeminiAIAdapter tenta automaticamente o próximo modelo Flash da cadeia e conclui com sucesso.
+    """
+    inicial = "Em 10/11/2026 ocorreu o inadimplemento."
+    defesa = "A ré confirma a data de 10/11/2026."
+    base = LocalDeterministicFallbackAdapter().comparar_pecas(inicial, defesa)
+    resposta = RespostaComparacaoGemini.model_validate(base.model_dump())
+
+    chamadas: list[str] = []
+
+    def responder(req: httpx.Request) -> httpx.Response:
+        chamadas.append(str(req.url))
+        if len(chamadas) == 1:
+            return httpx.Response(503, json={"error": {"code": 503, "message": "The model is overloaded."}})
+        partes = [{"text": resposta.model_dump_json()}]
+        return httpx.Response(200, json={"candidates": [{"content": {"parts": partes}}]})
+
+    transporte = httpx.MockTransport(responder)
+    http_client = httpx.Client
+    monkeypatch.setattr(
+        ai_gateway_module, "settings", replace(ai_gateway_module.settings, GEMINI_API_KEY="chave-ficticia")
+    )
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: http_client(transport=transporte, **kwargs))
+
+    resultado = GeminiAIAdapter().comparar_pecas(inicial, defesa, numero_processo="0801111-22.2026.8.02.0001")
+    assert len(chamadas) == 2
+    assert resultado.motor_analise == "gemini"
+    assert resultado.total_teses == len(resposta.teses)
+
+

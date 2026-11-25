@@ -218,3 +218,95 @@ def test_gemini_adapter_com_markdown_codeblock():
             assert "gemini" in res.analise_preditiva.provedor_ia
             assert res.analise_preditiva.probabilidade_deferimento == 0.82
             assert "art. 42 do CDC" in res.analise_preditiva.tese_recomendada
+
+
+# ==============================================================================
+# 3. Testes de Coleta Automática em Lote e Sincronização DataJud (Card #27)
+# ==============================================================================
+def test_datajud_coleta_lote_e_sincronizacao_idempotente(client):
+    """
+    Valida o endpoint POST /api/v1/processos/datajud/sincronizar:
+    - Coleta lote de processos e jurisprudências (com fallback resiliente se offline)
+    - Higieniza partes e ementa via AnonimizadorLGPD (RN-01)
+    - Persiste novos processos na primeira execução e apenas atualiza na segunda (idempotência)
+    """
+    with patch("httpx.AsyncClient.post", side_effect=Exception("Simulando modo offline")):
+        res1 = client.post(
+            "/api/v1/processos/datajud/sincronizar",
+            json={"tribunal": "TJAL", "limite": 2},
+        )
+        assert res1.status_code == 200
+        body1 = res1.json()
+        assert body1["tribunal"] == "TJAL"
+        assert body1["fonte"] == "local_cache_fallback"
+        assert body1["total_coletados"] == 2
+        assert body1["novos_inseridos"] == 2
+        assert body1["atualizados"] == 0
+        assert body1["total_entidades_anonimizadas_lgpd"] >= 2
+        assert len(body1["itens"]) == 2
+        # Verifica máscara LGPD nas partes do processo sincronizado
+        assert "***" in body1["itens"][0]["partes_anonimizadas"]
+
+        # Segunda execução com o mesmo lote deve atualizar sem duplicar
+        res2 = client.post(
+            "/api/v1/processos/datajud/sincronizar",
+            json={"tribunal": "TJAL", "limite": 2},
+        )
+        assert res2.status_code == 200
+        body2 = res2.json()
+        assert body2["total_coletados"] == 2
+        assert body2["novos_inseridos"] == 0
+        assert body2["atualizados"] == 2
+
+
+def test_datajud_coleta_lote_com_mock_api_externa(client):
+    """
+    Simula retorno HTTP 200 da API Pública do DataJud (Elasticsearch DSL) em lote,
+    verificando normalização do CNJ de 20 dígitos, inferência de desfecho e persistência.
+    """
+    fake_es_batch = {
+        "hits": {
+            "hits": [
+                {
+                    "_source": {
+                        "numeroProcesso": "08099887720268020001",
+                        "tribunal": "TJAL",
+                        "classe": {"codigo": 436, "nome": "Procedimento do Juizado Especial Cível"},
+                        "orgaoJulgador": {"codigo": 12, "nome": "2º Juizado Especial Cível de Maceió"},
+                        "assuntos": [
+                            {"codigo": 4829, "nome": "Atraso de Voo / Transporte Aéreo", "principal": True}
+                        ],
+                        "movimentos": [
+                            {
+                                "codigo": 219,
+                                "nome": "Julgado Procedente o Pedido",
+                                "dataHora": "2026-10-15T14:00:00",
+                            }
+                        ],
+                        "dataAjuizamento": "2026-04-01T09:00:00.000Z",
+                        "grau": "G1",
+                    }
+                }
+            ]
+        }
+    }
+
+    mock_http_res = MagicMock()
+    mock_http_res.status_code = 200
+    mock_http_res.json.return_value = fake_es_batch
+
+    with patch("httpx.AsyncClient.post", return_value=mock_http_res):
+        res = client.post(
+            "/api/v1/processos/datajud/sincronizar",
+            json={"tribunal": "TJAL", "tema": "Atraso de Voo", "limite": 1},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["fonte"] == "datajud_api"
+        assert data["total_coletados"] == 1
+        assert data["novos_inseridos"] == 1
+        item = data["itens"][0]
+        assert item["numero_processo"] == "0809988-77.2026.8.02.0001"
+        assert item["tema"] == "Atraso de Voo"
+        assert item["resultado"] == "Procedente"
+

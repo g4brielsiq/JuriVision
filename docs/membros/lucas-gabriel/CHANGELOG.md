@@ -34,3 +34,28 @@
   - Ajuste no script automatizado `start_dev.ps1` com checagem preventiva de dependências Node (`npm install`).
   - Homologação da suíte completa de 19 testes automatizados com 100% de aprovação.
 - **Status:** Entregue e homologado com sucesso.
+
+### [2026-11-22] — Refinamentos de Precisão Jurídica, Similares Reais, Isolamento de Testes e Coleta Automática DataJud (Cards #27, #35, #62 e #64)
+- **Branches de Atuação:** `feat/sprint2-backend-precisao-testes` (PR #12) e `feat/datajud-coleta-automatica`
+- **Atividades Realizadas:**
+  - **Homologação Visual Integrada (`dev` → `main` | Card #62):** condução dos testes visuais dos fluxos de conta, cadastro/edição de julgados com prévia LGPD e Guia de Estilo v2 (Etapa 1), seguida da abertura e merge do PR #11 na `main`.
+  - **Precisão Jurídica, Processos Semelhantes Reais e Isolamento do Banco de Testes (Cards #35 e #64):**
+    - Isolamento do banco SQLite em ambiente de testes (`backend/tests/conftest.py`) para proteger `jurivision_local.sqlite3`.
+    - Implementação da busca real de precedentes semelhantes (`GET /api/v1/processos/{id_processo}/similares`), eliminando multiplicadores estáticos (`* 7` e `42`) e exibindo a natureza da estimativa heurística vs. IA na interface.
+    - Adição de filtros por `comarca` e `tribunal` em `GET /api/v1/processos` e validação estrita de tokens JWT (`GET /api/v1/auth/me`).
+  - **Coleta Automática em Lote e Atualização da Base via DataJud (Card #27):**
+    - Implementação de `DataJudClient.coletar_lote_jurisprudencia()` e `extrair_registro_para_acervo()` em `backend/app/core/datajud_client.py`.
+    - Criação do endpoint `POST /api/v1/processos/datajud/sincronizar` com higienização determinística `AnonimizadorLGPD` (`RN-01`) e atualização idempotente da base histórica.
+    - Integração do botão **"Sincronizar lote DataJud"** na Pesquisa de Precedentes e ampliação da suíte para **39 testes automatizados aprovados**.
+- **Status:** Entregue e homologado com sucesso.
+
+### [2026-11-24] — Integração e Refinamento do Comparador de Peças para PDFs Sujos e Fallback Gemini 503 (Card #55)
+- **Branch de Atuação:** `Comparador/Ygor` (atuação conjunta com Ygor Vasconcelos)
+- **Atividades Realizadas:**
+  - Resolução de conflitos e unificação da branch `Comparador/Ygor` com a `dev` (pós-PRs #12, #13, #14 e #15), unificando a extração por marcadores de página `[PÁG XX]` com o fallback de OCR (`#56`) e o pipeline de NLP (`#18`).
+  - Implementação de `_normalizar_peca_com_paginas()` e `_extrair_trechos_comparacao()` em `backend/app/core/ai_gateway.py`, integrando o `LimpadorTexto` ao comparador local para reconstruir frases quebradas no meio da coluna do PDF, desfazer hifenização, remover rodapés PJe/e-SAJ e avaliar impugnações no escopo da sentença.
+  - Implementação de cadeia de fallback multi-modelo em `GeminiAIAdapter.comparar_pecas()` (`gemini-2.5-flash` → `gemini-2.5-flash-lite` → `gemini-2.0-flash`) para contornar erros `HTTP 503` no Free Tier.
+  - Criação dos testes `test_comparador_local_resiliente_a_pdf_sujo_com_quebras_e_hifenizacao` e `test_comparador_gemini_recupera_de_503_via_modelo_fallback`, totalizando **97 testes automatizados aprovados**.
+- **Status:** Entregue e PR aberto para `dev`.
+
+

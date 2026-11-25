@@ -85,3 +85,12 @@
 - **Plano de implementação** — A Etapa 4 passou a incluir os casos demonstrativos, a geração dos PDFs e o roteiro de validação no navegador. A entrega usa o contrato de comparação e as regras de jurimetria já especificados nas Etapas 1 a 3. [Plano de implementação](./plano_de_implementa_o_visualizador_comparativo_de_pe_as_jur_dicas.md#demonstração-guiada)
 - **Verificação** — Build de produção aprovado e 46 testes aprovados. No Chrome com o motor local, foram verificados os dois casos, a extração das seis páginas de cada comparação, a seleção de teses por teclado, os filtros combinados, o estado vazio e o upload de peças próprias.
 - **Execução local** — O erro `WinError 10048` ocorreu porque a API do JuriVision já respondia na porta `8000`. A instância existente foi reaproveitada, o frontend foi iniciado na porta `5173` e ambos responderam. A intervenção foi operacional, com as portas previstas pelo projeto.
+
+### [2026-11-24] - Integração com `origin/dev`, Limpeza de PDFs Sujos e Fallback Multi-Modelo Gemini (Card #55)
+
+- **Branch:** `Comparador/Ygor` (finalização conjunta com Lucas Gabriel)
+- Sincronização com a `dev` (incorporando os módulos `SegmentadorPeticao`/OCR da `#56` e `LimpadorTexto`/`nlp_processual` da `#18`).
+- Integração de `_normalizar_peca_com_paginas` e `_extrair_trechos_comparacao` no comparador local para tratar PDFs reais com quebras de linha no meio da frase, hifenização e rodapés do PJe/e-SAJ, além de verificação de impugnação no escopo da sentença.
+- Adição de cadeia de fallback entre modelos gratuitos do Gemini (`gemini-2.5-flash` $\rightarrow$ `gemini-2.5-flash-lite` $\rightarrow$ `gemini-2.0-flash`) quando ocorre `HTTP 503`.
+- **Verificação:** **97 testes aprovados (`97 passed` no `pytest`)** e build de produção do frontend validado sem erros.
+

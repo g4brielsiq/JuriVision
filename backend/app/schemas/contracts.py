@@ -115,12 +115,43 @@ class PartesAnonimizadasSchema(BaseModel):
     reu: str
 
 
+class SecoesPeticaoSchema(BaseModel):
+    dos_fatos: str = Field(default="", description="Narrativa fática extraída da petição inicial")
+    do_direito: str = Field(default="", description="Fundamentação jurídica, teses e dispositivos legais")
+    dos_pedidos: str = Field(default="", description="Pedidos e requerimentos finais formulados")
+    preliminares: Optional[str] = Field(default=None, description="Questões preliminares, se identificadas")
+    cabecalho: Optional[str] = Field(default=None, description="Endereçamento e qualificação inicial das partes")
+
+
+class CaracteristicasProcessuaisSchema(BaseModel):
+    """Características processuais identificadas automaticamente no texto da petição (Card #18)."""
+
+    classe_processual: Optional[str] = Field(default=None, description="Ex.: Ação de Indenização por Danos Morais")
+    valor_causa: Optional[float] = Field(default=None, ge=0, description="Valor da causa em reais, se informado")
+    tutela_urgencia: bool = Field(default=False, description="Há pedido de tutela de urgência / liminar")
+    justica_gratuita: bool = Field(default=False, description="Há pedido de gratuidade da justiça")
+    danos_morais: bool = Field(default=False, description="Há pedido de indenização por danos morais")
+    danos_materiais: bool = Field(default=False, description="Há pedido de danos materiais / restituição")
+    inversao_onus_prova: bool = Field(default=False, description="Há pedido de inversão do ônus da prova")
+    prioridade_tramitacao: bool = Field(default=False, description="Há pedido de prioridade de tramitação")
+    pedidos: List[str] = Field(default_factory=list, description="Pedidos enumerados (texto higienizado)")
+
+
 class MetadadosExtraidosSchema(BaseModel):
     numero_processo: str
     tema: str
     magistrado: str
     comarca: str
     partes_anonimizadas: PartesAnonimizadasSchema
+    secoes: Optional[SecoesPeticaoSchema] = None
+    caracteristicas: Optional[CaracteristicasProcessuaisSchema] = None
+    confianca_classificacao: Optional[float] = Field(
+        default=None, ge=0.0, le=1.0, description="Confiança da classificação de tema (0 a 1)"
+    )
+    campos_nao_identificados: List[str] = Field(
+        default_factory=list,
+        description="Campos que não foram encontrados no documento (nenhum valor é inventado)",
+    )
 
 
 class AnalisePreditivaSchema(BaseModel):
@@ -287,3 +318,37 @@ class DataJudProcessoResponse(BaseModel):
     fonte: str = "datajud_api"  # "datajud_api" | "local_cache_fallback"
     sucesso: bool = True
     mensagem: str = "Metadados recuperados com sucesso da API Pública do DataJud."
+
+
+class DataJudSincronizacaoRequest(BaseModel):
+    tribunal: str = Field(
+        default="TJAL",
+        min_length=2,
+        max_length=20,
+        description="Sigla do tribunal para coleta automática (ex.: TJAL, TJSP, TJRJ, TJPE, TRF5)",
+        examples=["TJAL"],
+    )
+    tema: Optional[str] = Field(
+        default=None,
+        max_length=120,
+        description="Filtro opcional de assunto/matéria jurisprudencial para coleta direcionada",
+        examples=["Dano Moral"],
+    )
+    limite: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        description="Quantidade máxima de processos e jurisprudências a coletar no lote",
+    )
+
+
+class DataJudSincronizacaoResponse(BaseModel):
+    tribunal: str
+    fonte: str = "datajud_api"  # "datajud_api" | "local_cache_fallback"
+    total_coletados: int = Field(..., ge=0)
+    novos_inseridos: int = Field(..., ge=0)
+    atualizados: int = Field(..., ge=0)
+    total_entidades_anonimizadas_lgpd: int = Field(default=0, ge=0)
+    mensagem: str
+    itens: List[ProcessoListItemSchema] = []
+

@@ -369,6 +369,29 @@ erDiagram
 }
 ```
 
+#### 8.3.1 Campos de NLP processual em `metadados_extraidos` (Card #18)
+
+Além dos campos acima, o objeto `metadados_extraidos` passa a trazer (todos opcionais, compatíveis com clientes antigos):
+
+```json
+"caracteristicas": {
+  "classe_processual": "Ação de Indenização por Danos Morais",
+  "valor_causa": 10000.0,
+  "tutela_urgencia": true,
+  "justica_gratuita": true,
+  "danos_morais": true,
+  "danos_materiais": false,
+  "inversao_onus_prova": true,
+  "prioridade_tramitacao": false,
+  "pedidos": ["a concessão da justiça gratuita", "a condenação do réu em danos morais"]
+},
+"confianca_classificacao": 0.93,
+"campos_nao_identificados": ["numero_processo", "magistrado"]
+```
+
+* **Regra de não invenção:** quando uma informação não está no documento, o motor local não preenche valor fictício. Usa `"Não identificado"` / `"Não identificada"` (magistrado, comarca, partes), `"Não classificado"` (tema) e um identificador interno `SEM-CNJ-XXXXXXXXXX` no lugar do número CNJ. Cada campo ausente é listado em `campos_nao_identificados`.
+* **Implementação:** `backend/app/core/nlp_processual.py` (limpeza, extração, classificação, características e resumo). A qualidade é medida por `scripts/avaliar_nlp.py` sobre `backend/tests/fixtures/peticoes_nlp.json`.
+
 ### 8.4 Ingestão em Lote via Planilha CSV (`RF-03`, `RF-04`)
 
 * **Rota:** `POST /api/v1/processos/upload-csv`
@@ -430,8 +453,10 @@ erDiagram
 
 * **Regras:** `numero_processo` no formato CNJ; `resultado` ∈ {`Procedente`, `Improcedente`, `Acordo`, `Em Analise`} (padrão `Em Analise`); `comarca` e `data_julgamento` opcionais. Autor, réu e resumo passam pelo `AnonimizadorLGPD` antes da persistência (`RN-01`); nomes já mascarados (`***`) são preservados na edição. A `analise_preditiva` é uma estimativa heurística calculada com processos do mesmo tema e magistrado na base (`provedor_ia = "local_heuristic"`).
 * **Response Body:** mesmo formato de `GET /api/v1/processos/{id_processo}` (Seção 8.3), com `resultado` e `data_julgamento` (ISO 8601 ou `null`) para preencher a edição.
-* **Erros:** `422` (validação), `409` (número CNJ já cadastrado em outro processo), `404` (edição de processo inexistente).
+* **Erros:** `422` (validação), `409` (número CNJ já cadastrado em outro processo), `404` (edição ou exclusão de processo inexistente), `401` (token JWT inválido ou expirado).
 * **Prévia:** `POST /api/v1/processos/anonimizacao/previa` aceita `autor`, `reu` e `resumo` em preenchimento parcial. Retorna `partes_anonimizadas`, `resumo` e `auditoria_lgpd` usando a mesma rotina do cadastro e da edição, sem persistência.
+* **Exclusão (`DELETE /api/v1/processos/{id_processo}`):** remove o processo e seus registros dependentes em cascata (`204 No Content` ou `404 Not Found`).
+* **Precedentes Semelhantes (`GET /api/v1/processos/{id_processo}/similares`):** retorna `ProcessoListResponse` com os julgados reais mais semelhantes na base (pontuados por correspondência de tema, magistrado, comarca e vocabulário da ementa, sem multiplicadores artificiais).
 
 ### 8.6 Exportação de Relatório Estratégico (`RF-09`)
 

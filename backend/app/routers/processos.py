@@ -13,14 +13,15 @@ import re
 from typing import Optional
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.ai_gateway import AnonimizadorLGPD, ExtratorDocumental, ai_gateway
 from app.core.datajud_client import DataJudClient
 from app.core.database import get_db
-from app.models.entities import AnalisePreditiva, LogAuditoriaLGPD, Processo
+from app.core.security import get_optional_current_user
+from app.models.entities import AnalisePreditiva, LogAuditoriaLGPD, Processo, Usuario
 from app.schemas.comparacao import ResultadoComparacaoPecas
 from app.schemas.contracts import (
     AnalisePreditivaSchema,
@@ -38,6 +39,8 @@ from app.schemas.contracts import (
     ProcessoListResponse,
     ProcessoUploadResponse,
     DataJudProcessoResponse,
+    DataJudSincronizacaoRequest,
+    DataJudSincronizacaoResponse,
 )
 
 router = APIRouter(prefix="/api/v1/processos", tags=["Processos e Base de Conhecimento (RF-02 a RF-08)"])
@@ -59,50 +62,143 @@ MAX_CSV_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB (RN-04 / SEC-05)
 MIN_JULGADOS_POR_TEMA = 5
 
 
+_STOPWORDS_SIMILARIDADE = {
+    "processo", "decisao", "judicial", "autos", "relatoria", "juizo", "envolvendo",
+    "sintese", "processual", "higienizada", "acao", "tendo", "partes", "submetida",
+    "analise", "preditiva", "vara", "civel", "maceio", "direito", "contra", "sobre",
+}
+
+
+def _extrair_palavras_chave(texto: Optional[str]) -> set[str]:
+    if not texto:
+        return set()
+    tokens = re.findall(r"[a-zA-ZÀ-ÿ]{5,}", texto.lower())
+    return {t for t in tokens if t not in _STOPWORDS_SIMILARIDADE}
+
+
+def _temas_equivalentes(tema_a: Optional[str], tema_b: Optional[str]) -> bool:
+    a = (tema_a or "").strip().lower()
+    b = (tema_b or "").strip().lower()
+    if not a or not b:
+        return False
+    return a == b or a in b or b in a
+
+
+def _buscar_processos_similares_reais(
+    db: Session,
+    tema: Optional[str],
+    magistrado: Optional[str],
+    comarca: Optional[str] = None,
+    resumo: Optional[str] = None,
+    ignorar_id: Optional[str] = None,
+    ignorar_numero: Optional[str] = None,
+) -> list[Processo]:
+    """
+    Identifica e ordena processos reais semelhantes persistidos na base (RF-06 / Card #35),
+    combinando correspondência de tema, magistrado, comarca e vocabulário factual da síntese.
+    """
+    query = db.query(Processo)
+    if ignorar_id:
+        query = query.filter(Processo.id_processo != ignorar_id)
+    if ignorar_numero:
+        query = query.filter(Processo.numero_processo != ignorar_numero)
+
+    candidatos = query.all()
+    if not candidatos:
+        return []
+
+    juiz_norm = (magistrado or "").strip().lower()
+    comarca_norm = (comarca or "").strip().lower()
+    palavras_base = _extrair_palavras_chave(resumo)
+
+    pontuados: list[tuple[int, date, Processo]] = []
+    for cand in candidatos:
+        score = 0
+        mesmo_tema = _temas_equivalentes(tema, cand.tema)
+        if mesmo_tema:
+            score += 4
+        if juiz_norm and (cand.magistrado or "").strip().lower() == juiz_norm:
+            score += 2
+        if comarca_norm and (cand.comarca or "").strip().lower() == comarca_norm:
+            score += 1
+        if palavras_base:
+            intersecao = len(palavras_base & _extrair_palavras_chave(cand.resumo_nlp))
+            if intersecao >= 2:
+                score += 2
+            elif intersecao == 1:
+                score += 1
+
+        if mesmo_tema or score >= 3:
+            pontuados.append((score, cand.data_julgamento or date.min, cand))
+
+    pontuados.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return [item[2] for item in pontuados]
+
+
+def _detectar_tema_preliminar(raw_text: str) -> Optional[str]:
+    lower = raw_text.lower()
+    if any(k in lower for k in ("voo", "aérea", "aerea", "bagagem", "passageiro", "aeroporto", "cancelamento")):
+        return "Atraso de Voo"
+    if any(k in lower for k in ("trabalh", "clt", "horas extras", "rescisa", "rescisão", "fgts", "empregad")):
+        return "Direito Trabalhista"
+    if any(k in lower for k in ("saúde", "saude", "unimed", "hospital", "cirurgia", "tratamento", "home care", "plano")):
+        return "Plano de Saúde"
+    if any(k in lower for k in ("tribut", "icms", "iss", "fisco", "execução fiscal", "imposto")):
+        return "Tributário"
+    if any(k in lower for k in ("dano moral", "indeniza", "consumidor", "cobrança", "cobranca", "negativa")):
+        return "Dano Moral"
+    return None
+
+
 def _compute_historical_context(db: Session, raw_text: str) -> ContextoHistoricoSchema:
     """
     Consulta o histórico relacional (RN-02) para fornecer parâmetros estatísticos reais
-    ao motor preditivo sobre o magistrado e tema correlatos.
+    ao motor preditivo sobre o magistrado e tema correlatos, sem multiplicadores artificiais.
     """
     lower = raw_text.lower()
     if "maria silva" in lower:
         target_juiz = "Dra. Maria Silva"
     elif "carlos souza" in lower:
         target_juiz = "Dr. Carlos Souza"
-    else:
+    elif "rafael" in lower or "amorim" in lower:
         target_juiz = "Dr. Rafael De Amorim"
+    else:
+        target_juiz = None
 
-    query = db.query(Processo).filter(Processo.magistrado == target_juiz).all()
-    if not query:
-        query = db.query(Processo).all()
+    target_tema = _detectar_tema_preliminar(raw_text)
+    similares = _buscar_processos_similares_reais(
+        db,
+        tema=target_tema,
+        magistrado=target_juiz,
+        resumo=raw_text,
+    )
 
-    if not query:
+    pool_estatistico = similares or db.query(Processo).all()
+    if not pool_estatistico:
         return ContextoHistoricoSchema(
-            total_casos_similares=42,
-            taxa_favoravel_juiz=0.75,
-            tempo_medio_meses=9,
+            total_casos_similares=0,
+            taxa_favoravel_juiz=0.5,
+            tempo_medio_meses=12,
         )
 
     favoraveis = sum(
         1
-        for p in query
+        for p in pool_estatistico
         if (p.resultado_historico or "").lower() in ("procedente", "acordo")
         or (p.analise_preditiva and p.analise_preditiva.probabilidade_deferimento >= 0.5)
     )
-    taxa = round(favoraveis / len(query), 2)
-    # Escala estatística representativa da vara + registros persistidos
-    casos_similares = max(len(query) * 7, 15)
+    taxa = round(favoraveis / len(pool_estatistico), 2)
     prazos = [
         p.analise_preditiva.tempo_estimado_sentenca_meses
-        for p in query
+        for p in pool_estatistico
         if p.analise_preditiva is not None
     ]
-    tempo_medio = int(round(sum(prazos) / len(prazos))) if prazos else 10
+    tempo_medio = int(round(sum(prazos) / len(prazos))) if prazos else 12
 
     return ContextoHistoricoSchema(
-        total_casos_similares=casos_similares,
-        taxa_favoravel_juiz=max(min(taxa, 0.92), 0.25),
-        tempo_medio_meses=tempo_medio,
+        total_casos_similares=len(similares),
+        taxa_favoravel_juiz=max(min(taxa, 0.92), 0.15),
+        tempo_medio_meses=max(tempo_medio, 1),
     )
 
 
@@ -110,6 +206,7 @@ def _compute_historical_context(db: Session, raw_text: str) -> ContextoHistorico
 async def upload_processo_pdf(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    usuario: Optional[Usuario] = Depends(get_optional_current_user),
 ) -> ProcessoUploadResponse:
     """
     Recebe uma petição inicial em PDF (RF-02), valida sua integridade binária (RN-04),
@@ -150,6 +247,16 @@ async def upload_processo_pdf(
     pred = ai_result.analise_preditiva
     lgpd = ai_result.auditoria_lgpd
 
+    similares_reais = _buscar_processos_similares_reais(
+        db,
+        tema=meta.tema,
+        magistrado=meta.magistrado,
+        comarca=meta.comarca,
+        resumo=ai_result.resumo_nlp,
+        ignorar_numero=meta.numero_processo,
+    )
+    pred.casos_similares_encontrados = len(similares_reais)
+
     # Verifica se já existe processo com o mesmo número CNJ para operação idempotente
     existing = db.query(Processo).filter(Processo.numero_processo == meta.numero_processo).first()
     if existing:
@@ -175,7 +282,7 @@ async def upload_processo_pdf(
         proc_id = f"proc-{short_hash}"
         novo_proc = Processo(
             id_processo=proc_id,
-            usuario_id="usr-01",
+            usuario_id=usuario.id if usuario else "usr-01",
             numero_processo=meta.numero_processo,
             arquivo_nome=filename,
             origem_ingestao="PDF",
@@ -228,6 +335,7 @@ async def upload_processo_pdf(
 async def upload_processos_csv(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    usuario: Optional[Usuario] = Depends(get_optional_current_user),
 ) -> CSVUploadResponse:
     """
     Importa em lote registros estruturados via planilha CSV (RF-03),
@@ -318,19 +426,34 @@ async def upload_processos_csv(
         else:
             short_hash = hashlib.sha1(f"{num_proc}-{uuid.uuid4()}".encode("utf-8")).hexdigest()[:5]
             proc_id = f"proc-{short_hash}"
+            tema_row = norm_row.get("tema") or "Dano Moral"
+            magistrado_row = norm_row.get("magistrado") or "Dr. Rafael De Amorim"
+            comarca_row = norm_row.get("comarca") or "1ª Vara Cível de Maceió"
+            resumo_row = clean_resumo or "Resumo importado via lote CSV e higienizado."
+
+            with db.no_autoflush:
+                similares_csv = _buscar_processos_similares_reais(
+                    db,
+                    tema=tema_row,
+                    magistrado=magistrado_row,
+                    comarca=comarca_row,
+                    resumo=resumo_row,
+                    ignorar_numero=num_proc,
+                )
+
             proc_obj = Processo(
                 id_processo=proc_id,
-                usuario_id="usr-01",
+                usuario_id=usuario.id if usuario else "usr-01",
                 numero_processo=num_proc,
                 arquivo_nome=filename,
                 origem_ingestao="CSV",
                 status="PROCESSADO",
-                tema=norm_row.get("tema") or "Dano Moral",
-                magistrado=norm_row.get("magistrado") or "Dr. Rafael De Amorim",
-                comarca=norm_row.get("comarca") or "1ª Vara Cível de Maceió",
+                tema=tema_row,
+                magistrado=magistrado_row,
+                comarca=comarca_row,
                 autor_anonimizado=autor_anon,
                 reu_anonimizado=reu_anon,
-                resumo_nlp=clean_resumo or "Resumo importado via lote CSV e higienizado.",
+                resumo_nlp=resumo_row,
                 resultado_historico=resultado,
                 data_julgamento=dt_julg,
             )
@@ -343,7 +466,7 @@ async def upload_processos_csv(
                     probabilidade_deferimento=prob,
                     margem_confianca=0.08,
                     tempo_estimado_sentenca_meses=11,
-                    casos_similares_encontrados=35,
+                    casos_similares_encontrados=len(similares_csv),
                     tese_recomendada="Jurisprudência dominante aplicável ao tema importado em lote.",
                     tendencia_juiz=f"Histórico consolidado para {proc_obj.magistrado}.",
                     provedor_ia_utilizado="local_heuristic",
@@ -377,14 +500,42 @@ async def upload_processos_csv(
     )
 
 
+_TRIBUNAL_CNJ_CODES = {
+    "TJAL": ".8.02.",
+    "TJPE": ".8.17.",
+    "TJRJ": ".8.19.",
+    "TJSP": ".8.26.",
+    "TRT19": ".5.19.",
+}
+
+
+def _converter_para_list_item(p: Processo) -> ProcessoListItemSchema:
+    return ProcessoListItemSchema(
+        id_processo=p.id_processo,
+        numero_processo=p.numero_processo,
+        tema=p.tema,
+        magistrado=p.magistrado,
+        comarca=p.comarca,
+        partes_anonimizadas=f"{p.autor_anonimizado} vs {p.reu_anonimizado}",
+        resultado=p.resultado_historico,
+        data_julgamento=p.data_julgamento.isoformat() if p.data_julgamento else None,
+        probabilidade_deferimento=(
+            p.analise_preditiva.probabilidade_deferimento if p.analise_preditiva else None
+        ),
+    )
+
+
 @router.get("", response_model=ProcessoListResponse, status_code=status.HTTP_200_OK)
 def listar_processos(
     tema: Optional[str] = Query(default=None, description="Filtrar por tema jurídico"),
     juiz: Optional[str] = Query(default=None, description="Filtrar por nome do magistrado"),
-    busca: Optional[str] = Query(default=None, description="Busca textual livre (CNJ, tema, juiz ou partes)"),
+    comarca: Optional[str] = Query(default=None, description="Filtrar por comarca ou órgão julgador"),
+    tribunal: Optional[str] = Query(default=None, description="Filtrar por sigla ou código CNJ do tribunal (ex: TJAL)"),
+    busca: Optional[str] = Query(default=None, description="Busca textual livre (CNJ, tema, juiz, comarca ou partes)"),
     pagina: int = Query(default=1, ge=1, description="Página atual"),
     limite: int = Query(default=10, ge=1, le=100, description="Itens por página"),
     db: Session = Depends(get_db),
+    _usuario: Optional[Usuario] = Depends(get_optional_current_user),
 ) -> ProcessoListResponse:
     """
     Lista e filtra processos higienizados na Base de Conhecimento com paginação (RF-08 / UC-06 / UC-07).
@@ -395,6 +546,27 @@ def listar_processos(
         query = query.filter(Processo.tema.ilike(f"%{tema.strip()}%"))
     if juiz and juiz.strip():
         query = query.filter(Processo.magistrado.ilike(f"%{juiz.strip()}%"))
+    if comarca and comarca.strip():
+        query = query.filter(Processo.comarca.ilike(f"%{comarca.strip()}%"))
+    if tribunal and tribunal.strip():
+        trib = tribunal.strip().upper()
+        cnj_code = _TRIBUNAL_CNJ_CODES.get(trib, trib)
+        if trib in ("TJAL", "8.02", ".8.02."):
+            query = query.filter(
+                or_(
+                    Processo.numero_processo.ilike("%.8.02.%"),
+                    Processo.comarca.ilike("%Maceió%"),
+                    Processo.comarca.ilike("%Arapiraca%"),
+                    Processo.comarca.ilike("%TJAL%"),
+                )
+            )
+        else:
+            query = query.filter(
+                or_(
+                    Processo.numero_processo.ilike(f"%{cnj_code}%"),
+                    Processo.comarca.ilike(f"%{trib}%"),
+                )
+            )
     if busca and busca.strip():
         term = f"%{busca.strip()}%"
         query = query.filter(
@@ -403,6 +575,7 @@ def listar_processos(
                 Processo.id_processo.ilike(term),
                 Processo.tema.ilike(term),
                 Processo.magistrado.ilike(term),
+                Processo.comarca.ilike(term),
                 Processo.autor_anonimizado.ilike(term),
                 Processo.reu_anonimizado.ilike(term),
                 Processo.resumo_nlp.ilike(term),
@@ -413,22 +586,7 @@ def listar_processos(
     offset = (pagina - 1) * limite
     registros = query.order_by(Processo.criado_em.desc()).offset(offset).limit(limite).all()
 
-    itens = [
-        ProcessoListItemSchema(
-            id_processo=p.id_processo,
-            numero_processo=p.numero_processo,
-            tema=p.tema,
-            magistrado=p.magistrado,
-            comarca=p.comarca,
-            partes_anonimizadas=f"{p.autor_anonimizado} vs {p.reu_anonimizado}",
-            resultado=p.resultado_historico,
-            data_julgamento=p.data_julgamento.isoformat() if p.data_julgamento else None,
-            probabilidade_deferimento=(
-                p.analise_preditiva.probabilidade_deferimento if p.analise_preditiva else None
-            ),
-        )
-        for p in registros
-    ]
+    itens = [_converter_para_list_item(p) for p in registros]
 
     return ProcessoListResponse(
         total=total,
@@ -557,6 +715,7 @@ def _garantir_numero_unico(db: Session, numero_processo: str, ignorar_id: Option
 def cadastrar_processo(
     payload: ProcessoCadastroRequest,
     db: Session = Depends(get_db),
+    usuario: Optional[Usuario] = Depends(get_optional_current_user),
 ) -> ProcessoDetalhesResponse:
     """
     Cadastra manualmente um processo na Base de Conhecimento (RF-08).
@@ -567,7 +726,7 @@ def cadastrar_processo(
     short_hash = hashlib.sha1(f"{payload.numero_processo}-{uuid.uuid4()}".encode("utf-8")).hexdigest()[:5]
     proc = Processo(
         id_processo=f"proc-{short_hash}",
-        usuario_id="usr-01",
+        usuario_id=usuario.id if usuario else "usr-01",
         numero_processo=payload.numero_processo,
         arquivo_nome="cadastro_manual",
         origem_ingestao="MANUAL",
@@ -584,6 +743,7 @@ def editar_processo(
     id_processo: str,
     payload: ProcessoCadastroRequest,
     db: Session = Depends(get_db),
+    _usuario: Optional[Usuario] = Depends(get_optional_current_user),
 ) -> ProcessoDetalhesResponse:
     """
     Edita (substituição completa dos campos editáveis) um processo existente (RF-08).
@@ -604,10 +764,125 @@ def editar_processo(
     return obter_detalhes_processo(proc.id_processo, db)
 
 
+@router.delete(
+    "/{id_processo}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    summary="Excluir processo judicial",
+    description=(
+        "Remove definitivamente um processo da base de conhecimento pelo seu ID. "
+        "As entidades associadas (análise preditiva e logs de auditoria LGPD) são excluídas "
+        "automaticamente em cascata. Retorna HTTP 204 em caso de sucesso ou HTTP 404 se não encontrado."
+    ),
+    responses={
+        status.HTTP_204_NO_CONTENT: {
+            "description": "Processo e registros vinculados excluídos com sucesso.",
+        },
+        status.HTTP_404_NOT_FOUND: {
+            "description": "Processo não encontrado na base de conhecimento.",
+        },
+    },
+)
+def excluir_processo(
+    id_processo: str,
+    db: Session = Depends(get_db),
+    _usuario: Optional[Usuario] = Depends(get_optional_current_user),
+) -> Response:
+    """
+    Exclui um processo judicial da Base de Conhecimento (RF-08).
+    Aproveita a remoção em cascata (cascade='all, delete-orphan') para apagar a análise preditiva e logs LGPD.
+    """
+    proc = db.query(Processo).filter(Processo.id_processo == id_processo).first()
+    if not proc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Processo '{id_processo}' não encontrado na base de conhecimento.",
+        )
+
+    db.delete(proc)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/datajud/sincronizar",
+    response_model=DataJudSincronizacaoResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Coletar e sincronizar lote de processos e jurisprudências via DataJud (CNJ)",
+)
+async def sincronizar_lote_datajud(
+    payload: DataJudSincronizacaoRequest = DataJudSincronizacaoRequest(),
+    db: Session = Depends(get_db),
+    usuario: Optional[Usuario] = Depends(get_optional_current_user),
+) -> DataJudSincronizacaoResponse:
+    """
+    Executa a coleta automática em lote de processos e jurisprudências na API Pública do DataJud (CNJ)
+    (com fallback local resiliente) e atualiza a base histórica de forma idempotente (Card #27 / RF-08 / RN-01).
+    Todos os registros passam pelo AnonimizadorLGPD antes da persistência.
+    """
+    tribunal_sigla = (payload.tribunal or "TJAL").strip().upper()
+    coletados, fonte = await DataJudClient.coletar_lote_jurisprudencia(
+        tribunal=tribunal_sigla,
+        tema=payload.tema,
+        limite=payload.limite,
+    )
+
+    novos_inseridos = 0
+    atualizados = 0
+    total_lgpd = 0
+    itens_sincronizados: list[ProcessoListItemSchema] = []
+
+    for item in coletados:
+        dados_cadastro = DataJudClient.extrair_registro_para_acervo(item)
+        req_cadastro = ProcessoCadastroRequest(**dados_cadastro)
+
+        existing = db.query(Processo).filter(Processo.numero_processo == req_cadastro.numero_processo).first()
+        if existing:
+            proc = existing
+            atualizados += 1
+        else:
+            short_hash = hashlib.sha1(f"{req_cadastro.numero_processo}-{uuid.uuid4()}".encode("utf-8")).hexdigest()[:5]
+            proc = Processo(
+                id_processo=f"proc-{short_hash}",
+                usuario_id=usuario.id if usuario else "usr-01",
+                numero_processo=req_cadastro.numero_processo,
+                arquivo_nome=f"datajud_{tribunal_sigla.lower()}_sync",
+                origem_ingestao="DATAJUD",
+            )
+            db.add(proc)
+            novos_inseridos += 1
+
+        _aplicar_cadastro(db, proc, req_cadastro)
+        db.flush()
+
+        ultimo_log = proc.logs_lgpd[-1] if proc.logs_lgpd else None
+        if ultimo_log:
+            total_lgpd += (ultimo_log.total_cpfs_mascarados or 0) + (ultimo_log.total_nomes_mascarados or 0)
+
+        itens_sincronizados.append(_converter_para_list_item(proc))
+
+    db.commit()
+
+    return DataJudSincronizacaoResponse(
+        tribunal=tribunal_sigla,
+        fonte=fonte,
+        total_coletados=len(coletados),
+        novos_inseridos=novos_inseridos,
+        atualizados=atualizados,
+        total_entidades_anonimizadas_lgpd=total_lgpd,
+        mensagem=(
+            f"Sincronização DataJud ({tribunal_sigla}) concluída: "
+            f"{novos_inseridos} novo(s) processo(s) inserido(s) e {atualizados} atualizado(s) com proteção LGPD."
+        ),
+        itens=itens_sincronizados,
+    )
+
+
 @router.get("/datajud/{numero_processo}", response_model=DataJudProcessoResponse, status_code=status.HTTP_200_OK)
 async def consultar_processo_datajud(
     numero_processo: str,
     db: Session = Depends(get_db),
+    _usuario: Optional[Usuario] = Depends(get_optional_current_user),
 ) -> DataJudProcessoResponse:
     """
     Consulta metadados processuais na API Pública do DataJud (CNJ) com fallback local (TJAL).
@@ -616,10 +891,45 @@ async def consultar_processo_datajud(
     return await DataJudClient.consultar_processo(numero_processo=numero_processo, db=db)
 
 
+@router.get("/{id_processo}/similares", response_model=ProcessoListResponse, status_code=status.HTTP_200_OK)
+def listar_processos_similares(
+    id_processo: str,
+    limite: int = Query(default=5, ge=1, le=50, description="Quantidade máxima de precedentes similares"),
+    db: Session = Depends(get_db),
+    _usuario: Optional[Usuario] = Depends(get_optional_current_user),
+) -> ProcessoListResponse:
+    """
+    Localiza e retorna os processos reais mais semelhantes ao processo informado (RF-06 / Card #35),
+    ordenados por correspondência de tema, magistrado, comarca e vocabulário da ementa.
+    """
+    proc = db.query(Processo).filter(Processo.id_processo == id_processo).first()
+    if not proc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Processo '{id_processo}' não encontrado na base de conhecimento.",
+        )
+
+    similares = _buscar_processos_similares_reais(
+        db,
+        tema=proc.tema,
+        magistrado=proc.magistrado,
+        comarca=proc.comarca,
+        resumo=proc.resumo_nlp,
+        ignorar_id=proc.id_processo,
+    )
+    recorte = similares[:limite]
+    return ProcessoListResponse(
+        total=len(similares),
+        pagina=1,
+        itens=[_converter_para_list_item(p) for p in recorte],
+    )
+
+
 @router.get("/{id_processo}", response_model=ProcessoDetalhesResponse, status_code=status.HTTP_200_OK)
 def obter_detalhes_processo(
     id_processo: str,
     db: Session = Depends(get_db),
+    _usuario: Optional[Usuario] = Depends(get_optional_current_user),
 ) -> ProcessoDetalhesResponse:
     """Retorna os metadados higienizados, resumo NLP e parecer preditivo de um processo específico."""
     proc = db.query(Processo).filter(Processo.id_processo == id_processo).first()
@@ -631,6 +941,19 @@ def obter_detalhes_processo(
 
     pred = proc.analise_preditiva
     ultimo_log = proc.logs_lgpd[-1] if proc.logs_lgpd else None
+    if pred is not None:
+        total_similares = pred.casos_similares_encontrados
+    else:
+        total_similares = len(
+            _buscar_processos_similares_reais(
+                db,
+                tema=proc.tema,
+                magistrado=proc.magistrado,
+                comarca=proc.comarca,
+                resumo=proc.resumo_nlp,
+                ignorar_id=proc.id_processo,
+            )
+        )
 
     return ProcessoDetalhesResponse(
         id_processo=proc.id_processo,
@@ -653,7 +976,7 @@ def obter_detalhes_processo(
             probabilidade_deferimento=pred.probabilidade_deferimento if pred else 0.70,
             margem_confianca=pred.margem_confianca if pred else 0.08,
             tempo_estimado_sentenca_meses=pred.tempo_estimado_sentenca_meses if pred else 12,
-            casos_similares_encontrados=pred.casos_similares_encontrados if pred else 25,
+            casos_similares_encontrados=total_similares,
             tese_recomendada=pred.tese_recomendada if pred else "Análise baseada na jurisprudência dominante.",
             tendencia_juiz=pred.tendencia_juiz if pred else f"Histórico consolidado para {proc.magistrado}.",
             provedor_ia=pred.provedor_ia_utilizado if pred else "local_heuristic",

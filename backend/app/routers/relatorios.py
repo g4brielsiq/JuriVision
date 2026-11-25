@@ -10,7 +10,8 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.models.entities import Processo
+from app.core.security import get_optional_current_user
+from app.models.entities import Processo, Usuario
 
 router = APIRouter(prefix="/api/v1/relatorios", tags=["Relatórios Estratégicos PDF (RF-09)"])
 
@@ -75,6 +76,7 @@ def _build_pdf_document(lines: list[str]) -> bytes:
 def exportar_relatorio_processo_pdf(
     id_processo: str,
     db: Session = Depends(get_db),
+    _usuario: Usuario | None = Depends(get_optional_current_user),
 ) -> Response:
     """
     Gera e exporta o relatório estratégico consolidado em formato PDF (RF-09 / UC-08 / CT-09).
