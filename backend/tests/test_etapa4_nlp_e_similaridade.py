@@ -165,7 +165,8 @@ def test_etapa4_upload_pdf_calcula_precedentes_reais_sem_multiplicador_artificia
         meta = body["metadados_extraidos"]
         pred = body["analise_preditiva"]
         assert meta["magistrado"] == "Dr. Roberto Tavares"
-        assert "5a VARA CIVEL DE SAO PAULO" in meta["comarca"]
+        comarca_norm = meta["comarca"].upper().replace("ª", "A")
+        assert "5A VARA CIVEL DE SAO PAULO" in comarca_norm
         assert "Voo" in meta["tema"]
         assert pred["casos_similares_encontrados"] <= total_antes
         assert pred["casos_similares_encontrados"] >= 1

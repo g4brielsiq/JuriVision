@@ -544,6 +544,18 @@
                     >
                         <span>Análise de Petição</span>
                     </button>
+
+                    <button
+                        type="button"
+                        role="tab"
+                        id="btn-comparador"
+                        aria-selected="false"
+                        aria-controls="panel-comparador"
+                        tabindex="-1"
+                        class="primary-tab-btn"
+                    >
+                        <span>Comparador de Peças</span>
+                    </button>
                 </nav>
 
                 <div class="header-account-actions">
@@ -1437,6 +1449,187 @@
                                             </button>
                                         </div>
                                     </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ============================================================
+                 TELA 4 — VISUALIZADOR COMPARATIVO DE PEÇAS JURÍDICAS
+                 (Petição Inicial vs. Contestação — Saneamento Art. 357 CPC)
+                 ============================================================ -->
+            <section
+                id="panel-comparador"
+                role="tabpanel"
+                aria-labelledby="btn-comparador"
+                tabindex="0"
+                hidden
+                class="tab-panel"
+            >
+                <div class="workspace-container">
+                    <div class="petition-header-grid">
+                        <div>
+                            <h2 class="page-title">Comparador de Peças</h2>
+                        </div>
+                        <p class="petition-lead-note">
+                            Confronte a petição inicial com a contestação: pontos em que as partes concordam, divergem, fatos não impugnados (art. 341 do CPC) e fatos novos trazidos pela defesa (art. 350 do CPC), com referência histórica por tema.
+                        </p>
+                    </div>
+
+                    <section class="card comparador-demo-card" aria-labelledby="comparador-demo-titulo">
+                        <div>
+                            <h3 class="card-title" id="comparador-demo-titulo">Demonstração guiada</h3>
+                            <p class="card-subtitle">Compare a petição inicial e a contestação de um caso fictício, com três páginas por peça.</p>
+                        </div>
+                        <div class="comparador-demo-controls">
+                            <div class="comparador-demo-caso">
+                                <label class="filter-label" for="select-demo-comparador">Caso demonstrativo</label>
+                                <select class="control-select" id="select-demo-comparador" aria-describedby="comparador-demo-descricao"></select>
+                            </div>
+                            <button type="button" class="btn btn-primary" id="btn-demo-comparador">
+                                Comparar peças do exemplo
+                            </button>
+                        </div>
+                        <p class="card-subtitle" id="comparador-demo-descricao" aria-live="polite"></p>
+                        <p class="status-feedback" id="comparador-demo-status" role="status"></p>
+                    </section>
+
+                    <div class="card comparador-upload-card" id="comparador-upload-section">
+                        <div class="card-header">
+                            <div>
+                                <h3 class="card-title">Upload das Peças Processuais</h3>
+                                <p class="card-subtitle">Selecione os documentos em formato PDF (%PDF- até 15MB). A barreira LGPD higienizará dados pessoais automaticamente antes da análise.</p>
+                            </div>
+                        </div>
+
+                        <form id="form-comparador-pecas" class="comparador-upload-grid">
+                            <!-- Coluna Upload Inicial -->
+                            <div class="upload-dropzone" id="dropzone-inicial" tabindex="0" role="region" aria-label="Área de envio da Petição Inicial">
+                                <div class="dropzone-icon">
+                                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+                                </div>
+                                <div class="dropzone-title">Petição Inicial (Autor)</div>
+                                <p class="dropzone-help">Arraste o PDF ou selecione o arquivo</p>
+                                <input type="file" id="input-peticao-inicial" accept="application/pdf" class="file-input-hidden" aria-label="Arquivo da Petição Inicial em PDF">
+                                <div id="file-info-inicial" class="file-selected-name" aria-live="polite">Nenhum arquivo selecionado</div>
+                                <button type="button" class="btn btn-sm btn-secondary" id="btn-select-inicial">Procurar Arquivo</button>
+                            </div>
+
+                            <!-- Coluna Upload Contestação -->
+                            <div class="upload-dropzone" id="dropzone-contestacao" tabindex="0" role="region" aria-label="Área de envio da Contestação">
+                                <div class="dropzone-icon">
+                                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+                                </div>
+                                <div class="dropzone-title">Contestação (Réu)</div>
+                                <p class="dropzone-help">Arraste o PDF ou selecione o arquivo</p>
+                                <input type="file" id="input-contestacao" accept="application/pdf" class="file-input-hidden" aria-label="Arquivo da Contestação em PDF">
+                                <div id="file-info-contestacao" class="file-selected-name" aria-live="polite">Nenhum arquivo selecionado</div>
+                                <button type="button" class="btn btn-sm btn-secondary" id="btn-select-contestacao">Procurar Arquivo</button>
+                            </div>
+
+                            <div class="comparador-submit-row">
+                                <button type="submit" class="btn btn-primary" id="btn-executar-comparacao" disabled>
+                                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                                    <span>Confrontar Peças e Gerar Saneamento</span>
+                                </button>
+                                <span id="comparador-status-feedback" class="status-feedback" aria-live="polite"></span>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Seção de Resultados: Visualizador Split-View de 3 Colunas -->
+                    <div id="comparador-resultados" class="comparador-resultados-view hidden" aria-label="Resultado da Comparação de Peças">
+                        <section class="card comparador-demo-card hidden" id="comparador-demo-guia" aria-labelledby="comparador-demo-guia-titulo">
+                            <div>
+                                <h3 class="card-title" id="comparador-demo-guia-titulo" tabindex="-1"></h3>
+                                <p class="card-subtitle">Selecione uma tese para localizar os trechos citados nas duas peças.</p>
+                            </div>
+                            <p id="comparador-demo-guia-texto"></p>
+                            <p class="card-subtitle">As classificações são automáticas. Se houver poucos julgados no mesmo tema, a estimativa aparece como indisponível.</p>
+                        </section>
+                        <!-- Barra de Resumo e Métricas -->
+                        <div class="card comparador-summary-card">
+                            <div class="comparador-summary-header">
+                                <div>
+                                    <div class="comparador-summary-meta">
+                                        <span class="badge-editorial" id="badge-comparador-cnj">CNJ: Não identificado</span>
+                                        <span class="badge-editorial" id="badge-comparador-motor"></span>
+                                    </div>
+                                    <h3 class="card-title" style="margin-top: 6px;">Síntese Geral da Controvérsia</h3>
+                                </div>
+                                <div class="comparador-score-box">
+                                    <span class="score-label">Média das estimativas (autor)</span>
+                                    <span class="score-value" id="score-geral-valor"></span>
+                                </div>
+                            </div>
+                            <p class="comparador-summary-text" id="resumo-controvertido-geral">Processando...</p>
+
+                            <!-- Chips de Totais -->
+                            <div class="comparador-metrics-chips">
+                                <div class="metric-chip chip-total">Total: <strong id="chip-total-teses">0</strong> teses</div>
+                                <div class="metric-chip chip-convergente">Convergentes: <strong id="chip-total-conv">0</strong></div>
+                                <div class="metric-chip chip-divergente">Divergentes: <strong id="chip-total-div">0</strong></div>
+                                <div class="metric-chip chip-omissao">Omissões (Art. 341): <strong id="chip-total-omiss">0</strong></div>
+                                <div class="metric-chip chip-fatonovo">Fato Novo Réu (Art. 350): <strong id="chip-total-fn">0</strong></div>
+                            </div>
+
+                            <!-- Barra de Filtros Interativos -->
+                            <div class="comparador-filter-bar" role="group" aria-label="Filtros de teses controvertidas">
+                                <div class="filter-group">
+                                    <span class="filter-label">Status:</span>
+                                    <button type="button" class="chip-filter active" data-filter-status="todos">Todos</button>
+                                    <button type="button" class="chip-filter" data-filter-status="divergente">Divergentes</button>
+                                    <button type="button" class="chip-filter" data-filter-status="fato_incontroverso_por_omissao">Omissões</button>
+                                    <button type="button" class="chip-filter" data-filter-status="fato_novo_ou_extintivo_reu">Fato Novo Defesa</button>
+                                    <button type="button" class="chip-filter" data-filter-status="convergente">Convergentes</button>
+                                </div>
+                                <div class="filter-group">
+                                    <span class="filter-label">Eixo:</span>
+                                    <button type="button" class="chip-filter active" data-filter-tipo="todos">Todos os Eixos</button>
+                                    <button type="button" class="chip-filter" data-filter-tipo="preliminar">Preliminares</button>
+                                    <button type="button" class="chip-filter" data-filter-tipo="prejudicial_merito">Prejudiciais</button>
+                                    <button type="button" class="chip-filter" data-filter-tipo="fato_ou_valor">Fatos / Valores</button>
+                                    <button type="button" class="chip-filter" data-filter-tipo="merito">Mérito</button>
+                                    <button type="button" class="chip-filter" data-filter-tipo="prova_e_onus">Provas / Ônus</button>
+                                </div>
+                            </div>
+                            <p class="card-subtitle" id="comparador-filtro-feedback" role="status"></p>
+                        </div>
+
+                        <!-- Split-View de 3 Colunas Sincronizadas -->
+                        <div class="comparador-split-view" role="region" aria-label="Visualizador Split-View Sincronizado">
+                            <!-- Coluna Esquerda: Petição Inicial -->
+                            <div class="split-column split-column-autor" id="coluna-peticao-inicial">
+                                <div class="split-column-header">
+                                    <span class="column-tag">Petição Inicial</span>
+                                    <h4 class="column-title">Argumentos do Autor (Higienizado LGPD)</h4>
+                                </div>
+                                <div class="split-column-body" id="texto-peticao-inicial" tabindex="0" role="region" aria-label="Texto integral higienizado da Petição Inicial">
+                                    <!-- Texto com tags [PÁG XX] e parágrafos inseridos via JS -->
+                                </div>
+                            </div>
+
+                            <!-- Coluna Central: Feed de Teses Controvertidas -->
+                            <div class="split-column split-column-centro" id="coluna-pontos-controvertidos">
+                                <div class="split-column-header">
+                                    <span class="column-tag">Saneamento & Organização</span>
+                                    <h4 class="column-title">Pontos Controvertidos Confrontados</h4>
+                                </div>
+                                <div class="split-column-body feed-teses-body" id="feed-teses-comparacao" tabindex="0" role="feed" aria-label="Feed de pontos controvertidos">
+                                    <!-- Cards dinâmicos inseridos via JS -->
+                                </div>
+                            </div>
+
+                            <!-- Coluna Direita: Contestação -->
+                            <div class="split-column split-column-reu" id="coluna-contestacao">
+                                <div class="split-column-header">
+                                    <span class="column-tag">Contestação</span>
+                                    <h4 class="column-title">Resistência do Réu (Higienizado LGPD)</h4>
+                                </div>
+                                <div class="split-column-body" id="texto-contestacao" tabindex="0" role="region" aria-label="Texto integral higienizado da Contestação">
+                                    <!-- Texto com tags [PÁG XX] e parágrafos inseridos via JS -->
                                 </div>
                             </div>
                         </div>

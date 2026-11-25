@@ -1,0 +1,199 @@
+[
+  {
+    "id": "voo_cancelado",
+    "texto": "EXCELENTÍSSIMO SENHOR JUIZ DE DIREITO DO 2º JUIZADO ESPECIAL CÍVEL DE MACEIÓ/AL\nAÇÃO DE INDENIZAÇÃO POR DANOS MATERIAIS E MORAIS\nAutor: Ricardo Alves Pereira, brasileiro, CPF 321.654.987-00\nRé: Voa Brasil Linhas Aéreas S.A.\nDOS FATOS\nO autor adquiriu passagem para o voo 1234 com saída de Maceió em 15/02/2026. No dia do embarque, a companhia aérea cancelou o voo sem aviso prévio e não prestou assistência material.\nO autor perdeu uma reunião de trabalho e teve gastos com hospedagem de R$ 850,00.\nDO DIREITO\nAplica-se o art. 14 do CDC e a Resolução 400 da ANAC.\nDOS PEDIDOS\nDiante do exposto, requer:\na) a condenação da ré ao pagamento de R$ 850,00 a título de danos materiais;\nb) a condenação da ré ao pagamento de R$ 8.000,00 a título de danos morais;\nc) a inversão do ônus da prova.\nDá-se à causa o valor de R$ 8.850,00.",
+    "esperado": {
+      "tema": "Atraso de Voo / Indenização",
+      "numero_processo": null,
+      "magistrado": null,
+      "comarca": "2º Juizado Especial Cível de Maceió",
+      "autor_mascarado": "Ricardo A. ***",
+      "caracteristicas": {
+        "danos_morais": true,
+        "danos_materiais": true,
+        "inversao_onus_prova": true,
+        "tutela_urgencia": false,
+        "justica_gratuita": false
+      },
+      "valor_causa": 8850.0,
+      "pedidos_min": 3,
+      "nomes_proibidos": [
+        "Ricardo Alves Pereira",
+        "321.654.987-00"
+      ]
+    }
+  },
+  {
+    "id": "trabalhista_horas_extras",
+    "texto": "EXCELENTÍSSIMO SENHOR JUIZ DA 4ª VARA DO TRABALHO DE MACEIÓ\nProcesso nº 0000456-12.2026.5.19.0004\nRECLAMAÇÃO TRABALHISTA\nReclamante: Fernanda Costa Lima\nReclamada: Supermercados Bom Preço LTDA.\nDOS FATOS\nA reclamante trabalhou para a reclamada de 03/2022 a 08/2025, cumprindo jornada de 10 horas diárias sem receber horas extras.\nFoi dispensada sem justa causa e não recebeu as verbas rescisórias nem o FGTS do período.\nDOS PEDIDOS\nRequer:\n1. pagamento de horas extras com adicional de 50%;\n2. pagamento das verbas rescisórias e multa de 40% do FGTS;\n3. concessão dos benefícios da justiça gratuita.\nAtribui-se à causa o valor de R$ 45.000,00.",
+    "esperado": {
+      "tema": "Direito Trabalhista",
+      "numero_processo": "0000456-12.2026.5.19.0004",
+      "magistrado": null,
+      "comarca": "4ª Vara do Trabalho de Maceió",
+      "autor_mascarado": "Fernanda C. ***",
+      "caracteristicas": {
+        "justica_gratuita": true,
+        "tutela_urgencia": false
+      },
+      "valor_causa": 45000.0,
+      "pedidos_min": 3,
+      "nomes_proibidos": [
+        "Fernanda Costa Lima"
+      ]
+    }
+  },
+  {
+    "id": "plano_saude_negativa",
+    "texto": "EXCELENTÍSSIMO SENHOR JUIZ DE DIREITO DA 1ª VARA CÍVEL DA COMARCA DE MACEIÓ/AL\nAÇÃO DE OBRIGAÇÃO DE FAZER COM PEDIDO DE TUTELA DE URGÊNCIA\nAutor: Antônio Carlos Nunes, idoso, CPF 111.222.333-44\nRé: Saúde Total Operadora de Planos de Saúde S.A.\nDOS FATOS\nO autor, de 72 anos, é beneficiário do plano de saúde da ré há 15 anos. Seu médico assistente prescreveu cirurgia cardíaca urgente, mas a operadora negou a cobertura alegando que o procedimento não consta no rol da ANS.\nDOS PEDIDOS\nRequer:\na) tutela de urgência para que a ré autorize imediatamente a cirurgia;\nb) prioridade de tramitação, nos termos do Estatuto do Idoso;\nc) condenação em danos morais no valor de R$ 15.000,00.\nDá-se à causa o valor de R$ 15.000,00.",
+    "esperado": {
+      "tema": "Plano de Saúde",
+      "numero_processo": null,
+      "magistrado": null,
+      "comarca": "1ª Vara Cível da Comarca de Maceió",
+      "autor_mascarado": "Antônio C. ***",
+      "caracteristicas": {
+        "tutela_urgencia": true,
+        "prioridade_tramitacao": true,
+        "danos_morais": true
+      },
+      "valor_causa": 15000.0,
+      "pedidos_min": 3,
+      "nomes_proibidos": [
+        "Antônio Carlos Nunes",
+        "111.222.333-44"
+      ]
+    }
+  },
+  {
+    "id": "execucao_fiscal_iptu",
+    "texto": "PODER JUDICIÁRIO DO ESTADO DE ALAGOAS\nVara Única da Comarca de Penedo\nProcesso: 0801122-33.2025.8.02.0049\nJuiz de Direito: Dr. Paulo Henrique Rocha\nEMBARGOS À EXECUÇÃO FISCAL\nEmbargante: Comércio de Tecidos Penedo LTDA.\nExecutado: Comércio de Tecidos Penedo LTDA.\nDOS FATOS\nO Município ajuizou execução fiscal para cobrança de IPTU dos exercícios de 2019 e 2020, inscritos em dívida ativa. Ocorre que o crédito tributário está prescrito.\nDOS PEDIDOS\nRequer o reconhecimento da prescrição do crédito tributário e a extinção da execução fiscal.",
+    "esperado": {
+      "tema": "Tributário",
+      "numero_processo": "0801122-33.2025.8.02.0049",
+      "magistrado": "Dr. Paulo Henrique Rocha",
+      "comarca": "Vara Única da Comarca de Penedo",
+      "caracteristicas": {
+        "tutela_urgencia": false,
+        "danos_morais": false
+      },
+      "valor_causa": null,
+      "pedidos_min": 1,
+      "nomes_proibidos": []
+    }
+  },
+  {
+    "id": "previdenciario_auxilio",
+    "texto": "EXCELENTÍSSIMO SENHOR JUIZ FEDERAL DA 8ª VARA FEDERAL DE ALAGOAS\nAÇÃO PREVIDENCIÁRIA DE CONCESSÃO DE AUXÍLIO-DOENÇA\nAutor: José Ribamar Silva\nRéu: Instituto Nacional do Seguro Social - INSS\nDOS FATOS\nO autor é segurado do INSS e encontra-se incapacitado para o trabalho desde 05/2025 em razão de hérnia de disco. O benefício por incapacidade foi indeferido administrativamente.\nDOS PEDIDOS\nRequer a concessão do auxílio-doença desde a data do requerimento administrativo e a gratuidade da justiça.",
+    "esperado": {
+      "tema": "Direito Previdenciário",
+      "numero_processo": null,
+      "magistrado": null,
+      "comarca": "8ª Vara Federal de Alagoas",
+      "autor_mascarado": "José R. ***",
+      "caracteristicas": {
+        "justica_gratuita": true
+      },
+      "valor_causa": null,
+      "pedidos_min": 1,
+      "nomes_proibidos": [
+        "José Ribamar Silva"
+      ]
+    }
+  },
+  {
+    "id": "familia_alimentos",
+    "texto": "EXCELENTÍSSIMO SENHOR JUIZ DE DIREITO DA 2ª VARA DE FAMÍLIA DA COMARCA DE MACEIÓ\nAÇÃO DE ALIMENTOS\nAutor: Pedro Henrique Souza, menor, representado por sua genitora\nRéu: Marcos Antônio Souza\nDOS FATOS\nO autor tem 8 anos e reside com a genitora. O réu, seu pai, não contribui com a pensão alimentícia desde janeiro de 2025.\nDOS PEDIDOS\nRequer:\na) a fixação de alimentos provisórios em 30% dos rendimentos do réu;\nb) a gratuidade da justiça.",
+    "esperado": {
+      "tema": "Direito de Família",
+      "numero_processo": null,
+      "magistrado": null,
+      "comarca": "2ª Vara de Família da Comarca de Maceió",
+      "caracteristicas": {
+        "justica_gratuita": true
+      },
+      "valor_causa": null,
+      "pedidos_min": 2,
+      "nomes_proibidos": [
+        "Pedro Henrique Souza",
+        "Marcos Antônio Souza"
+      ]
+    }
+  },
+  {
+    "id": "bancario_consignado",
+    "texto": "EXCELENTÍSSIMO SENHOR JUIZ DE DIREITO DA 5ª VARA CÍVEL DA COMARCA DE ARAPIRACA\nAÇÃO REVISIONAL DE CONTRATO BANCÁRIO\nAutora: Luzia Ferreira Gomes\nRéu: Banco Crédito Fácil S.A.\nDOS FATOS\nA autora contratou empréstimo consignado com a ré em 2023. O contrato prevê juros abusivos, muito acima da taxa média de mercado, além de capitalização de juros não pactuada.\nDOS PEDIDOS\nRequer:\na) a revisão do contrato com limitação dos juros à taxa média;\nb) a restituição em dobro dos valores pagos a maior.\nValor da causa: R$ 12.500,00",
+    "esperado": {
+      "tema": "Direito Bancário",
+      "numero_processo": null,
+      "magistrado": null,
+      "comarca": "5ª Vara Cível da Comarca de Arapiraca",
+      "autor_mascarado": "Luzia F. ***",
+      "caracteristicas": {
+        "danos_materiais": true
+      },
+      "valor_causa": 12500.0,
+      "pedidos_min": 2,
+      "nomes_proibidos": [
+        "Luzia Ferreira Gomes"
+      ]
+    }
+  },
+  {
+    "id": "consumidor_telefonia",
+    "texto": "EXCELENTÍSSIMO SENHOR JUIZ DO 1º JUIZADO ESPECIAL CÍVEL DE RIO LARGO\nRequerente: Carla Beatriz Moura\nRequerida: Conecta Telefonia S.A.\nA requerente vem sendo cobrada por serviço não contratado de telefonia desde março de 2025, mesmo após diversas reclamações. A cobrança indevida soma R$ 600,00.\nRequer a restituição em dobro dos valores cobrados indevidamente e a condenação em danos morais.",
+    "esperado": {
+      "tema": "Direito do Consumidor",
+      "numero_processo": null,
+      "magistrado": null,
+      "comarca": "1º Juizado Especial Cível de Rio Largo",
+      "autor_mascarado": "Carla B. ***",
+      "caracteristicas": {
+        "danos_morais": true,
+        "danos_materiais": true
+      },
+      "valor_causa": null,
+      "pedidos_min": 1,
+      "nomes_proibidos": [
+        "Carla Beatriz Moura"
+      ]
+    }
+  },
+  {
+    "id": "negativacao_ruido_pdf",
+    "texto": "PODER JUDICIÁRIO - TRIBUNAL DE JUSTIÇA DE ALAGOAS\nDocumento assinado digitalmente conforme MP 2.200-2/2001\nEXCELENTÍSSIMO SENHOR JUIZ DE DIREITO DA 3ª VARA CÍVEL DA COMARCA DE MACEIÓ/AL\nProcesso 08004561220268020001\nPágina 1 de 2\nAÇÃO DECLARATÓRIA DE INEXISTÊNCIA DE DÉBITO C/C INDENIZAÇÃO POR DANOS MORAIS\nAutor: Roberto Lima Araújo\nRéu: Financeira Exemplo S.A.\nDOS FATOS\nO autor foi surpreendido com a negativação de seu nome no SERASA e no SPC por dívi-\nda que desconhece. A inscrição indevida impediu a aprovação de financiamento imobiliário.\nPODER JUDICIÁRIO - TRIBUNAL DE JUSTIÇA DE ALAGOAS\nDocumento assinado digitalmente conforme MP 2.200-2/2001\nPágina 2 de 2\nDOS PEDIDOS\nRequer:\na) tutela de urgência para retirada do nome dos cadastros de inadimplentes;\nb) declaração de inexistência do débito;\nc) indenização por danos morais.\nPODER JUDICIÁRIO - TRIBUNAL DE JUSTIÇA DE ALAGOAS",
+    "esperado": {
+      "tema": "Dano Moral",
+      "numero_processo": "0800456-12.2026.8.02.0001",
+      "magistrado": null,
+      "comarca": "3ª Vara Cível da Comarca de Maceió",
+      "autor_mascarado": "Roberto L. ***",
+      "caracteristicas": {
+        "tutela_urgencia": true,
+        "danos_morais": true
+      },
+      "valor_causa": null,
+      "pedidos_min": 3,
+      "nomes_proibidos": [
+        "Roberto Lima Araújo"
+      ]
+    }
+  },
+  {
+    "id": "sem_tema_identificavel",
+    "texto": "Ao Cartório,\nSegue em anexo a cópia dos documentos solicitados na reunião do dia 10, para fins de arquivamento interno.\nAtenciosamente.",
+    "esperado": {
+      "tema": "Não classificado",
+      "numero_processo": null,
+      "magistrado": null,
+      "comarca": null,
+      "caracteristicas": {
+        "tutela_urgencia": false,
+        "danos_morais": false
+      },
+      "valor_causa": null,
+      "pedidos_min": 0,
+      "nomes_proibidos": []
+    }
+  }
+]

@@ -169,6 +169,20 @@ class SecoesPeticaoSchema(BaseModel):
     cabecalho: Optional[str] = Field(default=None, description="Endereçamento e qualificação inicial das partes")
 
 
+class CaracteristicasProcessuaisSchema(BaseModel):
+    """Características processuais identificadas automaticamente no texto da petição (Card #18)."""
+
+    classe_processual: Optional[str] = Field(default=None, description="Ex.: Ação de Indenização por Danos Morais")
+    valor_causa: Optional[float] = Field(default=None, ge=0, description="Valor da causa em reais, se informado")
+    tutela_urgencia: bool = Field(default=False, description="Há pedido de tutela de urgência / liminar")
+    justica_gratuita: bool = Field(default=False, description="Há pedido de gratuidade da justiça")
+    danos_morais: bool = Field(default=False, description="Há pedido de indenização por danos morais")
+    danos_materiais: bool = Field(default=False, description="Há pedido de danos materiais / restituição")
+    inversao_onus_prova: bool = Field(default=False, description="Há pedido de inversão do ônus da prova")
+    prioridade_tramitacao: bool = Field(default=False, description="Há pedido de prioridade de tramitação")
+    pedidos: List[str] = Field(default_factory=list, description="Pedidos enumerados (texto higienizado)")
+
+
 class MetadadosExtraidosSchema(BaseModel):
     numero_processo: str
     tema: str
@@ -176,6 +190,14 @@ class MetadadosExtraidosSchema(BaseModel):
     comarca: str
     partes_anonimizadas: PartesAnonimizadasSchema
     secoes: Optional[SecoesPeticaoSchema] = None
+    caracteristicas: Optional[CaracteristicasProcessuaisSchema] = None
+    confianca_classificacao: Optional[float] = Field(
+        default=None, ge=0.0, le=1.0, description="Confiança da classificação de tema (0 a 1)"
+    )
+    campos_nao_identificados: List[str] = Field(
+        default_factory=list,
+        description="Campos que não foram encontrados no documento (nenhum valor é inventado)",
+    )
 
 
 class AnalisePreditivaSchema(BaseModel):

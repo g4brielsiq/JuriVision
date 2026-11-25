@@ -6,12 +6,14 @@ Rastreabilidade:
 """
 from abc import ABC, abstractmethod
 import base64
+from collections import Counter
 import hashlib
 import io
 import json
 import logging
 import re
 from typing import Callable, Optional, Tuple
+import uuid
 import zlib
 
 import httpx
@@ -20,15 +22,31 @@ from pypdf import PdfReader
 from app.core.config import settings
 from app.core.nlp_engine import (
     build_rag_precedents_context,
-    classify_legal_theme,
     compute_wilson_margin,
     extract_court_and_judge,
-    summarize_legal_text,
     synthesize_local_rag_tendencia,
+)
+from app.core.nlp_processual import (
+    NAO_IDENTIFICADA,
+    NAO_IDENTIFICADO,
+    ClassificadorAssunto,
+    ExtratorCaracteristicas,
+    ExtratorInformacoesProcessuais,
+    GeradorResumo,
+    LimpadorTexto,
+    sem_acento,
+)
+from app.schemas.comparacao import (
+    PontoControvertido,
+    RespostaComparacaoGemini,
+    ResultadoComparacaoPecas,
+    StatusTese,
+    TipoTese,
 )
 from app.schemas.contracts import (
     AnalisePreditivaSchema,
     AuditoriaLGPDSchema,
+    ContextoHistoricoSchema,
     InternalAnalyzeRequest,
     InternalAnalyzeResponse,
     MetadadosExtraidosSchema,
@@ -414,8 +432,11 @@ class AnonimizadorLGPD:
         return f"{first_name} {second_initial}. ***", True
 
     @classmethod
-    def extract_parties_from_text(cls, raw_text: str, default_reu: str) -> Tuple[str, str]:
-        """Extrai Autor e Réu de cabeçalhos explícitos ou de construções em prosa jurídica."""
+    def extract_parties_from_text(cls, raw_text: str) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Extrai Autor e Réu de cabeçalhos explícitos ou de construções em prosa jurídica.
+        Retorna None para a parte não encontrada (nenhum nome é inventado).
+        """
         autor_match = re.search(
             r"(?i)\b(?:Autor(?:a)?|Requerente|Reclamante)\s*:\s*([^\n\r,;]{3,60})", raw_text
         )
@@ -429,7 +450,7 @@ class AnonimizadorLGPD:
                 raw_text,
             )
             cleaned_autor = cls._clean_candidate_person_name(prose_autor.group(1)) if prose_autor else ""
-            raw_autor = cleaned_autor or "Lucas Gabriel Rodrigues"
+            raw_autor = cleaned_autor or None
 
         reu_match = re.search(
             r"(?i)\b(?:R[ée]u|R[ée]|Requerid[oa]|Reclamad[oa])\s*:\s*([^\n\r,;]{3,60})", raw_text
@@ -456,9 +477,9 @@ class AnonimizadorLGPD:
                     raw_reu = candidate_reu
                 else:
                     cleaned_reu = cls._clean_candidate_person_name(candidate_reu)
-                    raw_reu = cleaned_reu or default_reu
+                    raw_reu = cleaned_reu or None
             else:
-                raw_reu = default_reu
+                raw_reu = None
 
         return raw_autor, raw_reu
 
@@ -892,7 +913,7 @@ class ExtratorDocumental:
         b64_pdf = base64.b64encode(file_bytes).decode("utf-8")
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{settings.GEMINI_MODEL}:generateContent?key={api_key}"
+            f"{settings.GEMINI_MODEL}:generateContent"
         )
         payload = {
             "contents": [
@@ -913,7 +934,7 @@ class ExtratorDocumental:
 
         try:
             with httpx.Client(timeout=settings.GEMINI_TIMEOUT_SECONDS) as client:
-                res = client.post(url, json=payload)
+                res = client.post(url, headers={"x-goog-api-key": api_key}, json=payload)
                 if res.status_code == 200:
                     data = res.json()
                     candidates = data.get("candidates", [])
@@ -1040,61 +1061,109 @@ class ExtratorDocumental:
         Extrai texto de bytes de PDF com validação binária (%PDF-), extração direta de streams de texto
         e fallback automático para OCR quando o arquivo consistir em documento escaneado/imagem (RN-04 / RNF-05).
         """
+        text, _ = cls.extract_text_with_page_markers(file_bytes)
+        return re.sub(r"\[PÁG \d+\]\n?", "", text).strip()
+
+    @classmethod
+    def _extract_fallback_chunks(cls, file_bytes: bytes) -> list[str]:
+        """Fallback para PDFs sintéticos: operadores Tj/TJ diretos e streams FlateDecode."""
+        raw_latin = file_bytes.decode("latin-1", errors="ignore")
+        chunks = cls._extract_operators_from_stream_text(raw_latin)
+        if chunks:
+            return chunks
+        for stream_match in re.finditer(
+            rb"stream(?:\r\n|\n)(.*?)(?:\r\n|\n)?endstream", file_bytes, flags=re.DOTALL
+        ):
+            raw_stream = stream_match.group(1)
+            decompressed = b""
+            for attempt in (raw_stream, raw_stream.rstrip(b"\r\n")):
+                for wbits in (zlib.MAX_WBITS, -zlib.MAX_WBITS):
+                    try:
+                        decompressed = zlib.decompress(attempt, wbits)
+                        break
+                    except Exception:
+                        continue
+                if decompressed:
+                    break
+            if decompressed:
+                stream_str = decompressed.decode("utf-8", errors="ignore") or decompressed.decode(
+                    "latin-1", errors="ignore"
+                )
+                chunks.extend(cls._extract_operators_from_stream_text(stream_str))
+        return chunks
+
+    @classmethod
+    def extract_text_with_page_markers(cls, file_bytes: bytes) -> Tuple[str, dict[int, str]]:
+        """
+        Extrai texto do PDF injetando marcadores [PÁG XX] por página (e acionando fallback de OCR se escaneado).
+        Retorna (texto_completo_anotado, dicionario_paginas).
+        """
         if not file_bytes or len(file_bytes) < 10:
             raise ValueError("Arquivo vazio ou sem conteúdo binário válido.")
 
         if not file_bytes.lstrip().startswith(b"%PDF-"):
             raise ValueError("Assinatura binária inválida: o arquivo enviado não é um documento PDF (%PDF-).")
 
-        extracted_chunks: list[str] = []
+        pages_dict: dict[int, str] = {}
         reader = None
         try:
             reader = PdfReader(io.BytesIO(file_bytes))
-            for page in reader.pages:
+            for idx, page in enumerate(reader.pages, start=1):
                 page_text = page.extract_text() or ""
                 if page_text.strip():
-                    extracted_chunks.append(page_text.strip())
+                    pages_dict[idx] = page_text.strip()
         except Exception:
-            # Fallback para PDFs sintéticos ou operadores Tj/TJ diretos e streams FlateDecode
             pass
 
-        if not extracted_chunks:
-            raw_latin = file_bytes.decode("latin-1", errors="ignore")
-            extracted_chunks.extend(cls._extract_operators_from_stream_text(raw_latin))
+        if not pages_dict:
+            chunks = cls._extract_fallback_chunks(file_bytes)
+            if chunks:
+                pages_dict[1] = "\n".join(chunks).strip()
 
-        if not extracted_chunks:
-            for stream_match in re.finditer(
-                rb"stream(?:\r\n|\n)(.*?)(?:\r\n|\n)?endstream", file_bytes, flags=re.DOTALL
-            ):
-                raw_stream = stream_match.group(1)
-                decompressed = b""
-                for attempt in (raw_stream, raw_stream.rstrip(b"\r\n")):
-                    for wbits in (zlib.MAX_WBITS, -zlib.MAX_WBITS):
-                        try:
-                            decompressed = zlib.decompress(attempt, wbits)
-                            break
-                        except Exception:
-                            continue
-                    if decompressed:
-                        break
-                if decompressed:
-                    stream_str = decompressed.decode("utf-8", errors="ignore") or decompressed.decode(
-                        "latin-1", errors="ignore"
-                    )
-                    extracted_chunks.extend(cls._extract_operators_from_stream_text(stream_str))
-
-        full_text = "\n".join(extracted_chunks).strip()
+        full_text = "\n".join(pages_dict.values()).strip()
 
         # Se texto digital estiver vazio ou for documento escaneado em imagem, aciona o Fallback de OCR
         if not full_text or cls._is_scanned_pdf(reader, file_bytes, full_text):
             if cls._has_images(reader, file_bytes):
                 logger.info("PDF escaneado em imagem identificado. Acionando Fallback de OCR (RN-04 / RNF-05)...")
-                return cls._executar_fallback_ocr(file_bytes, reader)
+                ocr_text = cls._executar_fallback_ocr(file_bytes, reader)
+                pages_dict = {1: ocr_text.strip()}
+                full_text = ocr_text.strip()
 
-        if not full_text:
+        if not pages_dict or not full_text:
             raise ValueError("Não foi possível extrair texto legível do PDF enviado (FalhaOCR / Documento vazio).")
 
-        return full_text
+        full_parts = [f"[PÁG {pnum:02d}]\n{ptext}" for pnum, ptext in pages_dict.items()]
+        annotated_text = "\n\n".join(full_parts).strip()
+        return annotated_text, pages_dict
+
+    @staticmethod
+    def segment_macro_sections(annotated_text: str) -> dict[str, str]:
+        """
+        Segmenta estruturalmente o texto da peça nos 7 eixos jurídicos fundamentais do CPC.
+        """
+        section_patterns = {
+            "preliminares": re.compile(r"(?i)\b(?:das?\s+preliminares|da\s+preliminar|preliminarmente)\b"),
+            "prejudiciais_merito": re.compile(r"(?i)\b(?:prejudicial\s+de\s+m[ée]rito|prescri[çc][ãa]o|decad[êe]ncia)\b"),
+            "fatos": re.compile(r"(?i)\b(?:dos?\s+fatos|da\s+cronologia|do\s+resumo\s+f[áa]tico|s[íi]ntese\s+f[áa]tica)\b"),
+            "merito": re.compile(r"(?i)\b(?:do\s+m[ée]rito|do\s+direito|fundamenta[çc][ãa]o\s+jur[íi]dica)\b"),
+            "tutela_provisoria": re.compile(r"(?i)\b(?:tutela\s+de\s+urg[êe]ncia|tutela\s+antecipada|tutela\s+provis[óo]ria)\b"),
+            "provas_onus": re.compile(r"(?i)\b(?:das?\s+provas|produ[çc][ãa]o\s+de\s+provas|[ôo]nus\s+da\s+prova|invers[ãa]o\s+do\s+[ôo]nus)\b"),
+            "pedidos": re.compile(r"(?i)\b(?:dos?\s+pedidos|do\s+pedido|dos?\s+requerimentos|valor\s+da\s+causa)\b"),
+        }
+        sections: dict[str, str] = {k: "" for k in section_patterns}
+        # Varredura por blocos/parágrafos
+        blocks = annotated_text.split("\n\n")
+        current_section = "fatos"
+        for block in blocks:
+            matched = False
+            for sec_name, pattern in section_patterns.items():
+                if pattern.search(block[:120]):
+                    current_section = sec_name
+                    matched = True
+                    break
+            sections[current_section] = (sections[current_section] + "\n\n" + block).strip()
+        return sections
 
     @classmethod
     def segmentar_secoes(cls, text: str) -> SecoesPeticaoSchema:
@@ -1118,6 +1187,18 @@ class AIGatewayPort(ABC):
     def analyze_document(self, request: InternalAnalyzeRequest) -> InternalAnalyzeResponse:
         """Processa um documento extraindo metadados anonimizados, resumo NLP e análise preditiva."""
         raise NotImplementedError
+
+    @abstractmethod
+    def comparar_pecas(
+        self,
+        texto_inicial: str,
+        texto_contestacao: str,
+        contexto_historico: Optional[ContextoHistoricoSchema] = None,
+        numero_processo: Optional[str] = None,
+    ) -> ResultadoComparacaoPecas:
+        """Realiza saneamento e confronto analítico bidirecional de duas peças processuais (CPC art. 357)."""
+        raise NotImplementedError
+
 
 
 class LocalDeterministicFallbackAdapter(AIGatewayPort):
@@ -1161,64 +1242,78 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
         )
 
     def analyze_document(self, request: InternalAnalyzeRequest) -> InternalAnalyzeResponse:
-        raw_text = request.texto_bruto or ""
-
-        # 1. Extração de Número CNJ (ou geração determinística baseada no hash do documento)
-        cnj_match = CNJ_REGEX.search(raw_text)
-        if cnj_match:
-            numero_processo = cnj_match.group(0)
-        else:
-            digest = hashlib.sha256((request.arquivo_nome + raw_text).encode("utf-8")).hexdigest()
-            seq = int(digest[:7], 16) % 9000000 + 1000000
-            dv = int(digest[7:9], 16) % 90 + 10
-            numero_processo = f"{seq:07d}-{dv:02d}.2026.8.02.0001"
-
-        # 2. Classificação Multi-Tema por Pontuação Léxica Ponderada
-        tema, tese_recomendada, default_reu = classify_legal_theme(raw_text)
-
-        # 3. Extração Dinâmica de Magistrado e Comarca/Vara (sem lista hardcoded)
+        # 0. Limpeza e normalização do texto extraído (Card #18): remove marcadores de página,
+        #    cabeçalhos/rodapés repetidos e hifenização de quebra de linha.
+        raw_text = LimpadorTexto.limpar(request.texto_bruto or "")
         ctx = request.contexto_historico
-        magistrado_doc, comarca_doc = extract_court_and_judge(raw_text)
-        magistrado = magistrado_doc or ctx.magistrado_inferido or "Magistrado não especificado"
-        comarca = comarca_doc or "Juízo Cível Competente"
 
-        # 4. Identificação de Partes e Barreira Obrigatória LGPD (RN-01 / RF-04)
-        raw_autor, raw_reu = AnonimizadorLGPD.extract_parties_from_text(raw_text, default_reu)
+        # 1 a 3. Identificação das informações processuais e classificação de tema.
+        #    Nada é inventado: o que não for encontrado vira "Não identificado" e é listado
+        #    em `campos_nao_identificados`.
+        info = ExtratorInformacoesProcessuais.extrair(raw_text, request.arquivo_nome)
+        classificacao = ClassificadorAssunto.classificar(raw_text)
+        numero_processo = info.numero_processo
+        tema = classificacao.tema
+        tese_recomendada = classificacao.tese_recomendada
+        # Segunda leitura do próprio documento (prosa jurídica) para o que os rótulos não revelaram.
+        magistrado_prosa, comarca_prosa = extract_court_and_judge(raw_text)
+        autor_prosa, reu_prosa = AnonimizadorLGPD.extract_parties_from_text(raw_text)
+        complementos = {
+            "magistrado": (info.magistrado == NAO_IDENTIFICADO and magistrado_prosa, "magistrado", magistrado_prosa),
+            "comarca": (info.comarca == NAO_IDENTIFICADA and comarca_prosa, "comarca", comarca_prosa),
+            "autor": (not info.autor and autor_prosa, "autor", autor_prosa),
+            "reu": (not info.reu and reu_prosa, "reu", reu_prosa),
+        }
+        for campo, (aplicar, atributo, valor) in complementos.items():
+            if aplicar:
+                setattr(info, atributo, valor)
+                if campo in info.campos_nao_identificados:
+                    info.campos_nao_identificados.remove(campo)
+        magistrado = info.magistrado
+        comarca = info.comarca
 
-        autor_anon, autor_masked = AnonimizadorLGPD.mask_party_name(raw_autor)
-        reu_anon, reu_masked = AnonimizadorLGPD.mask_party_name(raw_reu)
-
-        known_for_sanitization = []
-        if raw_autor in raw_text:
-            known_for_sanitization.append(raw_autor)
-        if raw_reu in raw_text:
-            known_for_sanitization.append(raw_reu)
+        # 4. Partes e Barreira Obrigatória LGPD (RN-01 / RF-04)
+        nomes_conhecidos = [n for n in (info.autor, info.reu) if n]
+        if info.autor:
+            autor_anon, autor_masked = AnonimizadorLGPD.mask_party_name(info.autor)
+        else:
+            autor_anon, autor_masked = NAO_IDENTIFICADO, False
+        if info.reu:
+            reu_anon, reu_masked = AnonimizadorLGPD.mask_party_name(info.reu)
+        else:
+            reu_anon, reu_masked = NAO_IDENTIFICADO, False
 
         sanitized_text, cpf_rg_count, contextual_names_count = AnonimizadorLGPD.sanitize_text(
-            raw_text, known_natural_names=known_for_sanitization
+            raw_text, known_natural_names=nomes_conhecidos
         )
         total_names_masked = max(
             contextual_names_count,
             (1 if autor_masked else 0) + (1 if reu_masked else 0),
         )
 
-        # 5. Segmentação estrutural (Dos Fatos, Do Direito, Dos Pedidos) higienizada sob a LGPD
-        secoes_sanitizadas = self._segmentar_e_sanitizar_secoes(raw_text, [raw_autor, raw_reu])
-
-        # 6. Sumarização Factual Extrativa por Centralidade TF-IDF (RF-05), priorizando a seção "Dos Fatos"
-        fallback_summary = (
-            f"Ação judicial vinculada ao tema '{tema}' tramitando perante {comarca}, "
-            f"tendo como partes {autor_anon} em face de {reu_anon}, submetida à análise preditiva."
+        # 5. Seções higienizadas, características processuais e resumo estruturado (RF-05)
+        secoes_sanitizadas = self._segmentar_e_sanitizar_secoes(raw_text, nomes_conhecidos)
+        classe_higienizada = None
+        if info.classe_processual:
+            classe_higienizada, _, _ = AnonimizadorLGPD.sanitize_text(
+                info.classe_processual, known_natural_names=nomes_conhecidos
+            )
+        caracteristicas = ExtratorCaracteristicas.extrair(raw_text, secoes_sanitizadas, classe_higienizada)
+        resumo_nlp = GeradorResumo.gerar(
+            texto_higienizado=sanitized_text,
+            secoes=secoes_sanitizadas,
+            classificacao=classificacao,
+            caracteristicas=caracteristicas,
+            autor=autor_anon if info.autor else None,
+            reu=reu_anon if info.reu else None,
+            comarca=comarca,
         )
-        texto_fatos = (secoes_sanitizadas.dos_fatos or "").strip()
-        base_sumarizacao = texto_fatos if len(texto_fatos) >= 60 else sanitized_text
-        resumo_nlp = summarize_legal_text(base_sumarizacao, tema, fallback_summary)
 
-        # Garantia extra pós-sumarização de que nenhum PII escapou
+        # Garantia extra pós-sumarização de que nenhum CPF/RG escapou
         resumo_nlp, extra_cpf, _ = AnonimizadorLGPD.sanitize_text(resumo_nlp)
         cpf_rg_count += extra_cpf
 
-        # 7. Cálculo Preditivo Ponderado e Margem de Confiança Estatística de Wilson (RF-06 / RN-02)
+        # 6. Cálculo Preditivo Ponderado e Margem de Confiança Estatística de Wilson (RF-06 / RN-02)
         prob = round(min(max(ctx.taxa_favoravel_juiz, 0.15), 0.95), 2)
         casos_similares = max(int(ctx.total_casos_similares), 0)
         tempo_meses = max(int(ctx.tempo_medio_meses), 1)
@@ -1233,7 +1328,11 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
             else tese_recomendada
         )
         tendencia_juiz = synthesize_local_rag_tendencia(
-            magistrado=magistrado,
+            magistrado=(
+                "magistrado(a) não identificado(a) no documento"
+                if magistrado == NAO_IDENTIFICADO
+                else magistrado
+            ),
             tema=tema,
             prob=prob,
             margem=margem,
@@ -1252,6 +1351,9 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
                     reu=reu_anon,
                 ),
                 secoes=secoes_sanitizadas,
+                caracteristicas=caracteristicas,
+                confianca_classificacao=classificacao.confianca,
+                campos_nao_identificados=info.campos_nao_identificados,
             ),
             resumo_nlp=resumo_nlp,
             analise_preditiva=AnalisePreditivaSchema(
@@ -1269,6 +1371,405 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
                 texto_higienizado_verificado=True,
             ),
         )
+
+    @staticmethod
+    def _find_page_number(annotated_text: str, snippet: Optional[str]) -> Optional[int]:
+        if not snippet:
+            return None
+        posicao = annotated_text.find(snippet)
+        if posicao == -1:
+            # Tolerância a variações de espaço/quebra de linha entre o trecho e o texto anotado
+            palavras = [re.escape(p) for p in snippet.strip().split() if p]
+            if palavras:
+                m = re.search(r"\s+".join(palavras), annotated_text, flags=re.IGNORECASE)
+                if m:
+                    posicao = m.start()
+        if posicao == -1:
+            return None
+        paginas = re.findall(r"(?m)^\[PÁG (\d+)\]$", annotated_text[:posicao])
+        return int(paginas[-1]) if paginas else None
+
+    @staticmethod
+    def _normalizar_bloco_pagina_pdf(bloco: str) -> str:
+        """
+        Higieniza ruídos típicos de PDFs jurídicos (PJe/e-SAJ) dentro de uma página:
+        - Remove cabeçalhos/rodapés de assinatura digital e numeração solta de página via LimpadorTexto;
+        - Desfaz hifenização de quebra de linha (ex: 'indeni-\\nzação' -> 'indenização');
+        - Reconstrói frases quebradas no meio da coluna do PDF (linhas sem pontuação terminal '.!?:;').
+        """
+        if not bloco or not bloco.strip():
+            return ""
+
+        # Preserva textos já limpos onde cada linha é um título ou uma sentença pontuada
+        tem_hifen_quebra = bool(re.search(r"[A-Za-zÀ-ú]-\r?\n\s*[A-Za-zÀ-ú]", bloco))
+        tem_rodape_sistema = bool(LimpadorTexto.RODAPE_SISTEMA.search(bloco))
+        linhas_brutas = [l.strip() for l in bloco.splitlines() if l.strip()]
+        tem_quebra_meio_frase = any(
+            not l.endswith((".", "!", "?", ":", ";"))
+            and not LimpadorTexto._eh_titulo(l)
+            and not re.match(r"^(?:Processo|Autor(?:a)?|R[ée]u|Requerente|Requerid[oa]|Magistrad[oa])\s*:", l, re.I)
+            for l in linhas_brutas[:-1]
+        )
+
+        if not (tem_hifen_quebra or tem_rodape_sistema or tem_quebra_meio_frase):
+            return "\n".join(linhas_brutas)
+
+        limpo = LimpadorTexto.limpar(bloco)
+        # Reconstrói quebras de coluna de PDF em que a próxima linha começa com número, 'R$' ou nome próprio no meio da frase
+        linhas = [l.strip() for l in limpo.splitlines() if l.strip()]
+        reconstruidas: list[str] = []
+        for linha in linhas:
+            if (
+                reconstruidas
+                and not reconstruidas[-1].endswith((".", "!", "?", ":", ";"))
+                and not LimpadorTexto._eh_titulo(reconstruidas[-1])
+                and not LimpadorTexto._eh_titulo(linha)
+                and not LimpadorTexto.ITEM_ENUMERADO.match(linha)
+                and not re.match(r"^(?:Processo|Autor(?:a)?|R[ée]u|Requerente|Requerid[oa]|Magistrad[oa])\s*:", linha, re.I)
+                and not re.match(r"^(?:Processo|Autor(?:a)?|R[ée]u|Requerente|Requerid[oa]|Magistrad[oa])\s*:", reconstruidas[-1], re.I)
+            ):
+                reconstruidas[-1] = f"{reconstruidas[-1]} {linha}"
+            else:
+                reconstruidas.append(linha)
+
+        texto_pagina = "\n".join(reconstruidas)
+        # Normaliza valores monetários ou datas partidos por espaço múltiplo
+        texto_pagina = re.sub(r"R\$\s+(\d)", r"R$ \1", texto_pagina)
+        return texto_pagina
+
+    @classmethod
+    def _normalizar_peca_com_paginas(cls, texto: str) -> str:
+        """Aplica limpeza de ruídos de PDF preservando intactos os marcadores [PÁG XX]."""
+        if not texto:
+            return ""
+        partes = re.split(r"(?m)^(\[PÁG \d+\])[ \t]*\r?$", texto)
+        if len(partes) == 1:
+            return cls._normalizar_bloco_pagina_pdf(texto)
+
+        blocos_saida: list[str] = []
+        prefixo = cls._normalizar_bloco_pagina_pdf(partes[0])
+        if prefixo:
+            blocos_saida.append(prefixo)
+
+        for idx in range(1, len(partes), 2):
+            marcador = partes[idx].strip()
+            conteudo = partes[idx + 1] if idx + 1 < len(partes) else ""
+            conteudo_limpo = cls._normalizar_bloco_pagina_pdf(conteudo)
+            if conteudo_limpo:
+                blocos_saida.append(f"{marcador}\n{conteudo_limpo}")
+            else:
+                blocos_saida.append(marcador)
+
+        return "\n".join(blocos_saida)
+
+    @staticmethod
+    def _extrair_trechos_comparacao(texto: str) -> list[str]:
+        """
+        Extrai sentenças completas e autocontidas do texto normalizado (separando parágrafos
+        multissentenciais em frases individuais e ignorando marcadores [PÁG XX] e títulos curtos).
+        """
+        sentencas: list[str] = []
+        for linha in texto.splitlines():
+            linha_str = linha.strip()
+            if not linha_str or re.match(r"^\[PÁG \d+\]$", linha_str):
+                continue
+            # Divide parágrafos com múltiplas frases em sentenças individuais preservando o texto literal
+            partes = re.split(r"(?<=[.!?])\s+(?=[A-ZÀ-Ú0-9\"'(])", linha_str)
+            for p in partes:
+                p_clean = p.strip()
+                if p_clean:
+                    sentencas.append(p_clean)
+        return sentencas
+
+    def comparar_pecas(
+        self,
+        texto_inicial: str,
+        texto_contestacao: str,
+        contexto_historico: Optional[ContextoHistoricoSchema] = None,
+        numero_processo: Optional[str] = None,
+    ) -> ResultadoComparacaoPecas:
+        clean_init = self._normalizar_peca_com_paginas(texto_inicial or "")
+        clean_cont = self._normalizar_peca_com_paginas(texto_contestacao or "")
+        lower_init = clean_init.lower()
+        lower_cont = clean_cont.lower()
+        norm_init = sem_acento(clean_init)
+        norm_cont = sem_acento(clean_cont)
+
+        def localizar(candidatos: list[str], *termos: str) -> Optional[str]:
+            # 1ª passagem: busca case-insensitive direta
+            achado = next(
+                (s for s in candidatos if any(termo.lower() in s.lower() for termo in termos if termo)),
+                None,
+            )
+            if achado:
+                return achado
+            # 2ª passagem: busca insensível a acentos e múltiplos espaços (resiliente a OCR/PDFs sujos)
+            termos_norm = [sem_acento(re.sub(r"\s+", " ", t.strip())) for t in termos if t and t.strip()]
+            return next(
+                (
+                    s
+                    for s in candidatos
+                    if any(tn in sem_acento(re.sub(r"\s+", " ", s)) for tn in termos_norm)
+                ),
+                None,
+            )
+
+        trechos_inicial = self._extrair_trechos_comparacao(clean_init)
+        trechos_defesa = self._extrair_trechos_comparacao(clean_cont)
+
+        if not numero_processo:
+            cnj_m = CNJ_REGEX.search(clean_init) or CNJ_REGEX.search(clean_cont)
+            if cnj_m:
+                numero_processo = cnj_m.group(0)
+
+        teses: list[PontoControvertido] = []
+        tese_counter = 1
+
+        # 1. VARREDURA DIRETA: Fatos, Cronologia e Valores
+        datas_init = re.findall(r"\b(\d{2}/\d{2}/\d{4})\b", clean_init)
+        if datas_init:
+            data_alvo = datas_init[0]
+            trecho_autor_data = localizar(trechos_inicial, data_alvo)
+            trecho_defesa_data = localizar(trechos_defesa, data_alvo, "data")
+            norm_trecho_data = sem_acento(trecho_defesa_data or "")
+            termos_oposicao_data = ("impugna", "diverge", "nao ocorreu", "incorret", "falso", "nega")
+
+            if trecho_defesa_data and any(w in norm_trecho_data for w in termos_oposicao_data):
+                trecho_reu_data = trecho_defesa_data
+                status_data = StatusTese.DIVERGENTE
+                forca_aut = "Documental Robusta - Registros de Atendimento"
+                forca_reu = "Alegação Retórica Desprovida de Prova"
+                impacto_data = "Requerer na réplica fixação de ponto incontroverso ou produção de prova testemunhal/documental quanto à data."
+            elif data_alvo in clean_cont:
+                trecho_reu_data = localizar(trechos_defesa, data_alvo)
+                status_data = StatusTese.CONVERGENTE
+                forca_aut = "Fato Admitido Expressamente"
+                forca_reu = "Concordância Fática Expressa"
+                impacto_data = "Ponto incontroverso por convergência fática expressa (art. 374, II do CPC): dispensada dilação probatória."
+            else:
+                trecho_reu_data = None
+                status_data = StatusTese.INCONTROVERSO_POR_OMISSAO
+                forca_aut = "Alegação Fática Específica na Petição Inicial"
+                forca_reu = "Ausência de Impugnação Específica (Art. 341 CPC)"
+                impacto_data = "Requerer na réplica a decretação da preclusão e presunção de veracidade (art. 341 do CPC)."
+
+            teses.append(
+                PontoControvertido(
+                    id_tese=f"TESE-{tese_counter:02d}",
+                    tipo=TipoTese.FATO_CRONOLOGIA,
+                    tema="Cronologia e Data do Inadimplemento",
+                    trecho_autor=trecho_autor_data,
+                    trecho_reu=trecho_reu_data,
+                    status=status_data,
+                    forca_probatoria_autor=forca_aut,
+                    forca_probatoria_reu=forca_reu,
+                    fundamentacao_preditiva="Apresentação de cronologia pormenorizada com suporte documental vincula a defesa ao ônus da impugnação específica.",
+                    impacto_processual=impacto_data,
+                    pagina_autor=self._find_page_number(clean_init, trecho_autor_data),
+                    pagina_reu=self._find_page_number(clean_cont, trecho_reu_data) if trecho_reu_data else None,
+                )
+            )
+            tese_counter += 1
+
+        valores_init = re.findall(r"R\$[^\S\n]*\d(?:[\d.,]*\d)?", clean_init)
+        if valores_init:
+            val_alvo = valores_init[0]
+            val_compacto = re.sub(r"\s+", "", val_alvo)
+            trecho_aut_val = localizar(trechos_inicial, val_alvo.lower(), val_compacto.lower())
+            trecho_defesa_val = localizar(
+                trechos_defesa,
+                val_alvo.lower(), val_compacto.lower(), "valor", "excesso", "desproporcional", "exorbitante",
+            )
+            norm_trecho_val = sem_acento(trecho_defesa_val or "")
+            termos_oposicao_val = ("excesso", "desproporcional", "impugna", "excessivo", "exorbitante", "enriquecimento sem causa")
+
+            if trecho_defesa_val and any(w in norm_trecho_val for w in termos_oposicao_val):
+                trecho_reu_val = trecho_defesa_val
+                status_val = StatusTese.DIVERGENTE
+                impacto_val = "Juntar comprovantes fiscais e extratos complementares para demonstrar a exata liquidez do dano."
+                forca_r_val = "Alegação de Excesso de Execução"
+            elif val_alvo in clean_cont or val_compacto in re.sub(r"\s+", "", clean_cont):
+                trecho_reu_val = localizar(trechos_defesa, val_alvo.lower(), val_compacto.lower())
+                status_val = StatusTese.CONVERGENTE
+                impacto_val = "Fato incontroverso quanto ao montante: postular julgamento antecipado parcial do mérito (art. 356 CPC)."
+                forca_r_val = "Reconhecimento do Pedido Parcial"
+            else:
+                trecho_reu_val = None
+                status_val = StatusTese.INCONTROVERSO_POR_OMISSAO
+                impacto_val = "Pleitear reconhecimento de veracidade sobre o valor pretendido ante a ausência de impugnação específica (art. 341 CPC)."
+                forca_r_val = "Não Impugnado na Contestação"
+
+            teses.append(
+                PontoControvertido(
+                    id_tese=f"TESE-{tese_counter:02d}",
+                    tipo=TipoTese.FATO_CRONOLOGIA,
+                    tema="Quantificação dos Danos e Valor Pleiteado",
+                    trecho_autor=trecho_aut_val,
+                    trecho_reu=trecho_reu_val,
+                    status=status_val,
+                    forca_probatoria_autor="Planilha de Cálculos e Comprovantes acostados",
+                    forca_probatoria_reu=forca_r_val,
+                    fundamentacao_preditiva="A impugnação genérica de valores sem apresentação de memória de cálculo desfavorável desqualifica a oposição da ré.",
+                    impacto_processual=impacto_val,
+                    pagina_autor=self._find_page_number(clean_init, trecho_aut_val),
+                    pagina_reu=self._find_page_number(clean_cont, trecho_reu_val) if trecho_reu_val else None,
+                )
+            )
+            tese_counter += 1
+
+        # 2. Mérito Principal
+        trecho_aut_mer = localizar(
+            trechos_inicial,
+            "falha", "defeito", "dano moral", "indeniza", "responsabilidade", "inadimplemento",
+            "cobranca indevida", "negativacao", "cancelamento", "atraso",
+        )
+        trecho_reu_mer = localizar(
+            trechos_defesa,
+            "exercício regular", "exercicio regular", "mero dissabor",
+            "inexistência", "inexistencia", "não há dano", "nao ha dano", "improcedente",
+            "improcedencia", "ausencia de ato ilicito", "cobranca devida", "regularidade",
+        )
+
+        teses.append(
+            PontoControvertido(
+                id_tese=f"TESE-{tese_counter:02d}",
+                tipo=TipoTese.MERITO,
+                tema="Configuração de Falha na Prestação de Serviço e Dano Moral",
+                trecho_autor=trecho_aut_mer,
+                trecho_reu=trecho_reu_mer,
+                status=StatusTese.DIVERGENTE,
+                forca_probatoria_autor="Documental - Falha Operacional Comprovada",
+                forca_probatoria_reu="Defesa de Mero Dissabor Cotidiano",
+                fundamentacao_preditiva="Jurisprudência consolidada do tribunal local reconhece responsabilidade objetiva do prestador de serviços pelo vício na prestação (art. 14 do CDC).",
+                impacto_processual="Reiterar em réplica a incidência da Súmula do TJAL e precedentes vinculantes favoráveis à reparação integral.",
+                pagina_autor=self._find_page_number(clean_init, trecho_aut_mer),
+                pagina_reu=self._find_page_number(clean_cont, trecho_reu_mer),
+            )
+        )
+        tese_counter += 1
+
+        # 3. Prova e Ônus
+        if any(w in norm_init for w in ("inversao", "onus da prova", "art. 6", "cdc", "hipossuficien")):
+            trecho_aut_onus = localizar(trechos_inicial, "inversão", "inversao", "ônus da prova", "onus da prova", "hipossufici")
+            if not trecho_aut_onus:
+                trecho_aut_onus = localizar(trechos_inicial, "art. 6", "cdc")
+            trecho_reu_onus = localizar(
+                trechos_defesa,
+                "descabe", "indevida a inversão", "indevida a inversao", "art. 373",
+                "não cabe inversão", "nao cabe inversao", "ausencia de hipossuficiencia",
+            )
+            if trecho_reu_onus:
+                status_onus = StatusTese.DIVERGENTE
+            else:
+                trecho_reu_onus = None
+                status_onus = StatusTese.INCONTROVERSO_POR_OMISSAO
+
+            teses.append(
+                PontoControvertido(
+                    id_tese=f"TESE-{tese_counter:02d}",
+                    tipo=TipoTese.PROVA_ONUS,
+                    tema="Distribuição do Ônus Probatório e Inversão (CDC)",
+                    trecho_autor=trecho_aut_onus,
+                    trecho_reu=trecho_reu_onus,
+                    status=status_onus,
+                    forca_probatoria_autor="Vulnerabilidade Técnica e Econômica Evidente",
+                    forca_probatoria_reu="Resistência Genérica ao Estatuto Consumerista" if trecho_reu_onus else "Não Impugnado na Defesa",
+                    fundamentacao_preditiva="A verossimilhança das alegações somada à hipossuficiência autoriza a inversão do ônus probatório pelo juízo saneador (art. 357, III CPC).",
+                    impacto_processual="Requerer expressamente ao magistrado a fixação da inversão probatória na decisão de saneamento processual.",
+                    pagina_autor=self._find_page_number(clean_init, trecho_aut_onus),
+                    pagina_reu=self._find_page_number(clean_cont, trecho_reu_onus) if trecho_reu_onus else None,
+                )
+            )
+            tese_counter += 1
+
+        # 4. VARREDURA REVERSA: Fatos Novos da Defesa (Art. 350 CPC) e Preliminares
+        if any(w in norm_cont for w in ("prescricao", "decadencia")):
+            trecho_reu_presc = localizar(trechos_defesa, "prescri", "decad")
+            teses.append(
+                PontoControvertido(
+                    id_tese=f"TESE-{tese_counter:02d}",
+                    tipo=TipoTese.PREJUDICIAL_MERITO,
+                    tema="Prejudicial de Prescrição / Decadência",
+                    trecho_autor=None,
+                    trecho_reu=trecho_reu_presc,
+                    status=StatusTese.FATO_NOVO_DEFESA,
+                    forca_probatoria_autor="Não Arguido na Petição Inicial (Fato Inédito)",
+                    forca_probatoria_reu="Alegação de Decurso de Prazo Legal (Art. 206 CC / Art. 27 CDC)",
+                    fundamentacao_preditiva="Defesa indireta de mérito que desloca o contraditório para a manifestação em réplica (art. 350 do CPC).",
+                    impacto_processual="Apresentar réplica comprovando causa interruptiva da prescrição ou termo inicial vinculado ao conhecimento do dano.",
+                    pagina_autor=None,
+                    pagina_reu=self._find_page_number(clean_cont, trecho_reu_presc),
+                )
+            )
+            tese_counter += 1
+        elif any(w in norm_cont for w in ("ilegitimidade", "incompetencia", "preliminar", "inepcia", "falta de interesse")):
+            trecho_reu_prel = localizar(trechos_defesa, "ilegitimidade", "incompet", "preliminar", "inepcia", "interesse de agir")
+            teses.append(
+                PontoControvertido(
+                    id_tese=f"TESE-{tese_counter:02d}",
+                    tipo=TipoTese.PRELIMINAR,
+                    tema="Preliminar de Ilegitimidade Passiva ou Vício Processual",
+                    trecho_autor=None,
+                    trecho_reu=trecho_reu_prel,
+                    status=StatusTese.FATO_NOVO_DEFESA,
+                    forca_probatoria_autor="Não Constante da Causa de Pedir Inicial",
+                    forca_probatoria_reu="Preliminar de Defesa (Art. 337 do CPC)",
+                    fundamentacao_preditiva="Pertinência subjetiva da demanda amparada pela teoria da asserção e cadeia de fornecimento solidária (art. 7º, § único, CDC).",
+                    impacto_processual="Requerer a rejeição liminar da preliminar com base na responsabilidade solidária da cadeia consumerista.",
+                    pagina_autor=None,
+                    pagina_reu=self._find_page_number(clean_cont, trecho_reu_prel),
+                )
+            )
+            tese_counter += 1
+        elif any(w in norm_cont for w in ("culpa exclusiva", "fato de terceiro", "forca maior", "caso fortuito", "quitacao", "pagamento")):
+            trecho_reu_fn = localizar(
+                trechos_defesa, "culpa exclusiva", "terceiro", "força maior", "forca maior",
+                "fortuito", "quitação", "quitacao", "pagamento",
+            )
+            teses.append(
+                PontoControvertido(
+                    id_tese=f"TESE-{tese_counter:02d}",
+                    tipo=TipoTese.MERITO,
+                    tema="Fato Impeditivo / Modificativo da Obrigação (Art. 350 CPC)",
+                    trecho_autor=None,
+                    trecho_reu=trecho_reu_fn,
+                    status=StatusTese.FATO_NOVO_DEFESA,
+                    forca_probatoria_autor="Inexistência de Prévia Oposição na Inicial",
+                    forca_probatoria_reu="Alegação de Excludente de Ilicitude",
+                    fundamentacao_preditiva="Ônus probatório integralmente carreado à ré nos termos do art. 373, II, do CPC, demandando dilação probatória estrita.",
+                    impacto_processual="Impugnar o fato extintivo/modificativo em réplica por falta de lastro documental idôneo.",
+                    pagina_autor=None,
+                    pagina_reu=self._find_page_number(clean_cont, trecho_reu_fn),
+                )
+            )
+            tese_counter += 1
+
+        total_teses = len(teses)
+        total_conv = sum(1 for t in teses if t.status == StatusTese.CONVERGENTE)
+        total_div = sum(1 for t in teses if t.status == StatusTese.DIVERGENTE)
+        total_omiss = sum(1 for t in teses if t.status == StatusTese.INCONTROVERSO_POR_OMISSAO)
+        total_fn = sum(1 for t in teses if t.status == StatusTese.FATO_NOVO_DEFESA)
+
+        resumo_geral = (
+            f"Confronto analítico de saneamento processual (art. 357 do CPC): identificadas {total_teses} teses fundamentais, "
+            f"com {total_conv} convergência(s), {total_div} divergência(s), "
+            f"{total_omiss} fato(s) incontroverso(s) por omissão e {total_fn} fato(s) novo(s) da defesa."
+        )
+
+        return ResultadoComparacaoPecas(
+            id_comparacao=f"comp-{uuid.uuid4().hex[:8]}",
+            numero_processo=numero_processo,
+            resumo_controvertido_geral=resumo_geral,
+            total_teses=total_teses,
+            total_convergencias=total_conv,
+            total_divergencias=total_div,
+            total_omissoes=total_omiss,
+            total_fatos_novos_defesa=total_fn,
+            teses=teses,
+            texto_higienizado_autor=clean_init,
+            texto_higienizado_reu=clean_cont,
+        )
+
 
 
 class GeminiAIAdapter(AIGatewayPort):
@@ -1310,7 +1811,7 @@ class GeminiAIAdapter(AIGatewayPort):
 
         # 1. Obter o baseline determinístico local + contexto RAG real do acervo
         base_resp = self._fallback.analyze_document(request)
-        sanitized_text, _, _ = AnonimizadorLGPD.sanitize_text(request.texto_bruto or "")
+        sanitized_text, _, _ = AnonimizadorLGPD.sanitize_text(LimpadorTexto.limpar(request.texto_bruto or ""))
         rag_block_raw = build_rag_precedents_context(
             request.contexto_historico,
             base_resp.metadados_extraidos.tema,
@@ -1348,7 +1849,7 @@ class GeminiAIAdapter(AIGatewayPort):
 
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{settings.GEMINI_MODEL}:generateContent?key={api_key}"
+            f"{settings.GEMINI_MODEL}:generateContent"
         )
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
@@ -1360,7 +1861,7 @@ class GeminiAIAdapter(AIGatewayPort):
 
         try:
             with httpx.Client(timeout=settings.GEMINI_TIMEOUT_SECONDS) as client:
-                res = client.post(url, json=payload)
+                res = client.post(url, headers={"x-goog-api-key": api_key}, json=payload)
                 if res.status_code == 200:
                     data = res.json()
                     candidates = data.get("candidates", [])
@@ -1411,12 +1912,110 @@ class GeminiAIAdapter(AIGatewayPort):
                 )
         except Exception as exc:
             logger.info(
-                "Chamada ao Gemini API não concluída (%s: %s). Acionando fallback determinístico local (ADR-002).",
+                "Chamada ao Gemini API não concluída (%s). Acionando fallback determinístico local (ADR-002).",
                 exc.__class__.__name__,
-                str(exc),
             )
 
         return base_resp
+
+    FALLBACK_COMPARADOR_MODELS = (
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-2.0-flash",
+    )
+
+    def comparar_pecas(
+        self,
+        texto_inicial: str,
+        texto_contestacao: str,
+        contexto_historico: Optional[ContextoHistoricoSchema] = None,
+        numero_processo: Optional[str] = None,
+    ) -> ResultadoComparacaoPecas:
+        api_key = settings.GEMINI_API_KEY.strip()
+        if not api_key:
+            return self._fallback.comparar_pecas(texto_inicial, texto_contestacao, contexto_historico, numero_processo)
+
+        norm_init = LocalDeterministicFallbackAdapter._normalizar_peca_com_paginas(texto_inicial or "")
+        norm_cont = LocalDeterministicFallbackAdapter._normalizar_peca_com_paginas(texto_contestacao or "")
+        sanitized_init, _, _ = AnonimizadorLGPD.sanitize_text(norm_init)
+        sanitized_cont, _, _ = AnonimizadorLGPD.sanitize_text(norm_cont)
+
+        prompt = (
+            "Você é um Juiz de Direito especialista em Direito Processual Civil atuando na fase de Saneamento e Organização do Processo (Art. 357 do CPC).\n"
+            "Realize o confronto analítico bidirecional entre a PETIÇÃO INICIAL e a CONTESTAÇÃO a seguir (ambas devidamente anonimizadas sob a LGPD).\n\n"
+            f"=== INÍCIO PETIÇÃO INICIAL ANONIMIZADA ===\n{sanitized_init[:5000]}\n=== FIM PETIÇÃO INICIAL ===\n\n"
+            f"=== INÍCIO CONTESTAÇÃO ANONIMIZADA ===\n{sanitized_cont[:5000]}\n=== FIM CONTESTAÇÃO ===\n\n"
+            "Diretrizes Obrigatórias:\n"
+            "1. Varredura Direta (Autor -> Réu): Identifique convergências, divergências e fatos incontroversos por ausência de impugnação específica (Art. 341 CPC).\n"
+            "2. Varredura Reversa (Réu -> Autor): Identifique preliminares e fatos novos impeditivos/modificativos/extintivos da defesa sem correspondência prévia (Art. 350 CPC).\n"
+            "3. Enquadre cada tese nos 7 eixos do TipoTese (preliminar, prejudicial_merito, fato_ou_valor, merito, tutela_provisoria, prova_e_onus, pedido_e_valor_causa) e nos 4 status do StatusTese (convergente, divergente, fato_incontroverso_por_omissao, fato_novo_ou_extintivo_reu).\n"
+            "4. Extraia citações literais exatas e preencha pagina_autor e pagina_reu com base nas marcações [PÁG XX]. Se uma peça não trouxer trecho correspondente, deixe a citação e a página dessa peça como null.\n"
+            "5. Gere impacto_processual objetivo para o advogado em réplica e sintetize o litígio, "
+            "evitando previsões de êxito. Siga o schema JSON da resposta."
+        )
+
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "responseMimeType": "application/json",
+                "responseJsonSchema": RespostaComparacaoGemini.model_json_schema(),
+            },
+        }
+
+        modelos_candidatos = list(dict.fromkeys([settings.GEMINI_MODEL, *self.FALLBACK_COMPARADOR_MODELS]))
+
+        try:
+            with httpx.Client(timeout=settings.GEMINI_TIMEOUT_SECONDS) as client:
+                for modelo in modelos_candidatos:
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent"
+                    res = client.post(url, headers={"x-goog-api-key": api_key}, json=payload)
+                    if res.is_success:
+                        data = res.json()
+                        for candidate in data.get("candidates", []):
+                            parts = candidate.get("content", {}).get("parts", [])
+                            resposta = "".join(part.get("text", "") for part in parts if not part.get("thought")).strip()
+                            if not resposta:
+                                continue
+                            resposta = re.sub(r"^```(?:json)?\s*|\s*```$", "", resposta)
+                            comparacao = RespostaComparacaoGemini.model_validate_json(resposta)
+                            contagem = Counter(tese.status for tese in comparacao.teses)
+                            cnj = CNJ_REGEX.search(sanitized_init) or CNJ_REGEX.search(sanitized_cont)
+                            return ResultadoComparacaoPecas(
+                                id_comparacao=f"comp-{uuid.uuid4().hex[:8]}",
+                                numero_processo=numero_processo or (cnj.group(0) if cnj else None),
+                                resumo_controvertido_geral=comparacao.resumo_controvertido_geral,
+                                total_teses=len(comparacao.teses),
+                                total_convergencias=contagem[StatusTese.CONVERGENTE],
+                                total_divergencias=contagem[StatusTese.DIVERGENTE],
+                                total_omissoes=contagem[StatusTese.INCONTROVERSO_POR_OMISSAO],
+                                total_fatos_novos_defesa=contagem[StatusTese.FATO_NOVO_DEFESA],
+                                teses=[
+                                    PontoControvertido(
+                                        **tese.model_dump(),
+                                        id_tese=f"TESE-{indice:02d}",
+                                        fundamentacao_preditiva="",
+                                    )
+                                    for indice, tese in enumerate(comparacao.teses, start=1)
+                                ],
+                                motor_analise="gemini",
+                                texto_higienizado_autor=sanitized_init,
+                                texto_higienizado_reu=sanitized_cont,
+                            )
+                        logger.warning("Modelo Gemini (%s) retornou comparação sem texto.", modelo)
+                    elif res.status_code in (429, 500, 502, 503, 504):
+                        logger.warning(
+                            "Modelo Gemini (%s) retornou HTTP %d (indisponível/sobrecarregado). Tentando próximo modelo...",
+                            modelo,
+                            res.status_code,
+                        )
+                        continue
+                    else:
+                        logger.warning("Gemini retornou HTTP %d no comparador. Acionando análise local.", res.status_code)
+                        break
+        except Exception as exc:
+            logger.warning("Comparação com Gemini não concluída (%s). Acionando análise local.", type(exc).__name__)
+
+        return self._fallback.comparar_pecas(texto_inicial, texto_contestacao, contexto_historico, numero_processo)
 
 
 class ResilientAIGateway(AIGatewayPort):
@@ -1468,6 +2067,17 @@ class ResilientAIGateway(AIGatewayPort):
 
         # 3. Fallback determinístico local (offline, seguro e de custo zero)
         return self._fallback.analyze_document(request)
+
+    def comparar_pecas(
+        self,
+        texto_inicial: str,
+        texto_contestacao: str,
+        contexto_historico: Optional[ContextoHistoricoSchema] = None,
+        numero_processo: Optional[str] = None,
+    ) -> ResultadoComparacaoPecas:
+        if settings.GEMINI_API_KEY.strip() and settings.AI_PROVIDER in ("gemini", "auto"):
+            return self._gemini.comparar_pecas(texto_inicial, texto_contestacao, contexto_historico, numero_processo)
+        return self._fallback.comparar_pecas(texto_inicial, texto_contestacao, contexto_historico, numero_processo)
 
 
 ai_gateway = ResilientAIGateway()
