@@ -276,3 +276,23 @@ export async function sincronizarLoteDatajud({ tribunal = "TJAL", tema = "", lim
     return data;
 }
 
+export async function compararPecas(fileInicial, fileContestacao) {
+    const formData = new FormData();
+    formData.append("peticao_inicial", fileInicial);
+    formData.append("contestacao", fileContestacao);
+
+    const res = await fetch(`${getApiBaseUrl()}/api/v1/processos/comparar-pecas`, {
+        method: "POST",
+        headers: {
+            ...getAuthHeader(),
+        },
+        body: formData,
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw new Error(data.detail || `Erro HTTP ${res.status} ao confrontar peças processuais.`);
+    }
+    return data;
+}
+

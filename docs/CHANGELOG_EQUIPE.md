@@ -329,3 +329,19 @@ Toda nova modificação deve seguir o modelo abaixo:
   - Nunca reintroduzir valores padrão fictícios (nomes, CNJ, juiz) na extração: usar os marcadores de `nlp_processual.py`.
   - O resumo e os pedidos devem ser gerados a partir de texto já higienizado pelo `AnonimizadorLGPD` (RN-01).
   - As petições de `peticoes_nlp.json` foram escritas junto com o código: servem de base de regressão, não de medida de acurácia em documentos reais. Ampliar com petições reais anonimizadas.
+
+---
+
+### [2026-11-24] — Visualizador Comparativo de Peças Jurídicas (Inicial vs. Contestação) com Limpeza de PDFs Sujos e Fallback Multi-Modelo Gemini (Card #55)
+- **Branch:** `Comparador/Ygor`
+- **Autor / Dupla:** Ygor Vasconcelos e Lucas Gabriel
+- **Pacote da EAP / Requisitos:** EAP 1.3.2 (API REST), EAP 1.3.3 (Interface Web Front-end), EAP 1.4.3 (Motor Preditivo / Saneamento Processual - Art. 357 do CPC), RN-01 (Barreira LGPD), RN-02 (Jurimetria Granular), RNF-05 (Tolerância a Falhas)
+- **Resumo da Mudança:**
+  1. **Confronto analítico bidirecional (`POST /api/v1/processos/comparar-pecas` e `backend/app/schemas/comparacao.py`):** recebe Petição Inicial e Contestação em PDF, extrai páginas com marcadores `[PÁG XX]` (incluindo fallback de OCR da `#56`), higieniza ambas sob `AnonimizadorLGPD` (`RN-01`), classifica teses nos 7 eixos do `TipoTese` e 4 status do `StatusTese` (arts. 341, 350 e 357 do CPC) e calcula estimativa histórica com suavização de Laplace quando há $\ge 5$ julgados do tema.
+  2. **Interface *Split-View* em 3 colunas e casos demonstrativos (`frontend/index.html`, `frontend/src/app.js`, `frontend/src/components/comparador-demo.js`, `frontend/src/components/design-tokens.css`):** visualizador lado a lado com destaque sincronizado de citações por página, filtros combinados por status e eixo jurídico e dois casos demonstrativos completos.
+  3. **Resiliência para PDFs jurídicos sujos (`_normalizar_peca_com_paginas` e `_extrair_trechos_comparacao` em `backend/app/core/ai_gateway.py`):** integra o `LimpadorTexto` (da `#18`) preservando marcadores `[PÁG XX]`, remove rodapés do PJe/e-SAJ, desfaz hifenização de quebra de linha, reconstrói frases cortadas na coluna do PDF, aplica busca insensível a acentos (`sem_acento`) e avalia oposição/impugnação no escopo da sentença (evitando que uma impugnação de valor contamine uma data admitida).
+  4. **Cadeia de fallback multi-modelo contra `HTTP 503` no Gemini (`GeminiAIAdapter.comparar_pecas`):** quando o modelo primário retorna `HTTP 503`/`429` (sobrecarga no Free Tier), tenta automaticamente os modelos alternativos (`gemini-2.5-flash`, `gemini-2.5-flash-lite`, `gemini-2.0-flash`) antes de acionar o motor determinístico local.
+- **Como Testar / Executar Localmente:**
+  - PowerShell: `$env:PYTHONPATH="backend"; pytest backend/tests/ -v` (**97 testes aprovados**).
+  - Front-end: `cd frontend; npm run build`.
+

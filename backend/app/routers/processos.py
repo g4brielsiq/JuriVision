@@ -5,6 +5,7 @@ Rastreabilidade:
 - MODELING.md: RF-02, RF-03, RF-04, RF-05, RF-06, RF-08, RN-01 a RN-04, UC-02 a UC-07
 """
 import csv
+from collections import Counter
 from datetime import date, datetime
 import hashlib
 import io
@@ -21,6 +22,7 @@ from app.core.datajud_client import DataJudClient
 from app.core.database import get_db
 from app.core.security import get_optional_current_user
 from app.models.entities import AnalisePreditiva, LogAuditoriaLGPD, Processo, Usuario
+from app.schemas.comparacao import ResultadoComparacaoPecas
 from app.schemas.contracts import (
     AnalisePreditivaSchema,
     AuditoriaLGPDSchema,
@@ -57,6 +59,7 @@ REQUIRED_CSV_COLUMNS = {
 
 MAX_PDF_SIZE_BYTES = 15 * 1024 * 1024  # 15 MB (RN-04 / SEC-05)
 MAX_CSV_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB (RN-04 / SEC-05)
+MIN_JULGADOS_POR_TEMA = 5
 
 
 _STOPWORDS_SIMILARIDADE = {
@@ -984,3 +987,125 @@ def obter_detalhes_processo(
             texto_higienizado_verificado=True,
         ),
     )
+
+
+def _aplicar_jurimetria_granular(
+    db: Session,
+    resultado: ResultadoComparacaoPecas,
+) -> ResultadoComparacaoPecas:
+    """Estima a procedência com base em desfechos históricos do mesmo tema."""
+    if not resultado.teses:
+        resultado.score_geral_favorabilidade_autor_pct = None
+        return resultado
+
+    desfecho = func.lower(func.trim(Processo.resultado_historico))
+    # O upload de PDF e a importação CSV podem atribuir "Procedente" automaticamente.
+    historico = db.query(Processo.tema, desfecho, func.count()).filter(
+        Processo.origem_ingestao == "MANUAL",
+        desfecho.in_(("procedente", "improcedente")),
+        Processo.numero_processo != resultado.numero_processo,
+    ).group_by(Processo.tema, desfecho).all()
+
+    total_por_tema: Counter[str] = Counter()
+    procedentes_por_tema: Counter[str] = Counter()
+    for tema, decisao, quantidade in historico:
+        chave = " ".join(tema.casefold().split())
+        total_por_tema[chave] += quantidade
+        if decisao == "procedente":
+            procedentes_por_tema[chave] += quantidade
+
+    estimativas: list[float] = []
+    for tese in resultado.teses:
+        chave = " ".join(tese.tema.casefold().split())
+        total = total_por_tema[chave]
+        if total < MIN_JULGADOS_POR_TEMA:
+            tese.probabilidade_procedencia_pct = None
+            tese.fundamentacao_preditiva = (
+                f"Histórico insuficiente: {total} de {MIN_JULGADOS_POR_TEMA} julgados necessários no mesmo tema."
+            )
+            continue
+
+        procedentes = procedentes_por_tema[chave]
+        # A suavização de Laplace evita certeza artificial quando todos os desfechos coincidem.
+        estimativa = round(100 * (procedentes + 1) / (total + 2), 1)
+        tese.probabilidade_procedencia_pct = estimativa
+        tese.fundamentacao_preditiva = (
+            f"Referência histórica do tema: {procedentes} de {total} julgados procedentes, "
+            "com suavização estatística."
+        )
+        estimativas.append(estimativa)
+
+    resultado.score_geral_favorabilidade_autor_pct = (
+        round(sum(estimativas) / len(estimativas), 1)
+        if len(estimativas) == len(resultado.teses)
+        else None
+    )
+    return resultado
+
+
+@router.post("/comparar-pecas", response_model=ResultadoComparacaoPecas, status_code=status.HTTP_200_OK)
+async def comparar_pecas_processuais(
+    peticao_inicial: UploadFile = File(...),
+    contestacao: UploadFile = File(...),
+    db: Session = Depends(get_db),
+) -> ResultadoComparacaoPecas:
+    """
+    Realiza o saneamento e confronto analítico de duas peças processuais (Petição Inicial vs. Contestação).
+    Rastreabilidade:
+    - Art. 357 do CPC (Decisão de Saneamento e Organização do Processo)
+    - Art. 341 do CPC (Ônus da Impugnação Específica)
+    - Art. 350 do CPC (Fato Impeditivo, Modificativo ou Extintivo)
+    - RN-01: Barreira LGPD Obrigatória pré-processamento
+    - RN-02: Jurimetria Granular por Tese Controvertida
+    """
+    nome_inicial = peticao_inicial.filename or "peticao_inicial.pdf"
+    nome_contestacao = contestacao.filename or "contestacao.pdf"
+
+    if not nome_inicial.lower().endswith(".pdf") or not nome_contestacao.lower().endswith(".pdf"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="ErroProcessamento (RN-04): Formato inválido. Ambas as peças devem ser arquivos com extensão .pdf.",
+        )
+
+    bytes_inicial = await peticao_inicial.read()
+    bytes_contestacao = await contestacao.read()
+
+    if len(bytes_inicial) > MAX_PDF_SIZE_BYTES or len(bytes_contestacao) > MAX_PDF_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="ErroProcessamento (RN-04 / SEC-05): Um dos arquivos excede o limite máximo permitido de 15MB.",
+        )
+
+    try:
+        texto_inicial, _ = ExtratorDocumental.extract_text_with_page_markers(bytes_inicial)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"ErroProcessamento (RN-04) na Petição Inicial: {str(exc)}",
+        ) from exc
+
+    try:
+        texto_contestacao, _ = ExtratorDocumental.extract_text_with_page_markers(bytes_contestacao)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"ErroProcessamento (RN-04) na Contestação: {str(exc)}",
+        ) from exc
+
+    # Invariante RN-01: Higienização prévia estrita sob a LGPD
+    sanitized_inicial, cpfs_init, _ = AnonimizadorLGPD.sanitize_text(texto_inicial)
+    sanitized_contestacao, cpfs_cont, _ = AnonimizadorLGPD.sanitize_text(texto_contestacao)
+
+    # Identificação de CNJ se presente
+    cnj_match = re.search(r"\b\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}\b", sanitized_inicial)
+    numero_proc = cnj_match.group(0) if cnj_match else None
+
+    # Confronto analítico bidirecional via AIProviderAdapter (Gemini com fallback determinístico local)
+    resultado = ai_gateway.comparar_pecas(
+        texto_inicial=sanitized_inicial,
+        texto_contestacao=sanitized_contestacao,
+        numero_processo=numero_proc,
+    )
+
+    # RN-02: Calibragem Jurimétrica Granular por Tese Controvertida
+    return _aplicar_jurimetria_granular(db, resultado)
