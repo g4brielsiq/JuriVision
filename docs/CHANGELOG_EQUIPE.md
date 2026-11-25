@@ -298,3 +298,34 @@ Toda nova modificação deve seguir o modelo abaixo:
   - PowerShell: `$env:PYTHONPATH="backend"; pytest backend/tests/ -v` (**39 testes aprovados**).
   - Front-end: `cd frontend; npm run build`.
 
+---
+
+### [2026-11-24] — Processamento de Documentos e NLP (Card #18)
+- **Branch:** `Processamento-de-documentos-e-NLP/manu`
+- **Autor / Dupla:** Emanuele Vitória
+- **Pacote da EAP / Requisitos:** RF-02, RF-04, RF-05, RN-01, RNF-05
+- **Resumo da Mudança:** Novo módulo `nlp_processual.py` usado pelo `LocalDeterministicFallbackAdapter` (e, por consequência, como base do `GeminiAIAdapter`):
+  1. **Limpeza do texto:** remove marcadores de página, cabeçalhos/rodapés repetidos, carimbos de assinatura digital e hifenização de quebra de linha.
+  2. **Identificação de informações processuais:** número CNJ (com ou sem máscara), magistrado por rótulos/padrões (sem lista fixa de nomes), vara/juizado/comarca, partes e classe processual.
+  3. **Fim dos dados inventados:** sem CNJ, autor, réu, juiz ou comarca no documento, o sistema usa "Não identificado" / `SEM-CNJ-...` e lista os campos em `campos_nao_identificados`.
+  4. **Classificação por assunto:** pontuação ponderada em 9 temas (mantendo os nomes já usados no dashboard) com `confianca_classificacao`; sem evidência suficiente → "Não classificado".
+  5. **Características processuais:** tutela de urgência, justiça gratuita, danos morais/materiais, inversão do ônus da prova, prioridade de tramitação, valor da causa e lista de pedidos.
+  6. **Resumo estruturado:** identificação da ação, fatos mais relevantes e principais pedidos, sempre sobre texto higienizado (LGPD).
+  7. **Validação de qualidade:** 10 petições de exemplo anotadas + `scripts/avaliar_nlp.py` com taxa de acerto por campo.
+- **Arquivos Criados / Modificados:**
+  - `backend/app/core/nlp_processual.py` - **novo**, pipeline de NLP processual.
+  - `backend/app/core/nlp_avaliacao.py` - **novo**, avaliação de qualidade por campo.
+  - `backend/app/core/ai_gateway.py` - `LocalDeterministicFallbackAdapter` passa a usar o módulo; Gemini recebe texto limpo.
+  - `backend/app/schemas/contracts.py` - `CaracteristicasProcessuaisSchema` e novos campos opcionais em `MetadadosExtraidosSchema`.
+  - `backend/tests/test_nlp_processual.py` - **novo**, 31 testes (CT-NLP-01 a CT-NLP-07).
+  - `backend/tests/fixtures/peticoes_nlp.json` - **novo**, petições de exemplo anotadas.
+  - `scripts/avaliar_nlp.py` - **novo**, relatório de qualidade.
+  - `ARCHITECTURE.md` - Seção 8.3.1.
+- **Como Testar / Executar Localmente:**
+  - PowerShell: `$env:PYTHONPATH="backend"; pytest backend/tests/ -v` (**82 testes aprovados**).
+  - Relatório de qualidade: `$env:PYTHONPATH="backend"; python scripts/avaliar_nlp.py`.
+- **Impacto no Ambiente / Novas Variáveis:** Nenhum. Sem novas dependências nem variáveis no `.env`. Sem mudanças no banco.
+- **Notas para Assistentes de IA:**
+  - Nunca reintroduzir valores padrão fictícios (nomes, CNJ, juiz) na extração: usar os marcadores de `nlp_processual.py`.
+  - O resumo e os pedidos devem ser gerados a partir de texto já higienizado pelo `AnonimizadorLGPD` (RN-01).
+  - As petições de `peticoes_nlp.json` foram escritas junto com o código: servem de base de regressão, não de medida de acurácia em documentos reais. Ampliar com petições reais anonimizadas.

@@ -6,7 +6,6 @@ Rastreabilidade:
 """
 from abc import ABC, abstractmethod
 import base64
-import hashlib
 import io
 import json
 import logging
@@ -25,6 +24,15 @@ from app.schemas.contracts import (
     MetadadosExtraidosSchema,
     PartesAnonimizadasSchema,
     SecoesPeticaoSchema,
+)
+
+from app.core.nlp_processual import (
+    NAO_IDENTIFICADO,
+    ClassificadorAssunto,
+    ExtratorCaracteristicas,
+    ExtratorInformacoesProcessuais,
+    GeradorResumo,
+    LimpadorTexto,
 )
 
 logger = logging.getLogger("jurivision.ai_gateway")
@@ -646,115 +654,57 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
         )
 
     def analyze_document(self, request: InternalAnalyzeRequest) -> InternalAnalyzeResponse:
-        raw_text = request.texto_bruto or ""
-        lower_text = raw_text.lower()
+        # 0. Limpeza e normalização do texto extraído (Card #18): remove marcadores de página,
+        #    cabeçalhos/rodapés repetidos e hifenização de quebra de linha.
+        raw_text = LimpadorTexto.limpar(request.texto_bruto or "")
 
-        # 1. Extração de Número CNJ (ou geração determinística baseada no hash do documento)
-        cnj_match = CNJ_REGEX.search(raw_text)
-        if cnj_match:
-            numero_processo = cnj_match.group(0)
+        # 1 a 3. Identificação das informações processuais e classificação de tema.
+        #    Nada é inventado: o que não for encontrado vira "Não identificado" e é listado
+        #    em `campos_nao_identificados`.
+        info = ExtratorInformacoesProcessuais.extrair(raw_text, request.arquivo_nome)
+        classificacao = ClassificadorAssunto.classificar(raw_text)
+        numero_processo = info.numero_processo
+        tema = classificacao.tema
+        tese_recomendada = classificacao.tese_recomendada
+        magistrado = info.magistrado
+        comarca = info.comarca
+
+        # 4. Partes e Barreira Obrigatória LGPD (RN-01 / RF-04)
+        nomes_conhecidos = [n for n in (info.autor, info.reu) if n]
+        if info.autor:
+            autor_anon, autor_masked = AnonimizadorLGPD.mask_party_name(info.autor)
         else:
-            digest = hashlib.sha256((request.arquivo_nome + raw_text).encode("utf-8")).hexdigest()
-            seq = int(digest[:7], 16) % 9000000 + 1000000
-            dv = int(digest[7:9], 16) % 90 + 10
-            numero_processo = f"{seq:07d}-{dv:02d}.2026.8.02.0001"
-
-        # 2. Classificação Heurística de Tema e Tese Recomendada
-        if any(k in lower_text for k in ("voo", "aérea", "aerea", "bagagem", "passageiro", "aeroporto", "cancelamento")):
-            tema = "Atraso de Voo / Indenização"
-            tese_recomendada = (
-                "Aplicação prioritária do Código de Defesa do Consumidor (art. 14 do CDC) e jurisprudência "
-                "consolidada sobre dano moral in re ipsa por falha na prestação de assistência material ao passageiro."
-            )
-            default_reu = "Companhia Aérea Linhas Brasil S.A."
-        elif any(k in lower_text for k in ("trabalh", "clt", "horas extras", "rescisa", "rescisão", "fgts", "empregad")):
-            tema = "Direito Trabalhista"
-            tese_recomendada = (
-                "Inversão do ônus da prova quanto aos controles de jornada (Súmula 338 do TST) e "
-                "reconhecimento de verbas rescisórias incontroversas."
-            )
-            default_reu = "Tech Softwares e Serviços LTDA"
-        elif any(k in lower_text for k in ("saúde", "saude", "unimed", "hospital", "cirurgia", "tratamento", "home care", "plano")):
-            tema = "Plano de Saúde"
-            tese_recomendada = (
-                "Abusividade de negativa de cobertura de tratamento prescrito por médico assistente "
-                "(Súmula 102 do TJ e CDC)."
-            )
-            default_reu = "Operadora Unimed Saúde S.A."
-        elif any(k in lower_text for k in ("tribut", "icms", "iss", "fisco", "execução fiscal", "imposto")):
-            tema = "Tributário"
-            tese_recomendada = (
-                "Observância estrita aos princípios da anterioridade e legalidade tributária, com "
-                "afastamento de exigência fiscal sobre base de cálculo indevida."
-            )
-            default_reu = "Fazenda Pública Estadual"
+            autor_anon, autor_masked = NAO_IDENTIFICADO, False
+        if info.reu:
+            reu_anon, reu_masked = AnonimizadorLGPD.mask_party_name(info.reu)
         else:
-            tema = "Dano Moral"
-            tese_recomendada = (
-                "Responsabilidade civil objetiva do fornecedor de serviços (art. 14 do CDC) e "
-                "configuração de falha na prestação do serviço com dever de indenizar."
-            )
-            default_reu = "Instituição Financeira Bradesco S.A."
-
-        # 3. Identificação de Magistrado e Comarca
-        if "maria silva" in lower_text:
-            magistrado = "Dra. Maria Silva"
-        elif "carlos souza" in lower_text:
-            magistrado = "Dr. Carlos Souza"
-        else:
-            magistrado = "Dr. Rafael De Amorim"
-
-        comarca_match = re.search(r"(?i)(\d+ª\s+Vara\s+[A-Za-zÀ-ú\s]{3,35})", raw_text)
-        comarca = comarca_match.group(1).strip() if comarca_match else "1ª Vara Cível de Maceió"
-
-        # 4. Identificação de Partes e Barreira Obrigatória LGPD (RN-01 / RF-04)
-        autor_match = re.search(
-            r"(?i)\b(?:Autor(?:a)?|Requerente|Reclamante)\s*:\s*([^\n\r,;]{3,60})", raw_text
-        )
-        reu_match = re.search(
-            r"(?i)\b(?:R[ée]u|Requerid[oa]|Reclamad[oa])\s*:\s*([^\n\r,;]{3,60})", raw_text
-        )
-
-        raw_autor = autor_match.group(1).strip() if autor_match else "Lucas Gabriel Rodrigues"
-        raw_reu = reu_match.group(1).strip() if reu_match else default_reu
-
-        autor_anon, autor_masked = AnonimizadorLGPD.mask_party_name(raw_autor)
-        reu_anon, reu_masked = AnonimizadorLGPD.mask_party_name(raw_reu)
+            reu_anon, reu_masked = NAO_IDENTIFICADO, False
 
         sanitized_text, cpf_rg_count, contextual_names_count = AnonimizadorLGPD.sanitize_text(
-            raw_text, known_natural_names=[raw_autor, raw_reu]
+            raw_text, known_natural_names=nomes_conhecidos
         )
         total_names_masked = max(
             contextual_names_count,
             (1 if autor_masked else 0) + (1 if reu_masked else 0),
         )
 
-        # 5. Segmentação estrutural de seções (Dos Fatos, Do Direito, Dos Pedidos) e Sumarização Higienizada (RF-05)
-        secoes_sanitizadas = self._segmentar_e_sanitizar_secoes(raw_text, [raw_autor, raw_reu])
-
-        # Prioriza frases fáticas da seção "Dos Fatos" para a síntese dos fatos
-        fatos_sentences = [
-            s.strip()
-            for s in re.split(r"(?<=[.!?])\s+|\n+", secoes_sanitizadas.dos_fatos)
-            if len(s.strip()) > 20
-        ]
-        clean_sentences = fatos_sentences or [
-            s.strip()
-            for s in re.split(r"(?<=[.!?])\s+|\n+", sanitized_text)
-            if len(s.strip()) > 20
-        ]
-        if clean_sentences:
-            excerpt = " ".join(clean_sentences[:2])
-            if len(excerpt) > 360:
-                excerpt = excerpt[:357] + "..."
-            resumo_nlp = (
-                f"Síntese processual higienizada ({tema}): {excerpt}"
+        # 5. Seções higienizadas, características processuais e resumo estruturado (RF-05)
+        secoes_sanitizadas = self._segmentar_e_sanitizar_secoes(raw_text, nomes_conhecidos)
+        classe_higienizada = None
+        if info.classe_processual:
+            classe_higienizada, _, _ = AnonimizadorLGPD.sanitize_text(
+                info.classe_processual, known_natural_names=nomes_conhecidos
             )
-        else:
-            resumo_nlp = (
-                f"Ação judicial vinculada ao tema '{tema}' tramitando perante a {comarca}, "
-                f"tendo como partes {autor_anon} em face de {reu_anon}, submetida à análise preditiva."
-            )
+        caracteristicas = ExtratorCaracteristicas.extrair(raw_text, secoes_sanitizadas, classe_higienizada)
+        resumo_nlp = GeradorResumo.gerar(
+            texto_higienizado=sanitized_text,
+            secoes=secoes_sanitizadas,
+            classificacao=classificacao,
+            caracteristicas=caracteristicas,
+            autor=autor_anon if info.autor else None,
+            reu=reu_anon if info.reu else None,
+            comarca=comarca,
+        )
 
         # Garantia extra pós-sumarização de que nenhum CPF/RG escapou
         resumo_nlp, extra_cpf, _ = AnonimizadorLGPD.sanitize_text(resumo_nlp)
@@ -767,10 +717,16 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
         tempo_meses = max(ctx.tempo_medio_meses, 6)
         percentual_juiz = int(round(prob * 100))
 
-        tendencia_juiz = (
-            f"O(A) magistrado(a) {magistrado} apresenta histórico de {percentual_juiz}% de decisões "
-            f"favoráveis (procedentes/acordos) em demandas similares de {tema} na base analisada."
-        )
+        if magistrado == NAO_IDENTIFICADO:
+            tendencia_juiz = (
+                f"Magistrado(a) não identificado(a) no documento. A estimativa considera o histórico "
+                f"geral da base, com {percentual_juiz}% de decisões favoráveis (procedentes/acordos)."
+            )
+        else:
+            tendencia_juiz = (
+                f"O(A) magistrado(a) {magistrado} apresenta histórico de {percentual_juiz}% de decisões "
+                f"favoráveis (procedentes/acordos) em demandas similares de {tema} na base analisada."
+            )
 
         return InternalAnalyzeResponse(
             metadados_extraidos=MetadadosExtraidosSchema(
@@ -783,6 +739,9 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
                     reu=reu_anon,
                 ),
                 secoes=secoes_sanitizadas,
+                caracteristicas=caracteristicas,
+                confianca_classificacao=classificacao.confianca,
+                campos_nao_identificados=info.campos_nao_identificados,
             ),
             resumo_nlp=resumo_nlp,
             analise_preditiva=AnalisePreditivaSchema(
@@ -821,7 +780,7 @@ class GeminiAIAdapter(AIGatewayPort):
 
         # 1. Obter o baseline determinístico local
         base_resp = self._fallback.analyze_document(request)
-        sanitized_text, _, _ = AnonimizadorLGPD.sanitize_text(request.texto_bruto or "")
+        sanitized_text, _, _ = AnonimizadorLGPD.sanitize_text(LimpadorTexto.limpar(request.texto_bruto or ""))
 
         # 2. Montar prompt estruturado estritamente sobre texto desidentificado e seções segmentadas
         secoes_gemini = SegmentadorPeticao.segmentar(sanitized_text)
