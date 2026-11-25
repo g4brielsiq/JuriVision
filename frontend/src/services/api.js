@@ -204,11 +204,11 @@ export async function fetchStatusPlano() {
     return res.json();
 }
 
-export async function atualizarPlanoAssinatura(plano = "PRO", codigoConvite = "CONAD2026") {
+export async function atualizarPlanoAssinatura(plano = "PRO") {
     const res = await fetch(`${getApiBaseUrl()}/api/v1/auth/plano/upgrade`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeader() },
-        body: JSON.stringify({ plano, codigo_convite: codigoConvite }),
+        body: JSON.stringify({ plano }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {

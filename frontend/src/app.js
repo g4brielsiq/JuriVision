@@ -2383,20 +2383,20 @@ function configurarModalUpgrade() {
             if (feedbackEl) {
                 feedbackEl.dataset.error = "false";
                 feedbackEl.textContent = targetPlano === "PRO"
-                    ? "Modo demonstração PRO ativado (cortesia CONAD 2026)."
+                    ? "Modo demonstração PRO ativado."
                     : "Modo demonstração FREE ativado para visualizar o paywall. Faça login para persistir cotas.";
             }
             return;
         }
 
         try {
-            const atualizado = await atualizarPlanoAssinatura(targetPlano, "CONAD2026");
+            const atualizado = await atualizarPlanoAssinatura(targetPlano);
             state.planStatus = atualizado;
             atualizarUIPlano();
             if (feedbackEl) {
                 feedbackEl.dataset.error = "false";
                 feedbackEl.textContent = targetPlano === "PRO"
-                    ? "Plano JuriVision PRO ativado com sucesso (Cortesia CONAD 2026)!"
+                    ? "Plano PRO ativado com sucesso."
                     : "Plano alternado para FREE para demonstração de cotas e paywall.";
             }
             showToast(`Plano atualizado para ${targetPlano}.`);

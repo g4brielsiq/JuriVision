@@ -103,7 +103,6 @@ class PlanoAssinaturaStatusResponse(BaseModel):
 
 class PlanoUpgradeRequest(BaseModel):
     plano: PlanoTipo = Field(default="PRO")
-    codigo_convite: Optional[str] = Field(default="CONAD2026", max_length=60)
 
 
 # ==============================================================================
