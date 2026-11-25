@@ -60,7 +60,7 @@ class Processo(Base):
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="PROCESSADO")
     tema: Mapped[str] = mapped_column(String(120), index=True, nullable=False)
     magistrado: Mapped[str] = mapped_column(String(150), index=True, nullable=False)
-    comarca: Mapped[str] = mapped_column(String(150), nullable=False, default="1ª Vara Cível de Maceió")
+    comarca: Mapped[str] = mapped_column(String(150), nullable=False, default="Não informado")
     autor_anonimizado: Mapped[str] = mapped_column(String(200), nullable=False)
     reu_anonimizado: Mapped[str] = mapped_column(String(200), nullable=False)
     resumo_nlp: Mapped[str] = mapped_column(Text, nullable=False)

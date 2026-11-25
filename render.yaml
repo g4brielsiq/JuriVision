@@ -19,7 +19,7 @@ services:
       - key: JWT_SECRET_KEY
         generateValue: true
       - key: DATAJUD_API_KEY
-        value: cDZHYUpZwHbBoikSmFtUtqQCFlPqzqMV
+        value: cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw==
 
   - type: pserv
     name: jurivision-ai-engine
