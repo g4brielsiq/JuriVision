@@ -1713,11 +1713,16 @@ function exibirResultadoDataJud(data) {
 
     let dataFormatada = "Não informada";
     if (data.data_ajuizamento) {
-        try {
-            dataFormatada = new Date(data.data_ajuizamento).toLocaleDateString("pt-BR");
-        } catch (_) {
-            dataFormatada = String(data.data_ajuizamento);
+        const rawDt = String(data.data_ajuizamento).trim();
+        let dt = null;
+        const compactMatch = rawDt.match(/^(\d{4})(\d{2})(\d{2})(?:(\d{2})(\d{2})(\d{2}))?$/);
+        if (compactMatch) {
+            const [, yyyy, mm, dd, hh = "00", mi = "00", ss = "00"] = compactMatch;
+            dt = new Date(`${yyyy}-${mm}-${dd}T${hh}:${mi}:${ss}`);
+        } else {
+            dt = new Date(rawDt);
         }
+        dataFormatada = dt && !Number.isNaN(dt.getTime()) ? dt.toLocaleDateString("pt-BR") : rawDt;
     }
     document.getElementById("dj-data").textContent = dataFormatada;
 
@@ -1825,8 +1830,15 @@ function esperarMs(ms) {
     return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+let ativarCoreografiaRolagemLanding = null;
+let atualizarProgressoRolagemLanding = null;
+
 function animarEntradaHero() {
-    document.getElementById("landing-view")?.classList.add("lp-hero-animate");
+    const landingView = document.getElementById("landing-view");
+    if (!landingView || state.viewMode !== "landing") return;
+    landingView.classList.add("lp-hero-animate");
+    ativarCoreografiaRolagemLanding?.();
+    atualizarProgressoRolagemLanding?.();
 }
 
 function encerrarIntroMarca() {
@@ -1910,6 +1922,9 @@ function mostrarLanding() {
     document.getElementById("landing-view")?.classList.remove("hidden");
     document.getElementById("app-shell")?.classList.add("hidden");
     window.scrollTo({ top: 0, behavior: "auto" });
+    if (introEncerrada) {
+        animarEntradaHero();
+    }
 }
 
 function mostrarWorkspace(tabId = state.selectedLandingGoal || "historico") {
@@ -1930,45 +1945,38 @@ function configurarLandingPage() {
     const landingView = document.getElementById("landing-view");
     if (!landingView) return;
 
-    const goalLabels = {
-        historico: "Pesquisar precedentes e DataJud (CNJ)",
-        dashboard: "Analisar perfil de magistrados",
-        upload: "Confrontar petição em PDF",
-    };
-
-    const goalButtons = landingView.querySelectorAll("[data-lp-goal]");
-    const goalSelectedLabel = document.getElementById("lp-goal-selected-label");
-
-    goalButtons.forEach((btn) => {
-        btn.addEventListener("click", () => {
-            const goal = btn.getAttribute("data-lp-goal") || "historico";
-            state.selectedLandingGoal = goal;
-            goalButtons.forEach((item) => {
-                const isSelected = item === btn;
-                item.classList.toggle("is-selected", isSelected);
-                item.setAttribute("aria-pressed", isSelected ? "true" : "false");
-            });
-            if (goalSelectedLabel) {
-                goalSelectedLabel.textContent = goalLabels[goal] || goalLabels.historico;
-            }
-        });
-    });
-
     const demoTabs = Array.from(landingView.querySelectorAll("[data-lp-demo]"));
-    const demoPanels = landingView.querySelectorAll("[data-lp-demo-panel]");
+    const demoPanels = Array.from(landingView.querySelectorAll("[data-lp-demo-panel]"));
 
     function selectDemoTab(demoKey, moveFocus = false) {
+        if (!demoKey) return;
+        state.selectedLandingGoal = demoKey;
+
         demoTabs.forEach((tab) => {
             const isSelected = tab.getAttribute("data-lp-demo") === demoKey;
             tab.classList.toggle("active", isSelected);
             tab.setAttribute("aria-selected", isSelected ? "true" : "false");
+            tab.setAttribute("tabindex", isSelected ? "0" : "-1");
             if (isSelected && moveFocus) tab.focus();
         });
+
+        let targetPanel = null;
         demoPanels.forEach((panel) => {
             const isMatch = panel.getAttribute("data-lp-demo-panel") === demoKey;
-            panel.classList.toggle("active", isMatch);
-            panel.hidden = !isMatch;
+            if (isMatch) {
+                targetPanel = panel;
+            } else {
+                panel.hidden = true;
+                panel.classList.remove("active", "is-entering");
+            }
         });
+
+        if (targetPanel && (targetPanel.hidden || !targetPanel.classList.contains("active"))) {
+            targetPanel.classList.remove("active", "is-entering");
+            targetPanel.hidden = false;
+            void targetPanel.offsetWidth;
+            targetPanel.classList.add("active", "is-entering");
+        }
     }
 
     demoTabs.forEach((tab) => {
@@ -1987,6 +1995,12 @@ function configurarLandingPage() {
                 event.preventDefault();
                 const prev = demoTabs[(currentIndex - 1 + demoTabs.length) % demoTabs.length];
                 selectDemoTab(prev.getAttribute("data-lp-demo"), true);
+            } else if (event.key === "Home") {
+                event.preventDefault();
+                selectDemoTab(demoTabs[0]?.getAttribute("data-lp-demo"), true);
+            } else if (event.key === "End") {
+                event.preventDefault();
+                selectDemoTab(demoTabs[demoTabs.length - 1]?.getAttribute("data-lp-demo"), true);
             }
         });
     });
@@ -2004,11 +2018,22 @@ function configurarLandingPage() {
         abrirContaModal?.(true);
     };
 
+    landingView.querySelectorAll("[data-lp-register-module]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+            const moduleKey = btn.getAttribute("data-lp-register-module") || "historico";
+            handleRegisterOrEnter(moduleKey);
+        });
+    });
+
+    landingView.querySelectorAll("[data-lp-open-module]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+            const moduleKey = btn.getAttribute("data-lp-open-module") || "historico";
+            mostrarWorkspace(moduleKey);
+        });
+    });
+
     document.getElementById("btn-lp-register")?.addEventListener("click", () => handleRegisterOrEnter());
     document.getElementById("btn-lp-hero-register")?.addEventListener("click", () => handleRegisterOrEnter());
-    document.getElementById("btn-lp-goal-register")?.addEventListener("click", () => {
-        handleRegisterOrEnter(state.selectedLandingGoal);
-    });
     document.getElementById("btn-lp-plan-free")?.addEventListener("click", () => handleRegisterOrEnter());
     document.getElementById("btn-lp-plan-pro")?.addEventListener("click", () => {
         if (state.currentUser?.authenticated) {
@@ -2022,23 +2047,30 @@ function configurarLandingPage() {
     document.getElementById("btn-lp-explore")?.addEventListener("click", () => {
         mostrarWorkspace("historico");
     });
-    document.getElementById("btn-lp-goal-explore")?.addEventListener("click", () => {
-        mostrarWorkspace(state.selectedLandingGoal || "historico");
-    });
 
     document.getElementById("btn-brand-home")?.addEventListener("click", () => {
         mostrarLanding();
     });
 
-    const revealSections = landingView.querySelectorAll(".lp-reveal");
+    const animElements = Array.from(landingView.querySelectorAll("[data-lp-anim]"));
+    animElements.forEach((el) => {
+        const delay = Number(el.getAttribute("data-lp-delay") || 0);
+        el.style.setProperty("--lp-delay", `${Number.isFinite(delay) ? delay : 0}ms`);
+    });
+
+    const lpHeader = landingView.querySelector(".lp-header");
+    const scrollBar = document.getElementById("lp-scroll-bar");
+    const navLinks = Array.from(landingView.querySelectorAll("[data-lp-section-link]"));
+
     const prefersReduced =
         window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
 
     if (prefersReduced || typeof window.IntersectionObserver !== "function") {
-        revealSections.forEach((el) => el.classList.add("is-visible"));
+        animElements.forEach((el) => el.classList.add("is-visible"));
+        ativarCoreografiaRolagemLanding = () => {};
     } else {
         landingView.classList.add("lp-motion-ready");
-        const observer = new window.IntersectionObserver(
+        const revealObserver = new window.IntersectionObserver(
             (entries, obs) => {
                 entries.forEach((entry) => {
                     if (entry.isIntersecting) {
@@ -2047,9 +2079,78 @@ function configurarLandingPage() {
                     }
                 });
             },
-            { threshold: 0.12 }
+            { rootMargin: "0px 0px -12% 0px", threshold: 0.14 }
         );
-        revealSections.forEach((el) => observer.observe(el));
+
+        ativarCoreografiaRolagemLanding = () => {
+            animElements.forEach((el) => {
+                if (!el.classList.contains("is-visible")) {
+                    revealObserver.observe(el);
+                }
+            });
+        };
+    }
+
+    atualizarProgressoRolagemLanding = () => {
+        if (state.viewMode !== "landing" || landingView.classList.contains("hidden")) return;
+        const maxScroll = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+        const progress = Math.min(1, Math.max(0, window.scrollY / maxScroll));
+        scrollBar?.style.setProperty("--lp-scroll-progress", progress.toFixed(4));
+        lpHeader?.classList.toggle("is-scrolled", window.scrollY > 12);
+
+        if (window.scrollY < 160) {
+            navLinks.forEach((link) => link.classList.remove("is-active"));
+        }
+
+        if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 40) {
+            animElements.forEach((el) => {
+                if (!el.classList.contains("is-visible")) {
+                    const rect = el.getBoundingClientRect();
+                    if (rect.top < window.innerHeight) {
+                        el.classList.add("is-visible");
+                    }
+                }
+            });
+        }
+    };
+
+    let scrollRafId = 0;
+    window.addEventListener(
+        "scroll",
+        () => {
+            if (state.viewMode !== "landing" || landingView.classList.contains("hidden")) return;
+            if (scrollRafId) return;
+            scrollRafId = window.requestAnimationFrame(() => {
+                scrollRafId = 0;
+                atualizarProgressoRolagemLanding?.();
+            });
+        },
+        { passive: true }
+    );
+
+    if (typeof window.IntersectionObserver === "function" && navLinks.length > 0) {
+        const sectionObserver = new window.IntersectionObserver(
+            (entries) => {
+                if (state.viewMode !== "landing" || window.scrollY < 160) return;
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting) {
+                        const targetId = entry.target.id;
+                        navLinks.forEach((link) => {
+                            link.classList.toggle(
+                                "is-active",
+                                link.getAttribute("data-lp-section-link") === targetId
+                            );
+                        });
+                    }
+                });
+            },
+            { rootMargin: "-30% 0px -55% 0px", threshold: 0 }
+        );
+
+        ["lp-demonstracao", "lp-confianca", "lp-planos"].forEach((sectionId) => {
+            const sectionEl = document.getElementById(sectionId);
+            if (sectionEl) sectionObserver.observe(sectionEl);
+        });
     }
 }
 

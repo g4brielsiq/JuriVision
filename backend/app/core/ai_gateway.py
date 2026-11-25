@@ -56,6 +56,91 @@ from app.schemas.contracts import (
 
 logger = logging.getLogger("jurivision.ai_gateway")
 
+GEMINI_FALLBACK_MODELS: tuple[str, ...] = (
+    "gemini-3.5-flash-lite",
+    "gemini-3-flash-preview",
+    "gemini-3.1-flash-lite",
+    "gemini-flash-lite-latest",
+)
+GEMINI_RETRYABLE_STATUS_CODES: tuple[int, ...] = (404, 429, 500, 502, 503, 504)
+
+
+def _extract_gemini_text(data: dict) -> str:
+    """Extrai o primeiro texto não vazio da resposta do Gemini ignorando blocos de raciocínio (thought)."""
+    if not isinstance(data, dict):
+        return ""
+    for candidate in data.get("candidates", []):
+        if not isinstance(candidate, dict):
+            continue
+        parts = candidate.get("content", {}).get("parts", [])
+        text = "".join(
+            part.get("text", "")
+            for part in parts
+            if isinstance(part, dict) and not part.get("thought")
+        ).strip()
+        if text:
+            return text
+    return ""
+
+
+def _post_gemini_with_fallback(
+    payload: dict,
+    api_key: str,
+    *,
+    context_label: str,
+) -> tuple[Optional[str], Optional[str]]:
+    """
+    Executa chamada à API Gemini tentando em cascata o modelo configurado e a cadeia
+    de fallback em casos de HTTP 404/429/5xx ou falhas/timeouts de rede por modelo.
+    """
+    modelos_candidatos = list(
+        dict.fromkeys(
+            m for m in ((settings.GEMINI_MODEL or "").strip(), *GEMINI_FALLBACK_MODELS) if m
+        )
+    )
+    if not modelos_candidatos:
+        return None, None
+
+    with httpx.Client(timeout=settings.GEMINI_TIMEOUT_SECONDS) as client:
+        for modelo in modelos_candidatos:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent"
+            try:
+                res = client.post(url, headers={"x-goog-api-key": api_key}, json=payload)
+            except Exception as exc:
+                logger.warning(
+                    "Modelo Gemini (%s) falhou em %s (%s). Tentando próximo modelo...",
+                    modelo,
+                    context_label,
+                    type(exc).__name__,
+                )
+                continue
+
+            if 200 <= res.status_code < 300:
+                texto = _extract_gemini_text(res.json())
+                if texto:
+                    return texto, modelo
+                logger.warning("Modelo Gemini (%s) retornou resposta vazia em %s.", modelo, context_label)
+                continue
+
+            if res.status_code in GEMINI_RETRYABLE_STATUS_CODES:
+                logger.warning(
+                    "Modelo Gemini (%s) retornou HTTP %d em %s. Tentando próximo modelo...",
+                    modelo,
+                    res.status_code,
+                    context_label,
+                )
+                continue
+
+            logger.warning(
+                "Modelo Gemini (%s) retornou HTTP %d não recuperável em %s. Acionando fallback local.",
+                modelo,
+                res.status_code,
+                context_label,
+            )
+            break
+
+    return None, None
+
 PLACEHOLDER_VALUE_REGEX = re.compile(
     r"(?i)^(?:n[ãa]o\s+(?:informad[oa]|identificad[oa]|especificad[oa])|magistrado\s+n[ãa]o\s+especificado)\b"
 )
@@ -924,10 +1009,6 @@ class ExtratorDocumental:
         )
 
         b64_pdf = base64.b64encode(file_bytes).decode("utf-8")
-        url = (
-            f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{settings.GEMINI_MODEL}:generateContent"
-        )
         payload = {
             "contents": [
                 {
@@ -946,18 +1027,10 @@ class ExtratorDocumental:
         }
 
         try:
-            with httpx.Client(timeout=settings.GEMINI_TIMEOUT_SECONDS) as client:
-                res = client.post(url, headers={"x-goog-api-key": api_key}, json=payload)
-                if res.status_code == 200:
-                    data = res.json()
-                    candidates = data.get("candidates", [])
-                    if candidates:
-                        parts = candidates[0].get("content", {}).get("parts", [])
-                        if parts:
-                            text = parts[0].get("text", "").strip()
-                            if text:
-                                logger.info("OCR concluído com sucesso via Gemini Vision Multimodal.")
-                                return text
+            text, modelo_usado = _post_gemini_with_fallback(payload, api_key, context_label="OCR")
+            if text:
+                logger.info("OCR concluído com sucesso via Gemini Vision Multimodal (%s).", modelo_usado)
+                return text
         except Exception as exc:
             logger.info("Tentativa de OCR via Gemini Vision falhou ou offline (%s: %s).", exc.__class__.__name__, exc)
 
@@ -1860,10 +1933,6 @@ class GeminiAIAdapter(AIGatewayPort):
             "- tendencia_juiz: síntese analítica citando o histórico de julgamento e aderência aos precedentes similares."
         )
 
-        url = (
-            f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{settings.GEMINI_MODEL}:generateContent"
-        )
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {
@@ -1873,56 +1942,42 @@ class GeminiAIAdapter(AIGatewayPort):
         }
 
         try:
-            with httpx.Client(timeout=settings.GEMINI_TIMEOUT_SECONDS) as client:
-                res = client.post(url, headers={"x-goog-api-key": api_key}, json=payload)
-                if res.status_code == 200:
-                    data = res.json()
-                    candidates = data.get("candidates", [])
-                    if candidates:
-                        parts = candidates[0].get("content", {}).get("parts", [])
-                        if parts:
-                            raw_reply = parts[0].get("text", "").strip()
-                            if raw_reply.startswith("```"):
-                                raw_reply = re.sub(r"^```(?:json)?\s*", "", raw_reply)
-                                raw_reply = re.sub(r"\s*```$", "", raw_reply)
-                            parsed_json = json.loads(raw_reply)
-                            clean_resumo, extra_cpf_resumo, _ = AnonimizadorLGPD.sanitize_text(
-                                parsed_json.get("resumo_nlp", base_resp.resumo_nlp)
-                            )
-                            clean_tese, extra_cpf_tese, _ = AnonimizadorLGPD.sanitize_text(
-                                parsed_json.get("tese_recomendada", base_resp.analise_preditiva.tese_recomendada)
-                            )
-                            clean_tendencia, extra_cpf_tend, _ = AnonimizadorLGPD.sanitize_text(
-                                parsed_json.get("tendencia_juiz", base_resp.analise_preditiva.tendencia_juiz)
-                            )
-                            prob = float(
-                                parsed_json.get(
-                                    "probabilidade_ajustada",
-                                    base_resp.analise_preditiva.probabilidade_deferimento,
-                                )
-                            )
-                            prob = round(max(min(prob, 0.95), 0.15), 2)
-                            extra_cpf = extra_cpf_resumo + extra_cpf_tese + extra_cpf_tend
-
-                            cached_entry = {
-                                "resumo_nlp": clean_resumo,
-                                "prob": prob,
-                                "tese_recomendada": clean_tese,
-                                "tendencia_juiz": clean_tendencia,
-                                "provedor_ia": f"gemini ({settings.GEMINI_MODEL})",
-                                "extra_cpf": extra_cpf,
-                            }
-                            if len(self._rag_cache) >= self._MAX_CACHE_SIZE:
-                                oldest_key = next(iter(self._rag_cache))
-                                self._rag_cache.pop(oldest_key, None)
-                            self._rag_cache[cache_key] = cached_entry
-
-                            return self._apply_rag_payload(base_resp, cached_entry)
-
-                logger.warning(
-                    "Gemini API retornou status %d. Acionando fallback determinístico local.",
-                    res.status_code,
+            raw_reply, modelo_usado = _post_gemini_with_fallback(payload, api_key, context_label="RAG")
+            if raw_reply:
+                raw_reply = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_reply).strip()
+                parsed_json = json.loads(raw_reply)
+                clean_resumo, extra_cpf_resumo, _ = AnonimizadorLGPD.sanitize_text(
+                    parsed_json.get("resumo_nlp", base_resp.resumo_nlp)
                 )
+                clean_tese, extra_cpf_tese, _ = AnonimizadorLGPD.sanitize_text(
+                    parsed_json.get("tese_recomendada", base_resp.analise_preditiva.tese_recomendada)
+                )
+                clean_tendencia, extra_cpf_tend, _ = AnonimizadorLGPD.sanitize_text(
+                    parsed_json.get("tendencia_juiz", base_resp.analise_preditiva.tendencia_juiz)
+                )
+                prob = float(
+                    parsed_json.get(
+                        "probabilidade_ajustada",
+                        base_resp.analise_preditiva.probabilidade_deferimento,
+                    )
+                )
+                prob = round(max(min(prob, 0.95), 0.15), 2)
+                extra_cpf = extra_cpf_resumo + extra_cpf_tese + extra_cpf_tend
+
+                cached_entry = {
+                    "resumo_nlp": clean_resumo,
+                    "prob": prob,
+                    "tese_recomendada": clean_tese,
+                    "tendencia_juiz": clean_tendencia,
+                    "provedor_ia": f"gemini ({modelo_usado})",
+                    "extra_cpf": extra_cpf,
+                }
+                if len(self._rag_cache) >= self._MAX_CACHE_SIZE:
+                    oldest_key = next(iter(self._rag_cache))
+                    self._rag_cache.pop(oldest_key, None)
+                self._rag_cache[cache_key] = cached_entry
+
+                return self._apply_rag_payload(base_resp, cached_entry)
         except Exception as exc:
             logger.info(
                 "Chamada ao Gemini API não concluída (%s). Acionando fallback determinístico local (ADR-002).",
@@ -1931,11 +1986,7 @@ class GeminiAIAdapter(AIGatewayPort):
 
         return base_resp
 
-    FALLBACK_COMPARADOR_MODELS = (
-        "gemini-2.5-flash",
-        "gemini-2.5-flash-lite",
-        "gemini-2.0-flash",
-    )
+    FALLBACK_COMPARADOR_MODELS = GEMINI_FALLBACK_MODELS
 
     def comparar_pecas(
         self,
@@ -1975,56 +2026,34 @@ class GeminiAIAdapter(AIGatewayPort):
             },
         }
 
-        modelos_candidatos = list(dict.fromkeys([settings.GEMINI_MODEL, *self.FALLBACK_COMPARADOR_MODELS]))
-
         try:
-            with httpx.Client(timeout=settings.GEMINI_TIMEOUT_SECONDS) as client:
-                for modelo in modelos_candidatos:
-                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent"
-                    res = client.post(url, headers={"x-goog-api-key": api_key}, json=payload)
-                    if res.is_success:
-                        data = res.json()
-                        for candidate in data.get("candidates", []):
-                            parts = candidate.get("content", {}).get("parts", [])
-                            resposta = "".join(part.get("text", "") for part in parts if not part.get("thought")).strip()
-                            if not resposta:
-                                continue
-                            resposta = re.sub(r"^```(?:json)?\s*|\s*```$", "", resposta)
-                            comparacao = RespostaComparacaoGemini.model_validate_json(resposta)
-                            contagem = Counter(tese.status for tese in comparacao.teses)
-                            cnj = CNJ_REGEX.search(sanitized_init) or CNJ_REGEX.search(sanitized_cont)
-                            return ResultadoComparacaoPecas(
-                                id_comparacao=f"comp-{uuid.uuid4().hex[:8]}",
-                                numero_processo=numero_processo or (cnj.group(0) if cnj else None),
-                                resumo_controvertido_geral=comparacao.resumo_controvertido_geral,
-                                total_teses=len(comparacao.teses),
-                                total_convergencias=contagem[StatusTese.CONVERGENTE],
-                                total_divergencias=contagem[StatusTese.DIVERGENTE],
-                                total_omissoes=contagem[StatusTese.INCONTROVERSO_POR_OMISSAO],
-                                total_fatos_novos_defesa=contagem[StatusTese.FATO_NOVO_DEFESA],
-                                teses=[
-                                    PontoControvertido(
-                                        **tese.model_dump(),
-                                        id_tese=f"TESE-{indice:02d}",
-                                        fundamentacao_preditiva="",
-                                    )
-                                    for indice, tese in enumerate(comparacao.teses, start=1)
-                                ],
-                                motor_analise="gemini",
-                                texto_higienizado_autor=sanitized_init,
-                                texto_higienizado_reu=sanitized_cont,
-                            )
-                        logger.warning("Modelo Gemini (%s) retornou comparação sem texto.", modelo)
-                    elif res.status_code in (429, 500, 502, 503, 504):
-                        logger.warning(
-                            "Modelo Gemini (%s) retornou HTTP %d (indisponível/sobrecarregado). Tentando próximo modelo...",
-                            modelo,
-                            res.status_code,
+            resposta, _modelo = _post_gemini_with_fallback(payload, api_key, context_label="comparador")
+            if resposta:
+                resposta = re.sub(r"^```(?:json)?\s*|\s*```$", "", resposta).strip()
+                comparacao = RespostaComparacaoGemini.model_validate_json(resposta)
+                contagem = Counter(tese.status for tese in comparacao.teses)
+                cnj = CNJ_REGEX.search(sanitized_init) or CNJ_REGEX.search(sanitized_cont)
+                return ResultadoComparacaoPecas(
+                    id_comparacao=f"comp-{uuid.uuid4().hex[:8]}",
+                    numero_processo=numero_processo or (cnj.group(0) if cnj else None),
+                    resumo_controvertido_geral=comparacao.resumo_controvertido_geral,
+                    total_teses=len(comparacao.teses),
+                    total_convergencias=contagem[StatusTese.CONVERGENTE],
+                    total_divergencias=contagem[StatusTese.DIVERGENTE],
+                    total_omissoes=contagem[StatusTese.INCONTROVERSO_POR_OMISSAO],
+                    total_fatos_novos_defesa=contagem[StatusTese.FATO_NOVO_DEFESA],
+                    teses=[
+                        PontoControvertido(
+                            **tese.model_dump(),
+                            id_tese=f"TESE-{indice:02d}",
+                            fundamentacao_preditiva="",
                         )
-                        continue
-                    else:
-                        logger.warning("Gemini retornou HTTP %d no comparador. Acionando análise local.", res.status_code)
-                        break
+                        for indice, tese in enumerate(comparacao.teses, start=1)
+                    ],
+                    motor_analise="gemini",
+                    texto_higienizado_autor=sanitized_init,
+                    texto_higienizado_reu=sanitized_cont,
+                )
         except Exception as exc:
             logger.warning("Comparação com Gemini não concluída (%s). Acionando análise local.", type(exc).__name__)
 

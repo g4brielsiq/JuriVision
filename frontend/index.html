@@ -141,10 +141,9 @@
                 </a>
 
                 <nav class="lp-nav" aria-label="Navegação da página inicial">
-                    <a href="#lp-objetivo" class="lp-nav-link">Por onde começar</a>
-                    <a href="#lp-demonstracao" class="lp-nav-link">A plataforma</a>
-                    <a href="#lp-confianca" class="lp-nav-link">Segurança jurídica</a>
-                    <a href="#lp-planos" class="lp-nav-link">Planos</a>
+                    <a href="#lp-demonstracao" class="lp-nav-link" data-lp-section-link="lp-demonstracao">Módulos</a>
+                    <a href="#lp-confianca" class="lp-nav-link" data-lp-section-link="lp-confianca">Segurança jurídica</a>
+                    <a href="#lp-planos" class="lp-nav-link" data-lp-section-link="lp-planos">Planos</a>
                 </nav>
 
                 <div class="lp-header-actions">
@@ -156,318 +155,719 @@
                     </button>
                 </div>
             </div>
+            <div class="lp-scroll-track" aria-hidden="true">
+                <div id="lp-scroll-bar" class="lp-scroll-bar"></div>
+            </div>
         </header>
 
         <section id="lp-hero" class="lp-hero">
-            <div class="lp-container lp-hero-grid">
-                <div class="lp-hero-copy">
-                    <span class="lp-hero-kicker">Pesquisa Jurisprudencial · Jurimetria · DataJud (CNJ)</span>
-                    <h1 class="lp-hero-title">
-                        Decisões estratégicas com lastro em precedentes reais.
-                    </h1>
-                    <p class="lp-hero-subtitle">
-                        Pesquise jurisprudência por magistrado ou matéria, acompanhe indicadores jurimétricos transparentes e confronte petições em PDF em uma interface pensada para a rotina da advocacia.
-                    </p>
-                    <div class="lp-hero-actions">
-                        <button type="button" id="btn-lp-hero-register" class="btn btn-primary">
-                            Criar conta gratuita
-                        </button>
-                        <button type="button" id="btn-lp-explore" class="btn btn-secondary">
-                            Explorar plataforma
-                        </button>
-                    </div>
-                    <p class="lp-hero-reassurance">
-                        Cadastro com inscrição OAB · Sem cartão de crédito · 3 análises gratuitas de petições em PDF
-                    </p>
+            <div class="lp-hero-backdrop" aria-hidden="true">
+                <svg class="lp-hero-ambient-svg" viewBox="0 0 1200 520" preserveAspectRatio="xMidYMid slice" fill="none">
+                    <circle cx="600" cy="40" r="360" stroke="currentColor" stroke-opacity="0.11" stroke-width="1"/>
+                    <circle cx="600" cy="40" r="520" stroke="currentColor" stroke-opacity="0.06" stroke-width="1"/>
+                    <line x1="80" y1="430" x2="1120" y2="430" stroke="currentColor" stroke-opacity="0.08" stroke-width="1"/>
+                </svg>
+            </div>
+
+            <div class="lp-container lp-hero-center">
+                <h1 class="lp-hero-title">
+                    Decisões estratégicas com <em class="lp-hero-title-accent">lastro em precedentes reais.</em>
+                </h1>
+
+                <p class="lp-hero-subtitle">
+                    O JuriVision reúne pesquisa jurisprudencial oficial, jurimetria auditável por juízo e previsão estratégica de peças em PDF em um único ambiente para a advocacia.
+                </p>
+
+                <div class="lp-hero-actions">
+                    <button type="button" id="btn-lp-hero-register" class="btn lp-btn-hero-primary">
+                        Criar conta gratuita
+                    </button>
+                    <button type="button" id="btn-lp-explore" class="btn lp-btn-hero-secondary">
+                        Explorar plataforma →
+                    </button>
                 </div>
 
-                <div class="lp-hero-visual" aria-label="Exemplo ilustrativo da interface de pesquisa e jurimetria">
-                    <div class="lp-preview-card">
-                        <div class="lp-preview-topbar">
-                            <span class="lp-preview-badge">Exemplo ilustrativo de leitura</span>
-                            <span class="lp-preview-tribunal">TJAL · Consulta integrada DataJud</span>
-                        </div>
-                        <div class="lp-preview-search-bar">
-                            <span class="lp-preview-query">Dano moral · Responsabilidade civil</span>
-                            <span class="lp-preview-search-btn">Pesquisar</span>
-                        </div>
-                        <div class="lp-preview-metrics-row">
-                            <div class="lp-preview-metric">
-                                <span class="lp-preview-metric-label">Base consultada</span>
-                                <strong class="lp-preview-metric-value">Lastro auditável</strong>
-                                <span class="lp-preview-metric-sub">Denominador sempre visível</span>
+                <div class="lp-hero-motion-ribbon" aria-label="Fluxo contínuo da plataforma">
+                    <svg class="lp-ribbon-beam-svg" viewBox="0 0 900 6" preserveAspectRatio="none" aria-hidden="true">
+                        <defs>
+                            <linearGradient id="lpBeamGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                                <stop offset="0%" stop-color="#60A5FA" stop-opacity="0"/>
+                                <stop offset="50%" stop-color="#93C5FD" stop-opacity="0.95"/>
+                                <stop offset="100%" stop-color="#60A5FA" stop-opacity="0"/>
+                            </linearGradient>
+                        </defs>
+                        <line class="lp-ribbon-beam-base" x1="0" y1="3" x2="900" y2="3"/>
+                        <line class="lp-ribbon-beam-pulse" x1="0" y1="3" x2="900" y2="3" stroke="url(#lpBeamGrad)"/>
+                    </svg>
+
+                    <div class="lp-motion-steps-grid">
+                        <div class="lp-motion-step lp-step-1">
+                            <span class="lp-motion-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><circle cx="11.5" cy="14.5" r="2.2"/><path d="m13.2 16.2 1.8 1.8"/></svg>
+                            </span>
+                            <div class="lp-motion-copy">
+                                <strong>Base Oficial DataJud (CNJ)</strong>
+                                <span>Consulta e sincronização de julgados reais</span>
                             </div>
-                            <div class="lp-preview-metric">
-                                <span class="lp-preview-metric-label">Desfechos</span>
-                                <strong class="lp-preview-metric-value lp-preview-fav">Procedente / Acordo</strong>
-                                <span class="lp-preview-metric-sub">Separação por juízo e tema</span>
+                        </div>
+
+                        <div class="lp-motion-step lp-step-2">
+                            <span class="lp-motion-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+                            </span>
+                            <div class="lp-motion-copy">
+                                <strong>Sigilo LGPD &amp; Jurimetria</strong>
+                                <span>Anonimização local e proporções auditáveis</span>
                             </div>
                         </div>
-                        <div class="lp-preview-doc-row">
-                            <div class="lp-preview-doc-meta">Órgão julgador · Magistrado(a) · Número CNJ</div>
-                            <div class="lp-preview-doc-title">Ementa estruturada com acesso imediato à decisão</div>
-                            <div class="lp-preview-doc-actions">
-                                <span>Ler decisão →</span>
-                                <span>Copiar referência</span>
-                                <span>Exportar PDF</span>
+
+                        <div class="lp-motion-step lp-step-3">
+                            <span class="lp-motion-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                            </span>
+                            <div class="lp-motion-copy">
+                                <strong>Previsão &amp; Parecer em PDF</strong>
+                                <span>Aderência histórica por vara e confronto de peças</span>
                             </div>
                         </div>
                     </div>
                 </div>
+
+                <p class="lp-hero-reassurance">
+                    Cadastro com inscrição OAB · Sem cartão de crédito · 3 análises gratuitas de petições em PDF
+                </p>
+
+                <a href="#lp-demonstracao" class="lp-hero-scroll-cue" aria-label="Descer para conhecer os módulos da plataforma">
+                    <span>Explorar módulos</span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                </a>
             </div>
         </section>
 
-        <!-- Seção 1: Entrada guiada por objetivo (inspirada no fluxo direto de escolha) -->
-        <section id="lp-objetivo" class="lp-section lp-reveal">
+        <!-- Seção 1: Por onde começar + Vitrine interativa dos módulos em perspectiva -->
+        <section id="lp-demonstracao" class="lp-section lp-section-peek">
             <div class="lp-container">
+                <div class="lp-peek-indicator" aria-hidden="true">
+                    <span class="lp-peek-handle"></span>
+                </div>
                 <div class="lp-section-header">
-                    <span class="lp-section-eyebrow">Por onde começar</span>
-                    <h2 class="lp-section-title">Comece pelo que você precisa resolver agora</h2>
-                    <p class="lp-section-desc">
-                        Selecione seu foco principal para criar a conta já no módulo correspondente ou abrir a interface diretamente.
+                    <span class="lp-section-eyebrow">Por onde começar · Módulos em destaque</span>
+                    <h2 class="lp-section-title">Escolha seu objetivo e conheça na prática cada módulo</h2>
+                    <p class="lp-section-desc" data-lp-anim="fade-up" data-lp-delay="80">
+                        Selecione a frente que deseja utilizar agora para inspecionar os recursos, criar sua conta já direcionada ou explorar a interface imediatamente.
                     </p>
                 </div>
 
-                <div class="lp-goals-grid" role="group" aria-label="Escolha seu objetivo inicial">
-                    <button type="button" class="lp-goal-card is-selected" data-lp-goal="historico" aria-pressed="true">
-                        <span class="lp-goal-tag">01 · Pesquisa</span>
-                        <strong class="lp-goal-title">Pesquisar precedentes e DataJud (CNJ)</strong>
-                        <span class="lp-goal-desc">
-                            Consulte decisões por assunto, magistrado ou número CNJ e sincronize julgados diretamente da base pública do tribunal.
+                <div class="lp-demo-tabs" role="tablist" aria-label="Módulos em destaque da plataforma" data-lp-anim="fade-up" data-lp-delay="200">
+                    <button
+                        type="button"
+                        role="tab"
+                        id="lp-tab-historico"
+                        class="lp-demo-tab active"
+                        data-lp-demo="historico"
+                        aria-controls="lp-panel-historico"
+                        aria-selected="true"
+                        tabindex="0"
+                    >
+                        <span class="lp-demo-tab-top">
+                            <span class="lp-demo-tab-index">01</span>
+                            <span class="lp-demo-tab-name">Pesquisa Jurisprudencial</span>
                         </span>
+                        <span class="lp-demo-tab-goal">Consultar precedentes e DataJud (CNJ)</span>
                     </button>
-
-                    <button type="button" class="lp-goal-card" data-lp-goal="dashboard" aria-pressed="false">
-                        <span class="lp-goal-tag">02 · Jurimetria</span>
-                        <strong class="lp-goal-title">Analisar perfil de magistrados</strong>
-                        <span class="lp-goal-desc">
-                            Compare proporções de procedência, acordos e improcedências por juízo e por matéria com filtros dinâmicos.
+                    <button
+                        type="button"
+                        role="tab"
+                        id="lp-tab-dashboard"
+                        class="lp-demo-tab"
+                        data-lp-demo="dashboard"
+                        aria-controls="lp-panel-dashboard"
+                        aria-selected="false"
+                        tabindex="-1"
+                    >
+                        <span class="lp-demo-tab-top">
+                            <span class="lp-demo-tab-index">02</span>
+                            <span class="lp-demo-tab-name">Análise Jurimétrica</span>
                         </span>
+                        <span class="lp-demo-tab-goal">Mapear perfil decisório por juízo</span>
                     </button>
-
-                    <button type="button" class="lp-goal-card" data-lp-goal="upload" aria-pressed="false">
-                        <span class="lp-goal-tag">03 · Petições</span>
-                        <strong class="lp-goal-title">Confrontar petição em PDF</strong>
-                        <span class="lp-goal-desc">
-                            Envie uma peça processual para extrair metadados, resguardar dados pessoais e gerar relatório analítico em PDF.
+                    <button
+                        type="button"
+                        role="tab"
+                        id="lp-tab-upload"
+                        class="lp-demo-tab"
+                        data-lp-demo="upload"
+                        aria-controls="lp-panel-upload"
+                        aria-selected="false"
+                        tabindex="-1"
+                    >
+                        <span class="lp-demo-tab-top">
+                            <span class="lp-demo-tab-index">03</span>
+                            <span class="lp-demo-tab-name">Análise de Previsão</span>
                         </span>
+                        <span class="lp-demo-tab-goal">Estimar cenário e confrontar petição em PDF</span>
                     </button>
                 </div>
 
-                <div id="lp-goal-cta-bar" class="lp-goal-cta-bar">
-                    <div class="lp-goal-cta-info">
-                        <span class="lp-goal-cta-kicker">Objetivo selecionado</span>
-                        <strong id="lp-goal-selected-label">Pesquisar precedentes e DataJud (CNJ)</strong>
-                    </div>
-                    <div class="lp-goal-cta-actions">
-                        <button type="button" id="btn-lp-goal-register" class="btn btn-primary btn-sm">
-                            Criar conta e iniciar neste módulo
-                        </button>
-                        <button type="button" id="btn-lp-goal-explore" class="btn btn-secondary btn-sm">
-                            Explorar módulo agora →
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- Seção 2: Demonstração interativa dos módulos (inspirada na prévia funcional clara) -->
-        <section id="lp-demonstracao" class="lp-section lp-section-alt lp-reveal">
-            <div class="lp-container">
-                <div class="lp-section-header">
-                    <span class="lp-section-eyebrow">A plataforma na prática</span>
-                    <h2 class="lp-section-title">Conheça os módulos antes de criar sua conta</h2>
-                    <p class="lp-section-desc">
-                        Alterne entre as três áreas do JuriVision para ver como as informações são organizadas sem menus ocultos nem jargões de engenharia.
-                    </p>
-                </div>
-
-                <div class="lp-demo-tabs" role="tablist" aria-label="Prévia dos módulos da plataforma">
-                    <button type="button" role="tab" class="lp-demo-tab active" data-lp-demo="historico" aria-selected="true">
-                        Pesquisa Jurisprudencial
-                    </button>
-                    <button type="button" role="tab" class="lp-demo-tab" data-lp-demo="dashboard" aria-selected="false">
-                        Análise Jurimétrica
-                    </button>
-                    <button type="button" role="tab" class="lp-demo-tab" data-lp-demo="upload" aria-selected="false">
-                        Análise de Petição
-                    </button>
-                </div>
-
-                <div class="lp-demo-stage">
-                    <div class="lp-demo-panel active" data-lp-demo-panel="historico">
-                        <div class="lp-demo-visual">
-                            <span class="lp-demo-illustration-tag">Prévia ilustrativa da interface</span>
-                            <div class="lp-demo-mock-search">
-                                <div class="lp-demo-mock-input">Buscar por tese, assunto, magistrado ou número CNJ...</div>
-                                <div class="lp-demo-mock-filters">
-                                    <span>Assunto</span>
-                                    <span>Magistrado(a)</span>
-                                    <span>Ordenação</span>
-                                    <span>Acervo</span>
-                                </div>
-                            </div>
-                            <div class="lp-demo-mock-card">
-                                <div class="lp-demo-mock-meta">TJAL · Vara Cível · Número CNJ · Data de julgamento</div>
-                                <strong>Leitura documental em Cartões ou Tabela</strong>
-                                <p>Visualize a síntese factual, salve decisões de referência, copie a citação formatada ou gere o relatório em PDF.</p>
-                            </div>
-                        </div>
+                <div id="lp-demo-stage" class="lp-demo-stage" data-lp-anim="stage-rise" data-lp-delay="260">
+                    <!-- Módulo 01: Pesquisa Jurisprudencial -->
+                    <div
+                        id="lp-panel-historico"
+                        role="tabpanel"
+                        aria-labelledby="lp-tab-historico"
+                        class="lp-demo-panel active"
+                        data-lp-demo-panel="historico"
+                    >
                         <div class="lp-demo-highlights">
-                            <h3>Pesquisa direta com vocabulário forense</h3>
-                            <ul class="lp-demo-list">
-                                <li>Busca unificada por termos livres, assunto, magistrado ou número CNJ.</li>
-                                <li>Consulta individual e sincronização de julgados pela API Pública do DataJud (CNJ).</li>
-                                <li>Cadastro e edição manual de julgados do próprio escritório em conta isolada.</li>
+                            <span class="lp-module-kicker">Módulo 01 · Acervo &amp; DataJud</span>
+                            <h3>Encontre precedentes exatos sem garimpar páginas soltas</h3>
+                            <p class="lp-module-lead">
+                                Pesquisa unificada sobre julgados do escritório e consultas oficiais na API Pública do DataJud (CNJ).
+                            </p>
+                            <ul class="lp-feature-points">
+                                <li>
+                                    <span class="lp-point-check" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                    </span>
+                                    <div>
+                                        <strong>Busca unificada com DataJud (CNJ)</strong>
+                                        <span>Filtre por tese, assunto, magistrado ou número CNJ com sincronização direta do tribunal.</span>
+                                    </div>
+                                </li>
+                                <li>
+                                    <span class="lp-point-check" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                    </span>
+                                    <div>
+                                        <strong>Ementas prontas para peticionar</strong>
+                                        <span>Copie a citação formatada, salve decisões de referência e exporte relatórios em PDF.</span>
+                                    </div>
+                                </li>
+                                <li>
+                                    <span class="lp-point-check" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                    </span>
+                                    <div>
+                                        <strong>Biblioteca privada por OAB</strong>
+                                        <span>Cadastre e edite julgados próprios do escritório em conta isolada e auditável.</span>
+                                    </div>
+                                </li>
                             </ul>
+                            <div class="lp-demo-cta-row">
+                                <button type="button" class="btn btn-primary btn-sm" data-lp-register-module="historico">
+                                    Criar conta neste módulo
+                                </button>
+                                <button type="button" class="btn btn-secondary btn-sm lp-demo-open-btn" data-lp-open-module="historico">
+                                    Explorar módulo agora →
+                                </button>
+                            </div>
                         </div>
-                    </div>
 
-                    <div class="lp-demo-panel" data-lp-demo-panel="dashboard" hidden>
-                        <div class="lp-demo-visual">
-                            <span class="lp-demo-illustration-tag">Prévia ilustrativa da interface</span>
-                            <div class="lp-demo-mock-charts">
-                                <div class="lp-demo-mock-box">
-                                    <strong>Desfecho das Decisões</strong>
-                                    <div class="lp-demo-bars">
-                                        <span class="lp-bar-row"><i style="width: 60%; background: #185A43;"></i> Procedentes</span>
-                                        <span class="lp-bar-row"><i style="width: 15%; background: #2B598A;"></i> Acordos</span>
-                                        <span class="lp-bar-row"><i style="width: 25%; background: #C2555E;"></i> Improcedentes</span>
+                        <div class="lp-perspective-shell" aria-label="Perspectiva demonstrativa do módulo Pesquisa Jurisprudencial">
+                            <div class="lp-perspective-bezel">
+                                <div class="lp-window-bar">
+                                    <div class="lp-window-dots" aria-hidden="true">
+                                        <span></span><span></span><span></span>
+                                    </div>
+                                    <span class="lp-window-title">jurivision · pesquisa</span>
+                                    <span class="lp-window-pill">DataJud CNJ</span>
+                                </div>
+                                <div class="lp-window-canvas">
+                                    <div class="lp-canvas-search-row">
+                                        <span class="lp-canvas-query">Atraso de voo · Dano moral in re ipsa</span>
+                                        <span class="lp-canvas-status-tag">DataJud CNJ Ativo</span>
+                                    </div>
+                                    <div class="lp-canvas-chip-row">
+                                        <span>TJAL · 4ª Vara Cível</span>
+                                        <span>Procedentes</span>
+                                        <span>128 julgados</span>
+                                    </div>
+                                    <article class="lp-canvas-doc-card">
+                                        <div class="lp-canvas-doc-head">
+                                            <span class="lp-canvas-cnj">0714820-44.2025.8.02.0001</span>
+                                            <span class="lp-canvas-badge lp-badge-fav">Procedente</span>
+                                        </div>
+                                        <strong class="lp-canvas-doc-title">Responsabilidade civil · Cancelamento sem reacomodação</strong>
+                                        <p class="lp-canvas-doc-excerpt">
+                                            Reconhecido o <mark class="lp-highlight-mark">dano moral presumido por falha na prestação de serviço aéreo</mark>, com arbitramento proporcional à espera e ausência de assistência material.
+                                        </p>
+                                        <div class="lp-canvas-pill-actions">
+                                            <span class="lp-action-pill-done">Citação copiada ✓</span>
+                                            <span>Exportar PDF</span>
+                                        </div>
+                                    </article>
+                                    <div class="lp-canvas-secondary-row">
+                                        <span class="lp-canvas-secondary-title">2ª Turma Recursal · TJAL</span>
+                                        <span class="lp-canvas-badge lp-badge-info">Acordo Homologado</span>
                                     </div>
                                 </div>
-                                <div class="lp-demo-mock-box">
-                                    <strong>Perfil por Magistrado e Assunto</strong>
-                                    <p>Alterne entre Quantidade e Percentual (%) e clique diretamente nas barras para abrir os processos.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Módulo 02: Análise Jurimétrica -->
+                    <div
+                        id="lp-panel-dashboard"
+                        role="tabpanel"
+                        aria-labelledby="lp-tab-dashboard"
+                        class="lp-demo-panel"
+                        data-lp-demo-panel="dashboard"
+                        hidden
+                    >
+                        <div class="lp-demo-highlights">
+                            <span class="lp-module-kicker">Módulo 02 · Inteligência Estatística</span>
+                            <h3>Leia a tendência real de cada juízo antes de definir a tese</h3>
+                            <p class="lp-module-lead">
+                                Painel interativo com separação clara entre procedências, acordos homologados e improcedências.
+                            </p>
+                            <ul class="lp-feature-points">
+                                <li>
+                                    <span class="lp-point-check" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                    </span>
+                                    <div>
+                                        <strong>Perfil decisório por magistrado e vara</strong>
+                                        <span>Compare volume e taxa favorável lado a lado e clique nas barras para abrir os julgados.</span>
+                                    </div>
+                                </li>
+                                <li>
+                                    <span class="lp-point-check" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                    </span>
+                                    <div>
+                                        <strong>Lastro auditável sem caixa-preta</strong>
+                                        <span>Cada percentual exibe o denominador exato de decisões analisadas no recorte escolhido.</span>
+                                    </div>
+                                </li>
+                                <li>
+                                    <span class="lp-point-check" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                    </span>
+                                    <div>
+                                        <strong>Tempo mediano até a sentença</strong>
+                                        <span>Estime duração processual por assunto e juízo para orientar cliente e estratégia de acordo.</span>
+                                    </div>
+                                </li>
+                            </ul>
+                            <div class="lp-demo-cta-row">
+                                <button type="button" class="btn btn-primary btn-sm" data-lp-register-module="dashboard">
+                                    Criar conta neste módulo
+                                </button>
+                                <button type="button" class="btn btn-secondary btn-sm lp-demo-open-btn" data-lp-open-module="dashboard">
+                                    Explorar módulo agora →
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="lp-perspective-shell" aria-label="Perspectiva demonstrativa do módulo Análise Jurimétrica">
+                            <div class="lp-perspective-bezel">
+                                <div class="lp-window-bar">
+                                    <div class="lp-window-dots" aria-hidden="true">
+                                        <span></span><span></span><span></span>
+                                    </div>
+                                    <span class="lp-window-title">jurivision · jurimetria</span>
+                                    <span class="lp-window-pill">Recorte auditável</span>
+                                </div>
+                                <div class="lp-window-canvas">
+                                    <div class="lp-canvas-kpi-strip">
+                                        <div class="lp-canvas-kpi">
+                                            <span>Favoráveis</span>
+                                            <strong class="lp-kpi-fav">74,2%</strong>
+                                            <small>95 de 128</small>
+                                        </div>
+                                        <div class="lp-canvas-kpi">
+                                            <span>Tempo Mediano</span>
+                                            <strong>184 dias</strong>
+                                            <small>Distribuição → sentença</small>
+                                        </div>
+                                        <div class="lp-canvas-kpi">
+                                            <span>No Recorte</span>
+                                            <strong>128</strong>
+                                            <small>Decisões filtradas</small>
+                                        </div>
+                                    </div>
+
+                                    <div class="lp-canvas-card-block">
+                                        <div class="lp-canvas-block-head">
+                                            <strong>Distribuição de Desfechos</strong>
+                                            <span>Denominador: 128</span>
+                                        </div>
+                                        <div class="lp-meter-group">
+                                            <div class="lp-meter-row">
+                                                <div class="lp-meter-meta"><span>Procedentes</span><strong>58,0%</strong></div>
+                                                <div class="lp-meter-track"><span class="lp-meter-fill lp-w-58 lp-tone-fav"></span></div>
+                                            </div>
+                                            <div class="lp-meter-row">
+                                                <div class="lp-meter-meta"><span>Acordos Homologados</span><strong>16,2%</strong></div>
+                                                <div class="lp-meter-track"><span class="lp-meter-fill lp-w-16 lp-tone-info"></span></div>
+                                            </div>
+                                            <div class="lp-meter-row">
+                                                <div class="lp-meter-meta"><span>Improcedentes</span><strong>25,8%</strong></div>
+                                                <div class="lp-meter-track"><span class="lp-meter-fill lp-w-26 lp-tone-err"></span></div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="lp-canvas-compare-strip">
+                                        <div class="lp-compare-item">
+                                            <span>4ª Vara Cível</span>
+                                            <strong>79% fav. · 48 julgados</strong>
+                                        </div>
+                                        <div class="lp-compare-item">
+                                            <span>1ª Vara Cível</span>
+                                            <strong>61% fav. · 44 julgados</strong>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                        <div class="lp-demo-highlights">
-                            <h3>Indicadores claros e rastreáveis</h3>
-                            <ul class="lp-demo-list">
-                                <li>Separação real entre sentenças procedentes, acordos homologados e improcedências.</li>
-                                <li>Filtros dinâmicos por assunto e magistrado atualizam todo o painel na hora.</li>
-                                <li>Cada percentual informa o total de decisões analisadas no recorte.</li>
-                            </ul>
-                        </div>
                     </div>
 
-                    <div class="lp-demo-panel" data-lp-demo-panel="upload" hidden>
-                        <div class="lp-demo-visual">
-                            <span class="lp-demo-illustration-tag">Prévia ilustrativa da interface</span>
-                            <div class="lp-demo-mock-steps">
-                                <span>1. Envio (.PDF ou .CSV)</span>
-                                <span>2. Sigilo de Dados</span>
-                                <span>3. Extração</span>
-                                <span>4. Precedentes do Juízo</span>
-                                <span>5. Parecer Comparativo</span>
-                            </div>
-                            <div class="lp-demo-mock-card">
-                                <strong>Parecer estruturado pronto para exportação</strong>
-                                <p>Extrai órgão julgador, magistrado e síntese factual, confrontando com o histórico do tribunal.</p>
+                    <!-- Módulo 03: Análise de Previsão -->
+                    <div
+                        id="lp-panel-upload"
+                        role="tabpanel"
+                        aria-labelledby="lp-tab-upload"
+                        class="lp-demo-panel"
+                        data-lp-demo-panel="upload"
+                        hidden
+                    >
+                        <div class="lp-demo-highlights">
+                            <span class="lp-module-kicker">Módulo 03 · Cenário Preditivo &amp; Peças</span>
+                            <h3>Antecipe o comportamento do juízo sobre a sua petição</h3>
+                            <p class="lp-module-lead">
+                                Submeta a peça em PDF para cruzar argumentos com julgados análogos, estimar aderência e gerar parecer completo.
+                            </p>
+                            <ul class="lp-feature-points">
+                                <li>
+                                    <span class="lp-point-check" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                    </span>
+                                    <div>
+                                        <strong>Estimativa respaldada em precedentes análogos</strong>
+                                        <span>Calcula a aderência histórica da tese perante a vara e informa o tamanho real da amostra.</span>
+                                    </div>
+                                </li>
+                                <li>
+                                    <span class="lp-point-check" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                    </span>
+                                    <div>
+                                        <strong>Diagnóstico de teses e confronto documental</strong>
+                                        <span>Extrai fatos, identifica pontos convergentes ou sensíveis e orienta a fundamentação.</span>
+                                    </div>
+                                </li>
+                                <li>
+                                    <span class="lp-point-check" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                    </span>
+                                    <div>
+                                        <strong>Sigilo LGPD automático e parecer exportável</strong>
+                                        <span>Oculta CPFs, RGs e nomes localmente antes da análise e entrega relatório em PDF pronto.</span>
+                                    </div>
+                                </li>
+                            </ul>
+                            <div class="lp-demo-cta-row">
+                                <button type="button" class="btn btn-primary btn-sm" data-lp-register-module="upload">
+                                    Criar conta neste módulo
+                                </button>
+                                <button type="button" class="btn btn-secondary btn-sm lp-demo-open-btn" data-lp-open-module="upload">
+                                    Explorar módulo agora →
+                                </button>
                             </div>
                         </div>
-                        <div class="lp-demo-highlights">
-                            <h3>Confronto ágil de petições e planilhas</h3>
-                            <ul class="lp-demo-list">
-                                <li>Envio de petições em PDF (até 15MB) e importação em lote via CSV.</li>
-                                <li>Ocultação automática de identificadores pessoais antes da análise.</li>
-                                <li>Exportação de relatório estratégico em PDF pronto para o processo.</li>
-                            </ul>
+
+                        <div class="lp-perspective-shell" aria-label="Perspectiva demonstrativa do módulo Análise de Previsão">
+                            <div class="lp-perspective-bezel">
+                                <div class="lp-window-bar">
+                                    <div class="lp-window-dots" aria-hidden="true">
+                                        <span></span><span></span><span></span>
+                                    </div>
+                                    <span class="lp-window-title">jurivision · previsao</span>
+                                    <span class="lp-window-pill">Sigilo LGPD</span>
+                                </div>
+                                <div class="lp-window-canvas">
+                                    <div class="lp-canvas-file-bar">
+                                        <span class="lp-canvas-filename">Peticao_Inicial_Civel.pdf</span>
+                                        <span class="lp-canvas-badge lp-badge-fav">Sigilo LGPD Aplicado</span>
+                                    </div>
+
+                                    <div class="lp-canvas-forecast-card">
+                                        <div class="lp-forecast-head">
+                                            <div>
+                                                <span class="lp-forecast-label">Cenário preditivo estimado</span>
+                                                <strong class="lp-forecast-value">76,5% de aderência histórica</strong>
+                                            </div>
+                                            <span class="lp-forecast-range">Faixa observada: R$ 6 mil – R$ 10 mil</span>
+                                        </div>
+                                        <p class="lp-forecast-sub">26 de 34 precedentes análogos favoráveis no juízo</p>
+                                        <div class="lp-meter-track"><span class="lp-meter-fill lp-w-76 lp-tone-fav"></span></div>
+                                    </div>
+
+                                    <div class="lp-canvas-matrix">
+                                        <div class="lp-matrix-row">
+                                            <span>Responsabilidade Objetiva (CDC)</span>
+                                            <span class="lp-canvas-badge lp-badge-fav">Convergente no juízo</span>
+                                        </div>
+                                        <div class="lp-matrix-row">
+                                            <span>Inversão do Ônus da Prova</span>
+                                            <span class="lp-canvas-badge lp-badge-info">Recorrente em 82% da amostra</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="lp-canvas-delivery-foot">
+                                        <span>Tese recomendada e parecer em PDF prontos para protocolo</span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
         </section>
 
-        <!-- Seção 3: Confiança jurídica e conforto entre gerações -->
-        <section id="lp-confianca" class="lp-section lp-reveal">
+        <!-- Seção 2: Confiança jurídica e governança (Bento Assimétrico Editorial) -->
+        <section id="lp-confianca" class="lp-section lp-section-alt">
             <div class="lp-container">
-                <div class="lp-section-header">
-                    <span class="lp-section-eyebrow">Segurança jurídica</span>
-                    <h2 class="lp-section-title">Solidez para o advogado experiente, agilidade para a nova geração</h2>
-                    <p class="lp-section-desc">
-                        Projetado para unir a previsibilidade documental que o contencioso exige à fluidez de uma ferramenta web moderna.
-                    </p>
+                <div class="lp-trust-header-split">
+                    <div class="lp-section-header lp-trust-header-main">
+                        <span class="lp-section-eyebrow" data-lp-anim="fade-up" data-lp-delay="0">Segurança jurídica &amp; Governança</span>
+                        <h2 class="lp-section-title" data-lp-anim="fade-up" data-lp-delay="80">Solidez técnica para o sigilo que a advocacia exige</h2>
+                    </div>
+                    <div class="lp-trust-header-side" data-lp-anim="fade-up" data-lp-delay="140">
+                        <p class="lp-section-desc">
+                            Do ocultamento local de dados pessoais ao lastro de cada percentual nos julgados reais, a plataforma foi estruturada para sustentar decisões profissionais sem caixa-preta.
+                        </p>
+                        <button type="button" class="lp-trust-method-link" data-footer-action="methodology">
+                            <span>Ver critérios de dados e privacidade</span>
+                            <span aria-hidden="true">→</span>
+                        </button>
+                    </div>
                 </div>
 
-                <div class="lp-trust-grid">
-                    <article class="lp-trust-card">
-                        <h3>Transparência sem caixa-preta</h3>
-                        <p>Todo indicador informa o número exato de julgados considerados e leva diretamente às decisões que originaram o cálculo.</p>
+                <div class="lp-trust-bento">
+                    <article class="lp-trust-bento-card lp-trust-span-7 lp-trust-anchor" data-lp-anim="card-pop" data-lp-delay="0">
+                        <div class="lp-trust-card-body">
+                            <div class="lp-trust-top">
+                                <span class="lp-trust-pill lp-trust-pill-dark">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+                                    <span>Barreira LGPD · Pré-análise</span>
+                                </span>
+                                <span class="lp-trust-index">01</span>
+                            </div>
+                            <h3>Seus documentos são higienizados antes de qualquer análise</h3>
+                            <p>
+                                CPFs, RGs, contatos, endereços e nomes de pessoas físicas são ocultados localmente no servidor antes da indexação, do confronto de peças ou da síntese.
+                            </p>
+                        </div>
+
+                        <div class="lp-redaction-specimen" aria-label="Exemplo de ocultamento automático de dados pessoais">
+                            <div class="lp-specimen-row">
+                                <span class="lp-specimen-label">Peça enviada</span>
+                                <code class="lp-specimen-code">Autor: João da Silva · CPF 123.456.789-00</code>
+                            </div>
+                            <div class="lp-specimen-row lp-specimen-row-protected">
+                                <span class="lp-specimen-label">Barreira local</span>
+                                <code class="lp-specimen-code">Autor: <span class="lp-redacted-tag">[NOME_OCULTO]</span> · CPF <span class="lp-redacted-tag">[CPF_OCULTO]</span></code>
+                            </div>
+                        </div>
+
+                        <div class="lp-trust-anchor-foot">
+                            <span>Anonimização local obrigatória</span>
+                            <span aria-hidden="true">·</span>
+                            <span>Fallback determinístico offline disponível</span>
+                        </div>
                     </article>
-                    <article class="lp-trust-card">
-                        <h3>Vocabulário jurídico real</h3>
-                        <p>Rótulos diretos — Número CNJ, Órgão Julgador, Magistrado, Ementa — e tipografia pensada para leitura prolongada sem fadiga visual.</p>
+
+                    <article class="lp-trust-bento-card lp-trust-span-5" data-lp-anim="card-pop" data-lp-delay="110">
+                        <div class="lp-trust-card-body">
+                            <div class="lp-trust-top">
+                                <span class="lp-trust-pill">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/><path d="M11 8v6"/><path d="M8 11h6"/></svg>
+                                    <span>Lastro Documental · Fonte CNJ</span>
+                                </span>
+                                <span class="lp-trust-index">02</span>
+                            </div>
+                            <h3>Todo número aponta para os julgados reais</h3>
+                            <p>
+                                Nenhum percentual aparece isolado: cada taxa informa o denominador exato da amostra, separa feitos em análise e abre diretamente as ementas de origem.
+                            </p>
+                        </div>
+
+                        <div class="lp-proof-callout">
+                            <strong class="lp-proof-stat">74,2%</strong>
+                            <div class="lp-proof-meta">
+                                <span class="lp-proof-stat-label">Proporção favorável apurada</span>
+                                <span class="lp-proof-stat-sub">95 de 128 julgados com desfecho · Sem caixa-preta</span>
+                            </div>
+                        </div>
                     </article>
-                    <article class="lp-trust-card">
-                        <h3>Sigilo documental integrado</h3>
-                        <p>Nomes completos, CPFs, RGs e contatos de pessoas físicas são ocultados localmente antes da indexação ou análise.</p>
+
+                    <article class="lp-trust-bento-card lp-trust-span-5" data-lp-anim="card-pop" data-lp-delay="60">
+                        <div class="lp-trust-card-body">
+                            <div class="lp-trust-top">
+                                <span class="lp-trust-pill">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                                    <span>Isolamento por OAB</span>
+                                </span>
+                                <span class="lp-trust-index">03</span>
+                            </div>
+                            <h3>Acervo privado segregado por profissional</h3>
+                            <p>
+                                Cada advogado mantém sua biblioteca de julgados, peças analisadas e relatórios protegida por autenticação vinculada ao registro na OAB.
+                            </p>
+                        </div>
+
+                        <div class="lp-trust-spec-tags">
+                            <span>Hash PBKDF2-HMAC-SHA256</span>
+                            <span>Sessão JWT</span>
+                            <span>Base isolada por conta</span>
+                        </div>
                     </article>
-                    <article class="lp-trust-card">
-                        <h3>Acervo isolado por OAB</h3>
-                        <p>Cada advogado mantém sua base privada protegida por autenticação, com cadastro próprio de julgados e relatórios em PDF.</p>
+
+                    <article class="lp-trust-bento-card lp-trust-span-7 lp-trust-card-ivory" data-lp-anim="card-pop" data-lp-delay="170">
+                        <div class="lp-trust-card-body">
+                            <div class="lp-trust-top">
+                                <span class="lp-trust-pill lp-trust-pill-ivory">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
+                                    <span>Padrão Forense · WCAG 2.2 AA</span>
+                                </span>
+                                <span class="lp-trust-index">04</span>
+                            </div>
+                            <h3>Clareza documental para quem decide, agilidade para a equipe</h3>
+                            <p>
+                                Vocabulário fiel ao contencioso — Número CNJ, Órgão Julgador, Magistrado, Ementa — em uma interface pensada para leitura prolongada e navegação integral por teclado.
+                            </p>
+                        </div>
+
+                        <div class="lp-trust-wide-foot">
+                            <div class="lp-trust-spec-tags">
+                                <span>Cartões ou Tabela</span>
+                                <span>Citação em 1 clique</span>
+                                <span>Exportação em PDF</span>
+                            </div>
+                            <button type="button" class="btn btn-secondary btn-sm" data-footer-action="methodology">
+                                Ler sobre dados e fontes →
+                            </button>
+                        </div>
                     </article>
                 </div>
             </div>
         </section>
 
-        <!-- Seção 4: Planos transparentes -->
-        <section id="lp-planos" class="lp-section lp-section-alt lp-reveal">
+        <!-- Seção 3: Planos com destaque e hierarquia refinada -->
+        <section id="lp-planos" class="lp-section">
             <div class="lp-container">
-                <div class="lp-section-header">
-                    <span class="lp-section-eyebrow">Planos</span>
-                    <h2 class="lp-section-title">Comece gratuitamente e evolua no ritmo do seu escritório</h2>
-                    <p class="lp-section-desc">
-                        Crie sua conta em menos de um minuto informando sua inscrição na OAB.
+                <div class="lp-section-header lp-section-header-centered">
+                    <span class="lp-section-eyebrow" data-lp-anim="fade-up" data-lp-delay="0">Planos</span>
+                    <h2 class="lp-section-title" data-lp-anim="fade-up" data-lp-delay="80">Comece gratuitamente e evolua no ritmo do seu escritório</h2>
+                    <p class="lp-section-desc" data-lp-anim="fade-up" data-lp-delay="160">
+                        Crie sua conta em menos de um minuto informando sua inscrição na OAB e escolha o alcance ideal para a sua atuação.
                     </p>
                 </div>
 
                 <div class="lp-plans-grid">
-                    <article class="lp-plan-card">
-                        <div class="lp-plan-head">
-                            <h3>Plano Gratuito (FREE)</h3>
-                            <strong class="lp-plan-price">R$ 0</strong>
+                    <article class="lp-plan-card" data-lp-anim="card-pop" data-lp-delay="0">
+                        <div class="lp-plan-top">
+                            <span class="lp-plan-kicker">Acesso inicial · FREE</span>
+                            <h3>Plano Gratuito</h3>
+                            <div class="lp-plan-price-row">
+                                <strong class="lp-plan-price">R$ 0</strong>
+                                <span class="lp-plan-period">para sempre · sem cartão</span>
+                            </div>
+                            <p class="lp-plan-subtitle">Ideal para experimentar a pesquisa, jurimetria e análises iniciais de petições.</p>
                         </div>
-                        <p class="lp-plan-subtitle">Ideal para experimentar a pesquisa, jurimetria e análise de petições.</p>
-                        <ul class="lp-plan-list">
-                            <li>Até 3 análises de petições em PDF</li>
-                            <li>Pesquisa jurisprudencial e consulta ao DataJud (CNJ)</li>
-                            <li>Painel de análise jurimétrica com filtros dinâmicos</li>
-                            <li>Cadastro manual de julgados do escritório</li>
+
+                        <hr class="lp-plan-divider">
+                        <p class="lp-plan-includes">Incluído na conta gratuita:</p>
+
+                        <ul class="lp-plan-features">
+                            <li>
+                                <span class="lp-plan-check" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                                <span>Até 3 análises de petições em PDF</span>
+                            </li>
+                            <li>
+                                <span class="lp-plan-check" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                                <span>Pesquisa jurisprudencial e consulta ao DataJud (CNJ)</span>
+                            </li>
+                            <li>
+                                <span class="lp-plan-check" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                                <span>Painel de análise jurimétrica com filtros dinâmicos</span>
+                            </li>
+                            <li>
+                                <span class="lp-plan-check" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                                <span>Cadastro manual de julgados do escritório</span>
+                            </li>
                         </ul>
+
                         <button type="button" id="btn-lp-plan-free" class="btn btn-secondary btn-full">
                             Criar conta gratuita
                         </button>
                     </article>
 
-                    <article class="lp-plan-card lp-plan-card-featured">
-                        <div class="lp-plan-head">
-                            <div>
-                                <span class="lp-plan-badge">Recomendado para bancas</span>
-                                <h3>Plano Escritório (PRO)</h3>
+                    <article class="lp-plan-card lp-plan-card-featured" data-lp-anim="card-pop" data-lp-delay="140">
+                        <div class="lp-plan-top">
+                            <span class="lp-plan-badge">Recomendado para bancas e escritórios</span>
+                            <span class="lp-plan-kicker">Acesso integral · PRO</span>
+                            <h3>Plano Escritório</h3>
+                            <div class="lp-plan-price-row">
+                                <strong class="lp-plan-price">Sem limites</strong>
+                                <span class="lp-plan-period">ativação imediata na conta</span>
                             </div>
+                            <p class="lp-plan-subtitle">Uso completo sem limites para advogados, bancas e contencioso estratégico.</p>
                         </div>
-                        <p class="lp-plan-subtitle">Uso completo sem limites para advogados e escritórios.</p>
-                        <ul class="lp-plan-list">
-                            <li>Análises ilimitadas de petições em PDF</li>
-                            <li>Importação em lote de acervos via planilha CSV</li>
-                            <li>Tese estratégica e precedentes correlatos completos</li>
-                            <li>Exportação ilimitada de relatórios em PDF</li>
+
+                        <hr class="lp-plan-divider">
+                        <p class="lp-plan-includes">Tudo do Plano Gratuito, mais:</p>
+
+                        <ul class="lp-plan-features">
+                            <li>
+                                <span class="lp-plan-check" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                                <span>Análises preditivas ilimitadas de petições em PDF</span>
+                            </li>
+                            <li>
+                                <span class="lp-plan-check" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                                <span>Comparador de peças (Inicial × Contestação) completo</span>
+                            </li>
+                            <li>
+                                <span class="lp-plan-check" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                                <span>Tese estratégica completa e precedentes correlatos</span>
+                            </li>
+                            <li>
+                                <span class="lp-plan-check" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                                <span>Importação em lote de acervos via planilha CSV</span>
+                            </li>
+                            <li>
+                                <span class="lp-plan-check" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                                <span>Exportação ilimitada de relatórios estratégicos em PDF</span>
+                            </li>
                         </ul>
-                        <button type="button" id="btn-lp-plan-pro" class="btn btn-primary btn-full">
+
+                        <button type="button" id="btn-lp-plan-pro" class="btn lp-btn-pro-cta btn-full">
                             Criar conta e conhecer o PRO
                         </button>
                     </article>
                 </div>
 
-                <p class="lp-pricing-reassurance">
-                    Sem cartão de crédito · Acesso imediato após o cadastro · Seus processos permanecem isolados na sua conta
-                </p>
+                <ul class="lp-pricing-guarantees" data-lp-anim="fade-up" data-lp-delay="240" aria-label="Garantias da conta">
+                    <li>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                        <span>Inscrição OAB verificada</span>
+                    </li>
+                    <li>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                        <span>Sem cartão de crédito no cadastro</span>
+                    </li>
+                    <li>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                        <span>Isolamento total do acervo por advogado</span>
+                    </li>
+                </ul>
             </div>
         </section>
 
         <footer class="site-footer lp-footer">
-            <div class="site-footer-inner">
+            <div class="site-footer-inner" data-lp-anim="fade-up" data-lp-delay="0">
                 <div class="footer-brand-col">
                     <img
                         src="/assets/jurivision-logo.svg"
@@ -480,8 +880,8 @@
                 </div>
 
                 <nav class="footer-nav-links" aria-label="Navegação do rodapé">
-                    <a href="#lp-objetivo" class="footer-link-btn">Por onde começar</a>
-                    <a href="#lp-demonstracao" class="footer-link-btn">A plataforma</a>
+                    <a href="#lp-demonstracao" class="footer-link-btn">Módulos</a>
+                    <a href="#lp-confianca" class="footer-link-btn">Segurança jurídica</a>
                     <a href="#lp-planos" class="footer-link-btn">Planos</a>
                     <button type="button" class="footer-link-btn" data-footer-action="methodology">Sobre os dados e privacidade</button>
                 </nav>
