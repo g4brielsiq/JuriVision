@@ -42,10 +42,11 @@ class Settings:
     GEMINI_TIMEOUT_SECONDS: float = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "4.0"))
 
     # Integração Híbrida com a API Pública do DataJud (CNJ)
-    # Chave pública oficial para consulta de metadados processuais (TPU/CNJ)
-    DATAJUD_API_KEY: str = os.getenv("DATAJUD_API_KEY", "cDZHYUpZwHbBoikSmFtUtqQCFlPqzqMV")
+    # Chave pública oficial do CNJ. O CNJ troca essa chave sem aviso: a vigente fica em
+    # https://datajud-wiki.cnj.jus.br/api-publica/acesso (se o DataJud responder 401, atualize aqui).
+    DATAJUD_API_KEY: str = os.getenv("DATAJUD_API_KEY", "cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw==")
     DATAJUD_BASE_URL: str = os.getenv("DATAJUD_BASE_URL", "https://api-publica.datajud.cnj.jus.br")
-    DATAJUD_TIMEOUT_SECONDS: float = float(os.getenv("DATAJUD_TIMEOUT_SECONDS", "3.0"))
+    DATAJUD_TIMEOUT_SECONDS: float = float(os.getenv("DATAJUD_TIMEOUT_SECONDS", "30.0"))
     DATAJUD_DEFAULT_ALIAS: str = os.getenv("DATAJUD_DEFAULT_ALIAS", "api_publica_tjal")
 
     # Modelo de negócio freemium (FREE / PRO) e deploy em nuvem

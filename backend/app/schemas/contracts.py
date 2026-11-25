@@ -306,7 +306,7 @@ class ProcessoCadastroRequest(BaseModel):
     tema: str = Field(..., min_length=2, max_length=120, examples=["Dano Moral"])
     magistrado: str = Field(..., min_length=2, max_length=150, examples=["Dr. Rafael De Amorim"])
     comarca: str = Field(
-        default="1ª Vara Cível de Maceió", min_length=2, max_length=150, examples=["1ª Vara Cível de Maceió"]
+        default="Não informado", min_length=2, max_length=150, examples=["1ª Vara Cível de Maceió"]
     )
     autor: str = Field(..., min_length=2, max_length=200, examples=["Maria Aparecida Santos"])
     reu: str = Field(..., min_length=2, max_length=200, examples=["Banco do Brasil S.A."])
@@ -383,7 +383,10 @@ class DataJudProcessoResponse(BaseModel):
     data_ajuizamento: Optional[str] = None
     grau: Optional[str] = None
     movimentos_recentes: List[DataJudMovimentoSchema] = []
-    fonte: str = "datajud_api"  # "datajud_api" | "local_cache_fallback"
+    # Desfecho identificado pelos códigos TPU de decisão (None quando ainda não há decisão de mérito/acordo)
+    desfecho: Optional[ResultadoProcesso] = None
+    data_desfecho: Optional[str] = None
+    fonte: str = "datajud_api"  # "datajud_api" | "acervo_local" | "nao_encontrado" | "indisponivel"
     sucesso: bool = True
     mensagem: str = "Metadados recuperados com sucesso da API Pública do DataJud."
 
@@ -412,7 +415,7 @@ class DataJudSincronizacaoRequest(BaseModel):
 
 class DataJudSincronizacaoResponse(BaseModel):
     tribunal: str
-    fonte: str = "datajud_api"  # "datajud_api" | "local_cache_fallback"
+    fonte: str = "datajud_api"  # "datajud_api" (a sincronização nunca grava dados presumidos)
     total_coletados: int = Field(..., ge=0)
     novos_inseridos: int = Field(..., ge=0)
     atualizados: int = Field(..., ge=0)

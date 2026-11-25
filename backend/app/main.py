@@ -17,6 +17,7 @@ from sqlalchemy import inspect, text
 
 from app.core.config import settings
 from app.core.database import Base, SessionLocal, engine
+from app.core.saneamento_acervo import sanear_acervo
 from app.core.seed import seed_initial_data
 from app.routers import auth, dashboard, processos, relatorios
 
@@ -48,6 +49,8 @@ def init_db_and_seed(seed_demo: bool = False) -> None:
     """Garante criação de tabelas relacionais, migração incremental e, só se pedido, a carga fictícia de demonstração."""
     Base.metadata.create_all(bind=engine)
     _ensure_usuario_freemium_columns()
+    with SessionLocal() as db:
+        sanear_acervo(db)
     if seed_demo:
         with SessionLocal() as db:
             seed_initial_data(db)

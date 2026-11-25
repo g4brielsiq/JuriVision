@@ -56,6 +56,10 @@ from app.schemas.contracts import (
 
 logger = logging.getLogger("jurivision.ai_gateway")
 
+PLACEHOLDER_VALUE_REGEX = re.compile(
+    r"(?i)^(?:n[ãa]o\s+(?:informad[oa]|identificad[oa]|especificad[oa])|magistrado\s+n[ãa]o\s+especificado)\b"
+)
+
 # Expressões Regulares Auditáveis para Proteção de Dados Pessoais (LGPD - RF-04 / RN-01)
 CPF_REGEX = re.compile(r"\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b")
 RG_LABELED_REGEX = re.compile(
@@ -407,6 +411,8 @@ class AnonimizadorLGPD:
         cleaned = " ".join(raw_name.strip().split())
         if not cleaned:
             return "Parte Anonimizada ***", True
+        if cls.is_placeholder_value(cleaned):
+            return cleaned, False
 
         # Se já estiver mascarado, mantém e contabiliza como verificado
         if "***" in cleaned or "[NOME_ANONIMIZADO]" in cleaned:
@@ -483,6 +489,11 @@ class AnonimizadorLGPD:
 
         return raw_autor, raw_reu
 
+    @staticmethod
+    def is_placeholder_value(value: str) -> bool:
+        """Marcadores de campo vazio ("Não informado pelo DataJud", "Não identificado") não são nomes de pessoas."""
+        return bool(PLACEHOLDER_VALUE_REGEX.match((value or "").strip()))
+
     @classmethod
     def sanitize_text(cls, raw_text: str, known_natural_names: list[str] | None = None) -> Tuple[str, int, int]:
         """
@@ -492,6 +503,8 @@ class AnonimizadorLGPD:
         """
         if not raw_text:
             return "", 0, 0
+        if known_natural_names:
+            known_natural_names = [n for n in known_natural_names if n and not cls.is_placeholder_value(n)]
 
         # Documentos rotulados (RG, CNH, CTPS, PIS, CNS) antes de CPF para evitar colisão de 11 dígitos
         sanitized, rg_count = RG_LABELED_REGEX.subn("RG: [RG_ANONIMIZADO]", raw_text)

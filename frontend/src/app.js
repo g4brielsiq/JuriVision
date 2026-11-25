@@ -1697,14 +1697,19 @@ function exibirResultadoDataJud(data) {
     const box = document.getElementById("datajud-result-box");
     if (!box) return;
 
-    document.getElementById("dj-badge-tribunal").textContent = `CNJ · ${data.tribunal || "TJAL"}`;
-    document.getElementById("dj-badge-fonte").textContent = data.fonte === "datajud_api"
-        ? "API Pública DataJud (CNJ)"
-        : "Base Local Homologada (TJAL)";
+    const rotulosFonte = {
+        datajud_api: "API Pública DataJud (CNJ)",
+        acervo_local: "Seu acervo (DataJud indisponível)",
+        nao_encontrado: "Não localizado no DataJud",
+        indisponivel: "DataJud indisponível",
+    };
+    const naoInformado = "Não informado pelo DataJud";
+    document.getElementById("dj-badge-tribunal").textContent = `CNJ · ${data.tribunal || "—"}`;
+    document.getElementById("dj-badge-fonte").textContent = rotulosFonte[data.fonte] || "Consulta DataJud";
     document.getElementById("dj-numero-processo").textContent = `Processo nº ${data.numero_processo}`;
-    document.getElementById("dj-classe").textContent = data.classe || "Procedimento Comum Cível";
-    document.getElementById("dj-assunto").textContent = data.assunto_principal || "Dano Moral";
-    document.getElementById("dj-orgao").textContent = data.orgao_julgador || "Não informado pelo DataJud";
+    document.getElementById("dj-classe").textContent = data.classe || naoInformado;
+    document.getElementById("dj-assunto").textContent = data.assunto_principal || naoInformado;
+    document.getElementById("dj-orgao").textContent = data.orgao_julgador || naoInformado;
 
     let dataFormatada = "Não informada";
     if (data.data_ajuizamento) {
@@ -1738,8 +1743,12 @@ function exibirResultadoDataJud(data) {
 
 async function dispararConsultaDataJud() {
     const inputBusca = document.getElementById("filtro-busca");
-    const termo = (inputBusca?.value || "").trim();
-    const numeroCnj = termo || "0710802-55.2018.8.02.0001";
+    const numeroCnj = (inputBusca?.value || "").trim();
+    if (numeroCnj.replace(/\D/g, "").length !== 20) {
+        showToast("Digite no campo de busca o número CNJ completo (20 dígitos) para consultar no DataJud.");
+        inputBusca?.focus();
+        return;
+    }
 
     showToast("Consultando metadados na API Pública do DataJud (CNJ)...");
     announceStatus("Consultando processo no DataJud...");
@@ -1747,7 +1756,11 @@ async function dispararConsultaDataJud() {
     try {
         const data = await consultarProcessoDatajud(numeroCnj);
         exibirResultadoDataJud(data);
-        showToast("Dados do DataJud recuperados com sucesso!");
+        showToast(
+            data.fonte === "datajud_api"
+                ? "Dados do DataJud recuperados."
+                : data.mensagem || "Consulta ao DataJud concluída sem dados do CNJ.",
+        );
     } catch (err) {
         showToast(`Consulta ao DataJud: ${err.message}`);
     }

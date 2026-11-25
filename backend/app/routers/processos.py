@@ -203,8 +203,10 @@ async def upload_processo_pdf(
             autor_anonimizado=meta.partes_anonimizadas.autor,
             reu_anonimizado=meta.partes_anonimizadas.reu,
             resumo_nlp=ai_result.resumo_nlp,
-            resultado_historico="Procedente" if pred.probabilidade_deferimento >= 0.6 else "Em Analise",
-            data_julgamento=date.today(),
+            # Petição recém-analisada ainda não tem decisão: a previsão fica em analise_preditiva,
+            # nunca no desfecho histórico usado pela jurimetria.
+            resultado_historico="Em Analise",
+            data_julgamento=None,
         )
         db.add(novo_proc)
         db.flush()
@@ -331,12 +333,12 @@ async def upload_processos_csv(
         try:
             dt_julg = datetime.strptime(norm_row.get("data_julgamento", ""), "%Y-%m-%d").date()
         except ValueError:
-            dt_julg = date.today()
+            dt_julg = None
 
-        resultado = norm_row.get("resultado") or "Procedente"
-        tema_row = norm_row.get("tema") or "Dano Moral"
-        mag_row = norm_row.get("magistrado") or "Magistrado não especificado"
-        comarca_row = norm_row.get("comarca") or "Juízo Cível Competente"
+        resultado = norm_row.get("resultado") or "Em Analise"
+        tema_row = norm_row.get("tema") or "Não informado"
+        mag_row = norm_row.get("magistrado") or "Não informado"
+        comarca_row = norm_row.get("comarca") or "Não informado"
         resumo_row = clean_resumo or "Resumo importado via lote CSV e higienizado."
 
         pred_ctx = compute_jurimetria_prediction(
@@ -819,15 +821,22 @@ async def sincronizar_lote_datajud(
 ) -> DataJudSincronizacaoResponse:
     """
     Executa a coleta automática em lote de processos e jurisprudências na API Pública do DataJud (CNJ)
-    (com fallback local resiliente) e atualiza a base histórica visível de forma idempotente (Card #27 / RF-08 / RN-01).
+    (apenas processos com decisão de mérito ou acordo) e atualiza a base histórica visível de forma
+    idempotente (Card #27 / RF-08 / RN-01). Se o CNJ não responder, retorna 503 e não grava nada.
     Todos os registros passam pelo AnonimizadorLGPD e pelo motor TF-IDF/BM25 antes da persistência.
     """
     tribunal_sigla = (payload.tribunal or "TJAL").strip().upper()
-    coletados, fonte = await DataJudClient.coletar_lote_jurisprudencia(
+    coletados, fonte, motivo_falha = await DataJudClient.coletar_lote_jurisprudencia(
         tribunal=tribunal_sigla,
         tema=payload.tema,
         limite=payload.limite,
     )
+    if motivo_falha:
+        # Sem resposta do CNJ nada é gravado: o acervo só recebe dados reais.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"{motivo_falha} Nenhum processo foi gravado. Tente novamente em alguns minutos.",
+        )
 
     owner_id = get_effective_user_id(current_user)
     novos_inseridos = 0
@@ -837,6 +846,8 @@ async def sincronizar_lote_datajud(
 
     for item in coletados:
         dados_cadastro = DataJudClient.extrair_registro_para_acervo(item)
+        if dados_cadastro is None:
+            continue
         req_cadastro = ProcessoCadastroRequest(**dados_cadastro)
 
         existing = db.query(Processo).filter(Processo.numero_processo == req_cadastro.numero_processo).first()
@@ -885,7 +896,9 @@ async def sincronizar_lote_datajud(
         total_entidades_anonimizadas_lgpd=total_lgpd,
         mensagem=(
             f"Sincronização DataJud ({tribunal_sigla}) concluída: "
-            f"{novos_inseridos} novo(s) processo(s) inserido(s) e {atualizados} atualizado(s) com proteção LGPD."
+            f"{novos_inseridos} novo(s) processo(s) inserido(s) e {atualizados} atualizado(s)."
+            if coletados
+            else f"O DataJud ({tribunal_sigla}) não retornou processos julgados para esse filtro. Nada foi gravado."
         ),
         itens=itens_sincronizados,
     )
@@ -895,13 +908,18 @@ async def sincronizar_lote_datajud(
 async def consultar_processo_datajud(
     numero_processo: str,
     db: Session = Depends(get_db),
-    _usuario: Optional[Usuario] = Depends(get_optional_current_user),
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
 ) -> DataJudProcessoResponse:
     """
-    Consulta metadados processuais na API Pública do DataJud (CNJ) com fallback local (TJAL).
+    Consulta metadados processuais na API Pública do DataJud (CNJ). Se o CNJ não responder,
+    exibe apenas o que já existe no acervo visível ao usuário.
     Rastreabilidade: EAP 1.4.2 / RF-08 / ADR-002
     """
-    return await DataJudClient.consultar_processo(numero_processo=numero_processo, db=db)
+    return await DataJudClient.consultar_processo(
+        numero_processo=numero_processo,
+        db=db,
+        visibilidade=build_processo_visibility_filter(current_user),
+    )
 
 
 @router.get("/{id_processo}/similares", response_model=ProcessoListResponse, status_code=status.HTTP_200_OK)
