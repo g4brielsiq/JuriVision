@@ -3,7 +3,7 @@ Testes Exaustivos da Etapa 6:
 - Modelo Freemium (FREE vs PRO) persistido no banco (Usuario.plano / Usuario.analises_realizadas)
 - Endpoints GET /api/v1/auth/plano e POST /api/v1/auth/plano/upgrade
 - Bloqueio HTTP 402 Payment Required na 4a análise PDF no plano FREE e no upload CSV em lote
-- Desbloqueio completo após upgrade para PRO (Cortesia CONAD2026)
+- Desbloqueio completo após upgrade para PRO
 - Usuário institucional padrão (usr-01) no plano PRO
 - Integração Front-end Freemium e artefatos de deploy Cloud (Dockerfile / render.yaml)
 """
@@ -187,7 +187,7 @@ def test_etapa6_upgrade_para_pro_desbloqueia_analises_ilimitadas_e_csv(client: T
 
         up_resp = client.post(
             "/api/v1/auth/plano/upgrade",
-            json={"plano": "PRO", "codigo_convite": "CONAD2026"},
+            json={"plano": "PRO"},
             headers=headers,
         )
         assert up_resp.status_code == 200, up_resp.text
