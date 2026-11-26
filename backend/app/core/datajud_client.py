@@ -73,6 +73,29 @@ class DataJudClient:
     Quando o CNJ não responde, informa a indisponibilidade em vez de preencher dados presumidos.
     """
 
+    _SOURCE_FIELDS = [
+        "numeroProcesso",
+        "tribunal",
+        "classe",
+        "assuntos",
+        "orgaoJulgador",
+        "dataAjuizamento",
+        "grau",
+        "movimentos",
+    ]
+
+    @staticmethod
+    def _normalizar_timestamp(valor: Optional[str]) -> Optional[str]:
+        """Normaliza timestamps compactos do DataJud (YYYYMMDDHHMMSS ou YYYYMMDD) para formato ISO."""
+        if not valor:
+            return None
+        texto = str(valor).strip()
+        if re.fullmatch(r"\d{14}", texto):
+            return f"{texto[:4]}-{texto[4:6]}-{texto[6:8]}T{texto[8:10]}:{texto[10:12]}:{texto[12:14]}"
+        if re.fullmatch(r"\d{8}", texto):
+            return f"{texto[:4]}-{texto[4:6]}-{texto[6:8]}"
+        return texto
+
     @classmethod
     def resolve_alias_tribunal(cls, numero_processo: str) -> str:
         """
@@ -119,7 +142,7 @@ class DataJudClient:
 
     @classmethod
     async def _post_search(cls, url: str, payload: dict) -> httpx.Response:
-        """POST na API Pública com uma nova tentativa curta quando o CNJ responde 429 (sobrecarga)."""
+        """POST na API Pública com até duas tentativas curtas quando o CNJ responde 429 (sobrecarga)."""
         headers = {
             "Authorization": f"APIKey {settings.DATAJUD_API_KEY}",
             "Content-Type": "application/json",
@@ -127,8 +150,10 @@ class DataJudClient:
         }
         async with httpx.AsyncClient(timeout=settings.DATAJUD_TIMEOUT_SECONDS) as client:
             response = await client.post(url, json=payload, headers=headers)
-            if response.status_code == 429:
-                await asyncio.sleep(2)
+            for espera in (2, 4):
+                if response.status_code != 429:
+                    break
+                await asyncio.sleep(espera)
                 response = await client.post(url, json=payload, headers=headers)
             return response
 
@@ -160,11 +185,14 @@ class DataJudClient:
         alias = cls.resolve_alias_tribunal(numero_processo)
         url = f"{settings.DATAJUD_BASE_URL.rstrip('/')}/{alias}/_search"
         payload = {
+            "size": 1,
+            "track_total_hits": False,
+            "_source": cls._SOURCE_FIELDS,
             "query": {
                 "match": {
                     "numeroProcesso": clean_digits if len(clean_digits) == 20 else numero_processo
                 }
-            }
+            },
         }
 
         motivo_falha: Optional[str] = None
@@ -213,9 +241,13 @@ class DataJudClient:
         orgao_nome = (orgao.get("nome") if isinstance(orgao, dict) else str(orgao)) or NAO_INFORMADO
 
         movimentos = [m for m in source.get("movimentos") or [] if isinstance(m, dict)]
-        movimentos.sort(key=lambda m: str(m.get("dataHora") or ""), reverse=True)
+        movimentos.sort(key=lambda m: cls._normalizar_timestamp(m.get("dataHora")) or "", reverse=True)
         movimentos_list = [
-            DataJudMovimentoSchema(codigo=m.get("codigo"), nome=m.get("nome") or "Movimentação", data_hora=m.get("dataHora"))
+            DataJudMovimentoSchema(
+                codigo=m.get("codigo"),
+                nome=m.get("nome") or "Movimentação",
+                data_hora=cls._normalizar_timestamp(m.get("dataHora")),
+            )
             for m in movimentos[:5]
         ]
 
@@ -225,7 +257,7 @@ class DataJudClient:
             codigo = m.get("codigo")
             if codigo in DESFECHO_POR_CODIGO_TPU:
                 desfecho = DESFECHO_POR_CODIGO_TPU[codigo]
-                data_desfecho = m.get("dataHora")
+                data_desfecho = cls._normalizar_timestamp(m.get("dataHora"))
                 break
 
         return DataJudProcessoResponse(
@@ -236,7 +268,7 @@ class DataJudClient:
             assuntos=assuntos_list,
             assunto_principal=assunto_principal_nome or NAO_INFORMADO,
             orgao_julgador=orgao_nome,
-            data_ajuizamento=source.get("dataAjuizamento"),
+            data_ajuizamento=cls._normalizar_timestamp(source.get("dataAjuizamento")),
             grau=source.get("grau"),
             movimentos_recentes=movimentos_list,
             desfecho=desfecho,
@@ -325,15 +357,36 @@ class DataJudClient:
 
         payload = {
             "size": max(1, min(limite, 20)),
+            "track_total_hits": False,
+            "_source": cls._SOURCE_FIELDS,
             "query": consulta,
             "sort": [{"dataAjuizamento": {"order": "desc"}}],
         }
 
+        tentou_sem_sort = False
         try:
             response = await cls._post_search(url, payload)
+        except httpx.TimeoutException:
+            logger.warning("Timeout na coleta em lote do DataJud com ordenação (%s); tentando sem sort...", alias)
+            tentou_sem_sort = True
+            payload_sem_sort = {k: v for k, v in payload.items() if k != "sort"}
+            try:
+                response = await cls._post_search(url, payload_sem_sort)
+            except Exception as exc_retry:
+                logger.warning("Falha na coleta em lote da API Pública do DataJud (%s).", exc_retry.__class__.__name__)
+                return [], "indisponivel", cls._descrever_falha(None, exc_retry)
         except Exception as exc:
             logger.warning("Falha na coleta em lote da API Pública do DataJud (%s).", exc.__class__.__name__)
             return [], "indisponivel", cls._descrever_falha(None, exc)
+
+        if response.status_code == 429 and not tentou_sem_sort:
+            logger.warning("DataJud retornou HTTP 429 com ordenação (%s); tentando sem sort...", alias)
+            payload_sem_sort = {k: v for k, v in payload.items() if k != "sort"}
+            try:
+                response = await cls._post_search(url, payload_sem_sort)
+            except Exception as exc_retry:
+                logger.warning("Falha na coleta em lote da API Pública do DataJud (%s).", exc_retry.__class__.__name__)
+                return [], "indisponivel", cls._descrever_falha(None, exc_retry)
 
         if response.status_code != 200:
             logger.warning("Coleta em lote DataJud retornou status %d (%s).", response.status_code, alias)
@@ -380,10 +433,12 @@ class DataJudClient:
 
         data_julgamento = None
         if item.desfecho and item.data_desfecho:
-            try:
-                data_julgamento = datetime.strptime(str(item.data_desfecho)[:10], "%Y-%m-%d").date()
-            except ValueError:
-                data_julgamento = None
+            data_desfecho_norm = cls._normalizar_timestamp(item.data_desfecho)
+            if data_desfecho_norm:
+                try:
+                    data_julgamento = datetime.strptime(str(data_desfecho_norm)[:10], "%Y-%m-%d").date()
+                except ValueError:
+                    data_julgamento = None
 
         movimentos = "; ".join(m.nome for m in item.movimentos_recentes if m.nome)
         resumo = (
@@ -396,7 +451,7 @@ class DataJudClient:
             "numero_processo": numero_cnj,
             "tema": tema,
             "magistrado": NAO_INFORMADO,
-            "comarca": item.orgao_julgador or NAO_INFORMADO,
+            "comarca": (item.orgao_julgador or NAO_INFORMADO)[:150],
             "autor": NAO_INFORMADO,
             "reu": NAO_INFORMADO,
             "resumo": resumo,

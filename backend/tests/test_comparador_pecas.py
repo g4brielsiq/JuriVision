@@ -522,3 +522,43 @@ def test_comparador_gemini_recupera_de_503_via_modelo_fallback(monkeypatch):
     assert resultado.total_teses == len(resposta.teses)
 
 
+@pytest.mark.parametrize("erro_primario", ["http_404", "read_timeout"])
+def test_comparador_gemini_recupera_de_404_e_timeout_via_fallback(monkeypatch, erro_primario):
+    """
+    Valida que quando o modelo primário retorna HTTP 404 ou sofre ReadTimeout,
+    o GeminiAIAdapter tenta o próximo modelo da cadeia sem perder a análise via Gemini.
+    """
+    inicial = "Em 10/11/2026 ocorreu o inadimplemento."
+    defesa = "A ré confirma a data de 10/11/2026."
+    base = LocalDeterministicFallbackAdapter().comparar_pecas(inicial, defesa)
+    resposta = RespostaComparacaoGemini.model_validate(base.model_dump())
+
+    chamadas: list[str] = []
+
+    def responder(req: httpx.Request) -> httpx.Response:
+        chamadas.append(str(req.url))
+        if len(chamadas) == 1:
+            if erro_primario == "http_404":
+                return httpx.Response(404, json={"error": {"code": 404, "message": "Model not found."}})
+            raise httpx.ReadTimeout("Timeout simulado no modelo primário", request=req)
+        partes = [{"text": resposta.model_dump_json()}]
+        return httpx.Response(200, json={"candidates": [{"content": {"parts": partes}}]})
+
+    transporte = httpx.MockTransport(responder)
+    http_client = httpx.Client
+    monkeypatch.setattr(
+        ai_gateway_module,
+        "settings",
+        replace(ai_gateway_module.settings, GEMINI_API_KEY="chave-ficticia", GEMINI_MODEL="gemini-2.5-flash"),
+    )
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: http_client(transport=transporte, **kwargs))
+
+    resultado = GeminiAIAdapter().comparar_pecas(inicial, defesa, numero_processo="0801111-22.2026.8.02.0001")
+    assert len(chamadas) == 2
+    assert "gemini-2.5-flash" in chamadas[0]
+    assert ai_gateway_module.GEMINI_FALLBACK_MODELS[0] in chamadas[1]
+    assert resultado.motor_analise == "gemini"
+    assert resultado.total_teses == len(resposta.teses)
+
+
+

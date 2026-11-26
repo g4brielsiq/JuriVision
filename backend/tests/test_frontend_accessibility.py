@@ -90,3 +90,41 @@ def test_rnf04_integracao_completa_contratos_api():
     assert "resetarFluxoUpload" in app_code
     assert "setupComparadorInteractions" in app_code
     assert "getAuthHeader" in api_code
+
+
+def test_landing_modulos_em_destaque_e_sem_inline_style():
+    """Verifica que #landing-view expõe os 3 módulos em destaque com tabpanels ARIA e sem style inline."""
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    match = re.search(
+        r'<div id="landing-view".*?(?=<div id="app-shell")',
+        html,
+        flags=re.DOTALL,
+    )
+    assert match is not None, "Bloco #landing-view não encontrado em frontend/index.html"
+    landing_html = match.group(0)
+
+    for module_name in (
+        "Pesquisa Jurisprudencial",
+        "Análise Jurimétrica",
+        "Análise de Previsão",
+    ):
+        assert module_name in landing_html
+
+    for panel_id in ("lp-panel-historico", "lp-panel-dashboard", "lp-panel-upload"):
+        assert f'id="{panel_id}"' in landing_html
+        assert f'aria-controls="{panel_id}"' in landing_html
+
+    assert landing_html.count('role="tabpanel"') == 3
+    assert 'style="' not in landing_html
+    assert 'id="lp-objetivo"' not in landing_html
+    assert "lp-preview-card" not in landing_html
+    assert "lp-hero-pill" not in landing_html
+    assert 'data-lp-register-module="historico"' in landing_html
+    assert 'data-lp-open-module="upload"' in landing_html
+    assert "lp-hero-motion-ribbon" in landing_html
+    assert "lp-hero-scroll-cue" in landing_html
+    assert "lp-section-peek" in landing_html
+    assert "lp-trust-bento" in landing_html
+    assert "lp-redaction-specimen" in landing_html
+    assert "Plano Gratuito" in landing_html
+    assert "Plano Escritório" in landing_html

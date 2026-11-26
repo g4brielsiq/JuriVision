@@ -6,6 +6,7 @@ Rastreabilidade:
 """
 from dataclasses import replace
 from unittest.mock import MagicMock, patch
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -356,3 +357,190 @@ def test_datajud_coleta_lote_com_mock_api_externa(client):
         assert "Não informado pelo DataJud" in item["partes_anonimizadas"]
         assert "***" not in item["partes_anonimizadas"]
         assert item["data_julgamento"] == "2026-10-15"
+
+
+@pytest.mark.parametrize("erro_primario", ["http_404", "read_timeout"])
+def test_gemini_analyze_document_recupera_de_404_e_timeout(erro_primario):
+    """
+    Garante que GeminiAIAdapter.analyze_document tenta os modelos da cadeia de fallback
+    em caso de HTTP 404 ou ReadTimeout e registra em provedor_ia o modelo que respondeu.
+    """
+    GeminiAIAdapter.clear_cache()
+    adapter = GeminiAIAdapter()
+    req = InternalAnalyzeRequest(
+        arquivo_nome=f"fallback_{erro_primario}.pdf",
+        texto_bruto=f"Ação de cobrança indevida ({erro_primario}) com dano moral.",
+        contexto_historico=ContextoHistoricoSchema(),
+    )
+
+    urls_chamadas: list[str] = []
+    ok_res = MagicMock()
+    ok_res.status_code = 200
+    ok_res.json.return_value = {
+        "candidates": [
+            {
+                "content": {
+                    "parts": [
+                        {
+                            "text": (
+                                '{"resumo_nlp": "Cobrança indevida analisada com fallback.", '
+                                '"tese_recomendada": "Art. 42 do CDC.", '
+                                '"probabilidade_ajustada": 0.84, '
+                                '"tendencia_juiz": "Favorável ao consumidor."}'
+                            )
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+
+    def _side_effect(url, *args, **kwargs):
+        urls_chamadas.append(str(url))
+        if len(urls_chamadas) == 1:
+            if erro_primario == "http_404":
+                err_res = MagicMock()
+                err_res.status_code = 404
+                return err_res
+            raise httpx.ReadTimeout("Timeout simulado")
+        return ok_res
+
+    custom_settings = replace(settings, GEMINI_API_KEY="chave-teste-fallback", GEMINI_MODEL="gemini-2.5-flash")
+    with patch.object(gateway_mod, "settings", custom_settings):
+        with patch("httpx.Client.post", side_effect=_side_effect):
+            res = adapter.analyze_document(req)
+
+    assert len(urls_chamadas) == 2
+    assert "gemini-2.5-flash" in urls_chamadas[0]
+    assert gateway_mod.GEMINI_FALLBACK_MODELS[0] in urls_chamadas[1]
+    assert res.analise_preditiva.provedor_ia == f"gemini ({gateway_mod.GEMINI_FALLBACK_MODELS[0]})"
+    assert res.analise_preditiva.probabilidade_deferimento == 0.84
+
+
+def test_gemini_analyze_document_ignora_bloco_thought():
+    """Garante que blocos de raciocínio (thought=True) não quebrem o parsing JSON no RAG."""
+    GeminiAIAdapter.clear_cache()
+    adapter = GeminiAIAdapter()
+    req = InternalAnalyzeRequest(
+        arquivo_nome="thought_part.pdf",
+        texto_bruto="Cancelamento de voo internacional sem assistência material.",
+        contexto_historico=ContextoHistoricoSchema(),
+    )
+
+    mock_res = MagicMock()
+    mock_res.status_code = 200
+    mock_res.json.return_value = {
+        "candidates": [
+            {
+                "content": {
+                    "parts": [
+                        {"text": "Pensando na estrutura jurídica do caso...", "thought": True},
+                        {
+                            "text": (
+                                '{"resumo_nlp": "Síntese válida após bloco thought.", '
+                                '"tese_recomendada": "Art. 14 do CDC e Resolução 400 ANAC.", '
+                                '"probabilidade_ajustada": 0.87, '
+                                '"tendencia_juiz": "Favorável conforme precedentes."}'
+                            )
+                        },
+                    ]
+                }
+            }
+        ]
+    }
+
+    custom_settings = replace(
+        settings,
+        GEMINI_API_KEY="chave-teste-thought",
+        GEMINI_MODEL="gemini-3.5-flash-lite",
+    )
+    with patch.object(gateway_mod, "settings", custom_settings):
+        with patch("httpx.Client.post", return_value=mock_res):
+            res = adapter.analyze_document(req)
+
+    assert res.analise_preditiva.provedor_ia == "gemini (gemini-3.5-flash-lite)"
+    assert res.resumo_nlp == "Síntese válida após bloco thought."
+    assert res.analise_preditiva.probabilidade_deferimento == 0.87
+
+
+def test_datajud_normaliza_timestamps_compactos_e_trunca_orgao():
+    """Valida conversão de YYYYMMDDHHMMSS para ISO e limite de 150 chars em comarca/órgão."""
+    from datetime import date
+
+    orgao_longo = "Foro Regional da Capital - " + ("Vara Especializada de Conflitos " * 6)
+    assert len(orgao_longo) > 150
+
+    parsed = DataJudClient._parse_datajud_source(
+        {
+            "numeroProcesso": "07004828520268020349",
+            "tribunal": "TJAL",
+            "classe": {"codigo": 436, "nome": "Procedimento do Juizado Especial Cível"},
+            "orgaoJulgador": {"codigo": 8215, "nome": orgao_longo},
+            "assuntos": [{"codigo": 10433, "nome": "Indenização por Dano Moral", "principal": True}],
+            "movimentos": [{"codigo": 219, "nome": "Procedência", "dataHora": "20260915143000"}],
+            "dataAjuizamento": "20260602234747",
+            "grau": "JE",
+        },
+        "0700482-85.2026.8.02.0349",
+    )
+
+    assert parsed.data_ajuizamento == "2026-06-02T23:47:47"
+    assert parsed.movimentos_recentes[0].data_hora == "2026-09-15T14:30:00"
+    assert parsed.data_desfecho == "2026-09-15T14:30:00"
+
+    registro = DataJudClient.extrair_registro_para_acervo(parsed)
+    assert registro is not None
+    assert registro["data_julgamento"] == date(2026, 9, 15)
+    assert len(registro["comarca"]) == 150
+
+
+def test_datajud_coleta_lote_fallback_sem_sort_apos_timeout():
+    """
+    Se a coleta em lote com sort sofrer ReadTimeout no Elasticsearch do CNJ,
+    refaz a chamada com track_total_hits=False e sem a chave sort.
+    """
+    import asyncio
+
+    payloads_enviados: list[dict] = []
+    ok_res = MagicMock()
+    ok_res.status_code = 200
+    ok_res.json.return_value = {
+        "hits": {
+            "hits": [
+                {
+                    "_source": {
+                        "numeroProcesso": "07168238920268020058",
+                        "tribunal": "TJAL",
+                        "classe": {"codigo": 7, "nome": "Procedimento Comum Cível"},
+                        "orgaoJulgador": {"nome": "1ª Vara Cível"},
+                        "assuntos": [{"codigo": 10433, "nome": "Indenização por Dano Moral", "principal": True}],
+                        "movimentos": [{"codigo": 219, "nome": "Procedência", "dataHora": "20260930100000"}],
+                        "dataAjuizamento": "20260930233814",
+                    }
+                }
+            ]
+        }
+    }
+
+    async def _fake_post(self_client, url, *args, **kwargs):
+        payload = kwargs.get("json") or {}
+        payloads_enviados.append(payload)
+        if len(payloads_enviados) == 1:
+            raise httpx.ReadTimeout("Timeout com ordenação")
+        return ok_res
+
+    with patch.object(httpx.AsyncClient, "post", autospec=True, side_effect=_fake_post):
+        itens, fonte, motivo = asyncio.run(
+            DataJudClient.coletar_lote_jurisprudencia(tribunal="TJAL", limite=2)
+        )
+
+    assert fonte == "datajud_api"
+    assert motivo is None
+    assert len(itens) == 1
+    assert len(payloads_enviados) == 2
+    assert payloads_enviados[0]["track_total_hits"] is False
+    assert "sort" in payloads_enviados[0]
+    assert payloads_enviados[1]["track_total_hits"] is False
+    assert "sort" not in payloads_enviados[1]
+    assert itens[0].data_ajuizamento == "2026-09-30T23:38:14"
+

@@ -143,7 +143,7 @@ def _standalone_analyze(request: InternalAnalyzeRequest) -> InternalAnalyzeRespo
 
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
     provider_cfg = os.getenv("AI_PROVIDER", "local").strip().lower()
-    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
+    model_name = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite").strip()
 
     if api_key and provider_cfg in ("gemini", "auto", "external"):
         precs_lines = "\n".join(
@@ -155,24 +155,35 @@ def _standalone_analyze(request: InternalAnalyzeRequest) -> InternalAnalyzeRespo
             "e responda em JSON com resumo_nlp, tese_recomendada, probabilidade_ajustada e tendencia_juiz.\n\n"
             f"TEXTO:\n{clean[:3500]}\n\nPRECEDENTES:\n{precs_lines}"
         )
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
         try:
-            with httpx.Client(timeout=float(os.getenv("GEMINI_TIMEOUT_SECONDS", "4.0"))) as client:
+            with httpx.Client(timeout=float(os.getenv("GEMINI_TIMEOUT_SECONDS", "20.0"))) as client:
                 r = client.post(
                     url,
+                    headers={"x-goog-api-key": api_key},
                     json={
                         "contents": [{"parts": [{"text": prompt}]}],
                         "generationConfig": {"temperature": 0.2, "responseMimeType": "application/json"},
                     },
                 )
                 if r.status_code == 200:
-                    text_out = r.json()["candidates"][0]["content"]["parts"][0]["text"]
-                    parsed = json.loads(re.sub(r"^```(?:json)?|```$", "", text_out.strip()).strip())
-                    resumo, _ = _STANDALONE_CPF_RE.subn("[CPF_ANONIMIZADO]", str(parsed.get("resumo_nlp", resumo)))
-                    tese = str(parsed.get("tese_recomendada", tese))
-                    tendencia = str(parsed.get("tendencia_juiz", tendencia))
-                    prob = round(max(min(float(parsed.get("probabilidade_ajustada", prob)), 0.95), 0.15), 2)
-                    provedor = f"gemini ({model_name})"
+                    candidates = r.json().get("candidates", [])
+                    text_out = ""
+                    for cand in candidates:
+                        parts = cand.get("content", {}).get("parts", [])
+                        candidate_text = "".join(
+                            p.get("text", "") for p in parts if not p.get("thought")
+                        ).strip()
+                        if candidate_text:
+                            text_out = candidate_text
+                            break
+                    if text_out:
+                        parsed = json.loads(re.sub(r"^```(?:json)?|```$", "", text_out).strip())
+                        resumo, _ = _STANDALONE_CPF_RE.subn("[CPF_ANONIMIZADO]", str(parsed.get("resumo_nlp", resumo)))
+                        tese = str(parsed.get("tese_recomendada", tese))
+                        tendencia = str(parsed.get("tendencia_juiz", tendencia))
+                        prob = round(max(min(float(parsed.get("probabilidade_ajustada", prob)), 0.95), 0.15), 2)
+                        provedor = f"gemini ({model_name})"
         except Exception as exc:
             logger.info("Gemini indisponível no modo standalone do ai_engine (%s).", exc.__class__.__name__)
 
