@@ -5,6 +5,21 @@
 
 ---
 
+## 🎯 Roadmap de Evolução: Eliminação de Atalhos do MVP rumo ao Produto Real (CONAD / SaaS)
+
+A tabela abaixo ordena todas as frentes de evolução técnica **da mais simples à mais complexa**, rastreando o que ainda era atalho/protótipo no MVP acadêmico e o que já foi convertido em funcionalidade real com testes exaustivos:
+
+| Etapa | Frente / Escopo Técnico | Complexidade | O que Substitui (Atalho / Lacuna Anterior) | Status |
+| :---: | :--- | :---: | :--- | :---: |
+| **1** | **Consistência de Pesquisa, Filtros/Ordenação no Servidor, Exclusão Integrada & PDF Multi-página** | Baixa | Filtro de salvos e ordenação apenas em memória na página atual; seletores de assunto/juiz fixos no HTML; listagem sem `resumo_curto`; rota `DELETE` sem UI; PDF restrito a 1 página. | `[x] CONCLUÍDA` |
+| **2** | **Segurança, JWT Obrigatório e Isolamento Multi-usuário** | Baixa / Média | Rotas de upload/leitura sem verificação de Bearer token e gravação fixa em `usuario_id="usr-01"`, misturando documentos de diferentes usuários. | `[x] CONCLUÍDA` |
+| **3** | **Endurecimento da Barreira LGPD (Regex Expandido & Detecção em Prosa)** | Média | `AnonimizadorLGPD` restrito a CPF, RG rotulado e linha `Autor: Nome`, sem mascarar e-mails, telefones, endereços ou nomes soltos. | `[x] CONCLUÍDA` |
+| **4** | **Motor NLP Local Real e Similaridade Textual (`TF-IDF` / `BM25`)** | Média / Alta | Classificação via 5 `if/else`, resumo pelas 2 primeiras frases, juiz padrão hardcoded (`Dr. Rafael De Amorim`), multiplicador fixo `* 7` e margem fixa `±8%`. | `[x] CONCLUÍDA` |
+| **5** | **RAG Jurídico (Gemini + Precedentes Reais), Cache SHA-256, Extrator PDF e `ai_engine:8001`** | Alta | `ai_engine/worker.py` em `sleep(3600)`, Gemini sem contexto dos julgados do banco e extração restrita a operadores `Tj` simples. | `[x] CONCLUÍDA` |
+| **6** | **Modelo Freemium / Assinaturas, Cache de Demo e Deploy Cloud (CONAD)** | Alta | Plataforma 100% aberta em `localhost` sem planos (`FREE`/`PRO`), cotas de uso ou hospedagem escalável em nuvem. | `[x] CONCLUÍDA` |
+
+---
+
 ## 📌 Padrão de Registro para Novas Entradas
 
 Toda nova modificação deve seguir o modelo abaixo:
@@ -269,33 +284,151 @@ Toda nova modificação deve seguir o modelo abaixo:
 
 ---
 
-### [2026-11-22] — Refinamentos de Precisão Jurídica, Autenticação JWT, Exclusão e Isolamento de Testes
-- **Branch:** `feat/sprint2-backend-precisao-testes`
-- **Autor / Dupla:** Lucas Gabriel e Pedro Henrique (com revisão da Equipe Epsilon)
-- **Pacote da EAP / Requisitos:** EAP 1.3.2 (API REST), EAP 1.4.3 (Predição / Similares), EAP 1.5.1 (Garantia de Qualidade), RF-01, RF-06, RF-08, RN-02
+### [2026-11-21] — Etapa 1: Filtros e Ordenação no Servidor, Exclusão Integrada de Julgados e Relatórios PDF Multi-página
+- **Branch:** `dev` (`VictorSamyr/JuriVision-Pro`)
+- **Autor / Dupla:** Victor Samyr
+- **Pacote da EAP / Requisitos:** Etapa 1 do Roadmap, EAP 1.3.2, EAP 1.3.3, RF-08, RF-09
 - **Resumo da Mudança:**
-  1. **Isolamento do banco de testes (`backend/tests/conftest.py`):** redireciona `engine` e `SessionLocal` para um SQLite temporário isolado por sessão durante o `pytest`, mantendo `jurivision_local.sqlite3` intacto.
-  2. **Mecanismo real de processos semelhantes (`GET /api/v1/processos/{id_processo}/similares` e `_buscar_processos_similares_reais`):** elimina multiplicadores artificiais (`* 7`, `35` e `42`) e pontua precedentes reais da base por correspondência de tema, magistrado, comarca e vocabulário da ementa.
-  3. **Transparência de estimativa na interface (`frontend/src/app.js` e `frontend/index.html`):** remove fallbacks `|| 42` e identifica explicitamente quando o cálculo decorre de estimativa heurística local (`local_heuristic`) vs. análise por IA (`gemini`).
-  4. **Filtros de `comarca` e `tribunal` (`GET /api/v1/processos`):** adiciona filtragem explícita por vara/comarca e sigla/código CNJ do tribunal.
-  5. **Validação de JWT + rota de exclusão (`GET /api/v1/auth/me` e `DELETE /api/v1/processos/{id_processo}`):** rejeita tokens JWT inválidos/adulterados com `HTTP 401`, vincula o advogado autenticado aos processos criados e incorpora o endpoint de exclusão em cascata (`HTTP 204` / `404`).
+  1. **Filtros e Ordenação no Servidor (`backend/app/routers/processos.py`, `backend/app/schemas/contracts.py`):** adicionados os parâmetros `ordenacao` (`recentes`, `antigas`, `assunto`) e `ids` (lista separada por vírgula para "Decisões Salvas") em `GET /api/v1/processos`, retorno de `resumo_curto` real (`resumo_nlp`) nos itens listados e criação do endpoint `GET /api/v1/processos/filtros` com listas distintas e ordenadas de temas, magistrados e comarcas.
+  2. **Relatório PDF Multi-página (`backend/app/routers/relatorios.py`):** `_build_pdf_document` agora pagina automaticamente em blocos de até 45 linhas por página, gerando objetos `/Pages` e `/Page` válidos em PDF 1.4 com rodapé `Pagina X de N`.
+  3. **Integração Front-end (`frontend/src/services/api.js`, `frontend/index.html`, `frontend/src/app.js`):** consumo dinâmico de `/api/v1/processos/filtros`, passagem de `ordenacao` e `ids` para o servidor, correção do *drill-down* por juiz/tema no Dashboard e botão `#btn-excluir-julgado` integrado ao endpoint `DELETE /api/v1/processos/{id_processo}`.
+- **Arquivos Criados / Modificados:**
+  - `backend/app/schemas/contracts.py` e `backend/app/schemas/__init__.py` - Campo `resumo_curto` e schema `FiltrosDisponiveisResponse`.
+  - `backend/app/routers/processos.py` - Ordenação e filtro `ids` no servidor, `resumo_curto` e rota `GET /api/v1/processos/filtros`.
+  - `backend/app/routers/relatorios.py` - Paginação automática multi-página em `_build_pdf_document`.
+  - `frontend/src/services/api.js`, `frontend/index.html` e `frontend/src/app.js` - Integração de filtros dinâmicos, busca/ordenação no servidor e exclusão de julgados.
+  - `backend/tests/test_etapa1_consistencia_e_filtros.py` - Suíte exaustiva com 8 novos testes cobrindo toda a Etapa 1.
 - **Como Testar / Executar Localmente:**
-  - PowerShell: `$env:PYTHONPATH="backend"; pytest backend/tests/ -v` (**37 testes aprovados**).
+  - PowerShell: `$env:PYTHONPATH="backend"; .\.venv\Scripts\pytest backend/tests/ -v` (**41 testes aprovados**).
   - Front-end: `cd frontend; npm run build`.
 
 ---
 
-### [2026-11-22] — Coleta Automática em Lote e Sincronização Idempotente via DataJud (Card #27)
-- **Branch:** `feat/datajud-coleta-automatica`
+### [2026-11-21] — Etapa 2: Segurança JWT, Endpoint `/auth/me` e Isolamento Multi-usuário
+- **Branch:** `dev` (`VictorSamyr/JuriVision-Pro`)
+- **Autor / Dupla:** Victor Samyr
+- **Pacote da EAP / Requisitos:** Etapa 2 do Roadmap, EAP 1.3.2, RF-01, RNF-06 (Segurança / ISO 27001)
+- **Resumo da Mudança:**
+  1. **Validação JWT e Helpers de Isolamento (`backend/app/core/security.py`):** implementados `get_optional_current_user` (Bearer header ou `?token=`), `get_current_user_strict`, `build_processo_visibility_filter`, `can_read_processo` e `ensure_can_modify_processo`. Qualquer token inválido/expirado/malformado retorna `401`.
+  2. **Endpoint `/auth/me` (`backend/app/routers/auth.py`):** nova rota `GET /api/v1/auth/me` protegida por `get_current_user_strict` retornando o perfil do advogado autenticado.
+  3. **Isolamento Multi-usuário nos Routers (`processos.py`, `dashboard.py`, `relatorios.py`):** cada advogado enxerga o acervo público institucional (`usr-01`) mais os seus próprios processos privados; terceiros não veem processos privados de outro advogado (`404` / ocultos na busca, filtros e dashboard) e recebem `403` ao tentar alterar ou excluir registros do acervo público base.
+  4. **Sessão e Logout no Front-end (`api.js`, `index.html`, `app.js`):** restauração automática da sessão via `/auth/me`, propagação segura de `?token=` na exportação de PDF em nova aba, atualização automática dos painéis após login e botão `#btn-logout-account` (*Encerrar sessão atual*).
+- **Arquivos Criados / Modificados:**
+  - `backend/app/core/security.py` - Dependências JWT e isolamento de acesso.
+  - `backend/app/routers/auth.py` - Endpoint `GET /api/v1/auth/me`.
+  - `backend/app/routers/processos.py`, `backend/app/routers/dashboard.py`, `backend/app/routers/relatorios.py` - Aplicação das regras de visibilidade e propriedade.
+  - `frontend/src/services/api.js`, `frontend/index.html`, `frontend/src/app.js` - Restauração de sessão, token no download de PDF e logout.
+  - `backend/tests/test_etapa2_seguranca_e_isolamento.py` - Suíte exaustiva com 7 novos testes cobrindo JWT, `/auth/me` e isolamento multi-usuário.
+- **Como Testar / Executar Localmente:**
+  - PowerShell: `$env:PYTHONPATH="backend"; .\.venv\Scripts\pytest backend/tests/ -v` (**48 testes aprovados**).
+  - Front-end: `cd frontend; npm run build`.
+
+---
+
+### [2026-11-21] — Etapa 3: Endurecimento da Barreira LGPD (`AnonimizadorLGPD` Expandido e Detecção em Prosa)
+- **Branch:** `dev` (`VictorSamyr/JuriVision-Pro`)
+- **Autor / Dupla:** Victor Samyr
+- **Pacote da EAP / Requisitos:** Etapa 3 do Roadmap, EAP 1.4.1, RF-04, RN-01, RNF-06 (LGPD Art. 12)
+- **Resumo da Mudança:**
+  1. **Detecção Expandida de PII (`backend/app/core/ai_gateway.py`):** adicionadas expressões auditáveis para e-mails (`EMAIL_REGEX`), telefones/WhatsApp (`PHONE_REGEX`), CEPs (`CEP_REGEX`), documentos extras (`DOC_EXTRA_REGEX` — CNH, CTPS, PIS/PASEP, Passaporte, Título de Eleitor, CNS) e endereços (`ADDRESS_REGEX`), preservando números CNJ sem colisões.
+  2. **Detecção de Nomes em Prosa e Variações (`AnonimizadorLGPD`):** suporte a papéis processuais sem dois-pontos (`Autora Maria Clara...`), locuções jurídicas (`movida por`, `ajuizada por`, `em face de`, `contra`), qualificação civil antes de vírgula (`..., brasileiro, casado, inscrito no CPF`), variações parciais (`Sr./Sra. + sobrenome`, prenome composto e sobrenome isolado de partes conhecidas) e extração de partes em prosa (`extract_parties_from_text`).
+  3. **Zero Falso Positivo:** `CORPORATE_REGEX` com fronteiras de palavra (`\b`) e `LEGAL_AND_GEO_STOPWORDS` + `GEO_PHRASES` preservam 100% de empresas, órgãos públicos, magistrados e institutos jurídicos.
+- **Arquivos Criados / Modificados:**
+  - `backend/app/core/ai_gateway.py` - Endurecimento completo de `AnonimizadorLGPD` e integração em `LocalDeterministicFallbackAdapter`.
+  - `backend/tests/test_etapa3_barreira_lgpd_expandida.py` - Suíte exaustiva com 6 novos testes cobrindo todos os vetores de PII e zero falsos positivos.
+- **Como Testar / Executar Localmente:**
+  - PowerShell: `$env:PYTHONPATH="backend"; .\.venv\Scripts\pytest backend/tests/ -v` (**54 testes aprovados**).
+  - Front-end: `cd frontend; npm run build`.
+
+---
+
+### [2026-11-21] — Etapa 4: Motor NLP Local Real (`TF-IDF` / `BM25`), Extração Dinâmica e Intervalo de Wilson
+- **Branch:** `dev` (`VictorSamyr/JuriVision-Pro`)
+- **Autor / Dupla:** Victor Samyr
+- **Pacote da EAP / Requisitos:** Etapa 4 do Roadmap, EAP 1.4.3, RF-05, RF-06, RN-02, RN-03
+- **Resumo da Mudança:**
+  1. **Motor Matemático de NLP (`backend/app/core/nlp_engine.py`):** implementados tokenização com n-gramas jurídicos (`tokenize_legal_text`), classificação multi-tema por pontuação léxica ponderada (`classify_legal_theme` em 7 áreas jurídicas), extração dinâmica de qualquer magistrado e comarca/vara (`extract_court_and_judge`), sumarização extrativa por centralidade TF-IDF ignorando cabeçalhos formais (`summarize_legal_text`), ranqueamento de precedentes por Similaridade de Cosseno TF-IDF + Okapi BM25 (`rank_similar_precedents`) e cálculo de margem estatística real pelo Intervalo de Wilson (`compute_wilson_margin`).
+  2. **Contratos e Fluxos Integrados (`contracts.py`, `ai_gateway.py`, `processos.py`):** `LocalDeterministicFallbackAdapter`, `_compute_historical_context`, `_estimar_analise_preditiva` e importação em lote CSV passaram a cruzar o acervo real visível sem o multiplicador artificial `* 7`, sem margem estática `0.08` e sem o juiz padrão hardcoded `Dr. Rafael De Amorim`.
+- **Arquivos Criados / Modificados:**
+  - `backend/app/core/nlp_engine.py` - Novo motor NLP e estatístico local.
+  - `backend/app/schemas/contracts.py` e `backend/app/schemas/__init__.py` - `PrecedenteSimilarSchema` e expansão retrocompatível de `ContextoHistoricoSchema`.
+  - `backend/app/core/ai_gateway.py` e `backend/app/routers/processos.py` - Integração completa em upload PDF, CSV e cadastro/edição manual.
+  - `backend/tests/test_etapa4_nlp_e_similaridade.py` - Suíte exaustiva com 6 novos testes validando TF-IDF/BM25, extração dinâmica, sumarização, Wilson e fluxos da API.
+- **Como Testar / Executar Localmente:**
+  - PowerShell: `$env:PYTHONPATH="backend"; .\.venv\Scripts\pytest backend/tests/ -v` (**60 testes aprovados**).
+  - Front-end: `cd frontend; npm run build`.
+
+---
+
+### [2026-11-21] — Etapa 5: RAG Jurídico (Gemini + Precedentes Reais), Cache SHA-256, Extrator PDF Expandido e Microsserviço `ai_engine:8001`
+- **Branch:** `dev` (`VictorSamyr/JuriVision-Pro`)
+- **Autor / Dupla:** Victor Samyr
+- **Pacote da EAP / Requisitos:** Etapa 5 do Roadmap, EAP 1.4.3, RF-02, RF-05, RF-06, ADR-001, ADR-002
+- **Resumo da Mudança:**
+  1. **RAG Jurídico com Precedentes Reais (`backend/app/core/nlp_engine.py`, `backend/app/core/ai_gateway.py`):** criação de `build_rag_precedents_context` e `synthesize_local_rag_tendencia`. O `GeminiAIAdapter` passa a injetar no prompt os Top-5 precedentes similares recuperados via `TF-IDF + BM25` (CNJs, resultados históricos, prazos, teses e Intervalo de Wilson) sempre após a barreira `AnonimizadorLGPD`; no modo offline, `LocalDeterministicFallbackAdapter` também referencia os Top-3 precedentes similares na tendência de julgamento.
+  2. **Cache Persistente em Memória SHA-256 (`GeminiAIAdapter`):** deduplicação por hash `SHA-256(modelo + texto_higienizado + contexto_rag)` com limite FIFO de 256 entradas, evitando chamadas repetidas ao Gemini para análises equivalentes.
+  3. **Extrator Documental PDF Expandido (`ExtratorDocumental`):** suporte adicional a arrays de texto `[(...)] TJ`, metadados `/ActualText` e `/Contents` e descompressão automática de streams `FlateDecode` via `zlib`.
+  4. **Ativação do Microsserviço HTTP `ai_engine:8001` (`ai_engine/worker.py`, `ai_engine/requirements.txt`):** servidor FastAPI/Uvicorn real expondo `GET /health` e `POST /internal/v1/analyze` com suporte ao núcleo do monorepo ou fallback standalone e sanitização LGPD na ida e na volta do `ResilientAIGateway`.
+  5. **Planejamento Futuro Multi-Provedor (`ARCHITECTURE.md` — ADR-002):** documentada a expansão futura sobre `AIGatewayPort` para adaptadores **Ollama / OpenAI-API** (`OllamaAIAdapter` / `OpenAICompatibleAdapter` para modelos *self-hosted* como `Qwen 2.5` e `Llama 3.1`), mantendo o foco prático atual em **Gemini RAG + Motor Estatístico Local**.
+- **Arquivos Criados / Modificados:**
+  - `backend/app/core/nlp_engine.py` - Funções `build_rag_precedents_context` e `synthesize_local_rag_tendencia`.
+  - `backend/app/core/ai_gateway.py` - `ExtratorDocumental` expandido, RAG Jurídico com cache SHA-256 no `GeminiAIAdapter`, síntese RAG local e sanitização completa de saída no `ResilientAIGateway`.
+  - `ai_engine/worker.py` e `ai_engine/requirements.txt` - Microsserviço FastAPI HTTP funcional na porta `8001`.
+  - `ARCHITECTURE.md` - Atualização da `ADR-002` com RAG Jurídico e roadmap arquitetural multi-provedor.
+  - `backend/tests/test_etapa5_rag_e_ai_engine.py` - Suíte exaustiva com 6 novos testes cobrindo RAG, cache SHA-256, `ai_engine:8001`, streams PDF e fluxo E2E de upload.
+- **Como Testar / Executar Localmente:**
+  - PowerShell: `$env:PYTHONPATH="backend"; .\.venv\Scripts\pytest backend/tests/ -v` (**66 testes aprovados**).
+  - Front-end: `cd frontend; npm run build`.
+
+---
+
+### [2026-11-21] — Etapa 6: Modelo Freemium / Assinaturas (`FREE` vs `PRO`), Controle de Cotas, Paywall CONAD e Deploy Cloud
+- **Branch:** `dev` (`VictorSamyr/JuriVision-Pro`)
+- **Autor / Dupla:** Victor Samyr
+- **Pacote da EAP / Requisitos:** Etapa 6 do Roadmap (6/6 concluídas), RF-01, RF-02, RF-03, RF-09, CONAD Showcase
+- **Resumo da Mudança:**
+  1. **Persistência e Migração Freemium (`entities.py`, `main.py`, `seed.py`, `config.py`):** adicionadas as colunas `plano` (`"FREE"` | `"PRO"`) e `analises_realizadas` na entidade `Usuario`, migração `ALTER TABLE` automática e idempotente para bancos já inicializados e plano `PRO` garantido para o usuário institucional padrão `usr-01`.
+  2. **Contratos e Controle de Cotas (`contracts.py`, `auth.py`, `processos.py`):** criação dos endpoints `GET /api/v1/auth/plano` e `POST /api/v1/auth/plano/upgrade`; enforcement da cota `FREE_PLAN_PDF_LIMIT = 3` em `POST /api/v1/processos/upload-pdf` (retornando `HTTP 402 Payment Required` na 4ª análise) e bloqueio do lote CSV (`POST /api/v1/processos/upload-csv`) para usuários `FREE`.
+  3. **Experiência Freemium e Modal CONAD no Front-end (`api.js`, `index.html`, `design-tokens.css`, `app.js`):** indicador interativo `#plan-status-badge`, ocultação visual com *blur* e CTA `#btn-unlock-thesis-pro` sobre a Tese Estratégica no plano `FREE`, modal `#upgrade-modal` com comparativo `FREE` vs `PRO (Cortesia CONAD 2026)` e abertura automática em respostas `HTTP 402`.
+  4. **Preparação de Deploy Cloud (`Dockerfile`, `render.yaml`, `.env.example`, `main.py`):** suporte a `SERVE_FRONTEND_STATIC=true` montando `frontend/dist` no FastAPI, resolução dinâmica de `VITE_API_BASE_URL` / mesma origem no front-end, `Dockerfile` multi-stage na raiz (Google Cloud Run / Render) e blueprint `render.yaml`.
+- **Arquivos Criados / Modificados:**
+  - `backend/app/core/config.py`, `backend/app/models/entities.py`, `backend/app/core/seed.py`, `backend/app/main.py` - Configurações Freemium/static, colunas na tabela `usuarios`, migração idempotente e mount de SPA.
+  - `backend/app/schemas/contracts.py`, `backend/app/schemas/__init__.py`, `backend/app/routers/auth.py`, `backend/app/routers/processos.py` - Rotas de assinatura e enforcement de cotas `HTTP 402`.
+  - `frontend/src/services/api.js`, `frontend/index.html`, `frontend/src/components/design-tokens.css`, `frontend/src/app.js` - Paywall, blur de tese, badge de cota e modal de upgrade.
+  - `Dockerfile`, `render.yaml`, `.env.example` - Artefatos de deploy em nuvem e novas variáveis de ambiente.
+  - `backend/tests/test_etapa6_freemium_e_cloud.py` - Suíte exaustiva com 6 novos testes cobrindo cotas `FREE`, bloqueios `HTTP 402`, upgrade `PRO`, integração front-end e deploy cloud.
+- **Como Testar / Executar Localmente:**
+  - PowerShell: `$env:PYTHONPATH="backend"; .\.venv\Scripts\pytest backend/tests/ -v` (**72 testes aprovados**).
+  - Front-end: `cd frontend; npm run build`.
+
+---
+
+### [2026-11-22] — Refinamentos de Precisão Jurídica, Autenticação JWT, Exclusão e Isolamento de Testes (PR #12 `origin/dev`)
+- **Branch:** `feat/sprint2-backend-precisao-testes` (sincronizada em `pro/dev`)
+- **Autor / Dupla:** Lucas Gabriel e Pedro Henrique (com revisão da Equipe Epsilon)
+- **Pacote da EAP / Requisitos:** EAP 1.3.2 (API REST), EAP 1.4.3 (Predição / Similares), EAP 1.5.1 (Garantia de Qualidade), RF-01, RF-06, RF-08, RN-02
+- **Resumo da Mudança:**
+  1. **Isolamento do banco de testes (`backend/tests/conftest.py`):** redireciona `engine` e `SessionLocal` para um SQLite temporário isolado por sessão durante o `pytest`, mantendo `jurivision_local.sqlite3` intacto.
+  2. **Endpoint `GET /api/v1/processos/{id_processo}/similares`:** na integração com o `JuriVision-Pro`, utiliza diretamente o motor `TF-IDF + Okapi BM25` (`rank_similar_precedents`) respeitando o isolamento multi-usuário.
+  3. **Transparência de estimativa na interface (`frontend/src/app.js` e `frontend/index.html`):** remove fallbacks `|| 42` e identifica explicitamente o método de análise utilizado (`Estimativa Heurística Local` vs. `Análise por IA`).
+  4. **Filtros de `comarca` e `tribunal` (`GET /api/v1/processos`):** adiciona filtragem explícita por vara/comarca e sigla/código CNJ do tribunal.
+- **Como Testar / Executar Localmente:**
+  - PowerShell: `$env:PYTHONPATH="backend"; pytest backend/tests/ -v` (**37 testes na `origin/dev`**).
+  - Front-end: `cd frontend; npm run build`.
+
+---
+
+### [2026-11-22] — Coleta Automática em Lote e Sincronização Idempotente via DataJud (PR #13 `origin/dev` — Card #27)
+- **Branch:** `feat/datajud-coleta-automatica` (sincronizada em `pro/dev`)
 - **Autor / Dupla:** Lucas Gabriel
 - **Pacote da EAP / Requisitos:** EAP 1.4.2 (Integração com Base de Conhecimento Jurisprudencial), RF-08 (Consulta Jurisprudencial), RNF-05 (Tolerância a Falhas), RNF-06 / RN-01 (Barreira LGPD)
 - **Resumo da Mudança:**
   1. **Coleta em lote no `DataJudClient` (`backend/app/core/datajud_client.py`):** adicionados `coletar_lote_jurisprudencia()`, `resolve_alias_por_sigla()`, `formatar_numero_cnj()`, `_gerar_lote_fallback_jurisprudencia()` e `extrair_registro_para_acervo()`, permitindo coletar múltiplos processos e jurisprudências por tribunal e assunto na API Pública do DataJud (CNJ) com fallback resiliente.
-  2. **Rotina de sincronização e atualização da base (`POST /api/v1/processos/datajud/sincronizar` em `backend/app/routers/processos.py`):** higieniza partes e ementas coletadas com `AnonimizadorLGPD` (`RN-01`), registra `LogAuditoriaLGPD`, calcula `AnalisePreditiva` sobre a base histórica e atualiza ou insere processos de forma idempotente (`origem_ingestao="DATAJUD"`).
-  3. **Integração Front-end (`frontend/index.html`, `frontend/src/services/api.js`, `frontend/src/app.js`):** adicionada a ação **"Sincronizar lote DataJud"** na barra secundária da Pesquisa de Precedentes (`#panel-historico`), atualizando a listagem e os indicadores do dashboard em tempo real.
+  2. **Rotina de sincronização e atualização da base (`POST /api/v1/processos/datajud/sincronizar` em `backend/app/routers/processos.py`):** higieniza partes e ementas coletadas com `AnonimizadorLGPD` (`RN-01`), registra `LogAuditoriaLGPD`, calcula `AnalisePreditiva` com o motor `TF-IDF/BM25` respeitando o isolamento multi-usuário e atualiza ou insere processos de forma idempotente (`origem_ingestao="DATAJUD"`).
+  3. **Integração Front-end (`frontend/index.html`, `frontend/src/services/api.js`, `frontend/src/app.js`):** adicionada a ação **"Sincronizar lote DataJud"** (`#btn-sincronizar-datajud`) na barra secundária da Pesquisa de Precedentes (`#panel-historico`), atualizando filtros, listagem e indicadores do dashboard em tempo real.
   4. **Testes automatizados (`backend/tests/test_datajud_and_gemini.py`):** adicionados testes de coleta em lote com mock da API externa do CNJ, fallback offline, anonimização LGPD e idempotência de sincronização.
 - **Como Testar / Executar Localmente:**
-  - PowerShell: `$env:PYTHONPATH="backend"; pytest backend/tests/ -v` (**39 testes aprovados**).
+  - PowerShell: `$env:PYTHONPATH="backend"; .\.venv\Scripts\pytest backend/tests/ -v` (**78 testes aprovados após sincronização com `JuriVision-Pro`**).
   - Front-end: `cd frontend; npm run build`.
 
 ---

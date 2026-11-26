@@ -14,11 +14,28 @@ import logging
 import re
 from typing import Callable, Optional, Tuple
 import uuid
+import zlib
 
 import httpx
 from pypdf import PdfReader
 
 from app.core.config import settings
+from app.core.nlp_engine import (
+    build_rag_precedents_context,
+    compute_wilson_margin,
+    extract_court_and_judge,
+    synthesize_local_rag_tendencia,
+)
+from app.core.nlp_processual import (
+    NAO_IDENTIFICADA,
+    NAO_IDENTIFICADO,
+    ClassificadorAssunto,
+    ExtratorCaracteristicas,
+    ExtratorInformacoesProcessuais,
+    GeradorResumo,
+    LimpadorTexto,
+    sem_acento,
+)
 from app.schemas.comparacao import (
     PontoControvertido,
     RespostaComparacaoGemini,
@@ -37,22 +54,33 @@ from app.schemas.contracts import (
     SecoesPeticaoSchema,
 )
 
-from app.core.nlp_processual import (
-    NAO_IDENTIFICADO,
-    ClassificadorAssunto,
-    ExtratorCaracteristicas,
-    ExtratorInformacoesProcessuais,
-    GeradorResumo,
-    LimpadorTexto,
-    sem_acento,
-)
-
 logger = logging.getLogger("jurivision.ai_gateway")
+
+PLACEHOLDER_VALUE_REGEX = re.compile(
+    r"(?i)^(?:n[ãa]o\s+(?:informad[oa]|identificad[oa]|especificad[oa])|magistrado\s+n[ãa]o\s+especificado)\b"
+)
 
 # Expressões Regulares Auditáveis para Proteção de Dados Pessoais (LGPD - RF-04 / RN-01)
 CPF_REGEX = re.compile(r"\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b")
 RG_LABELED_REGEX = re.compile(
     r"(?i)\b(?:RG|Identidade)\s*[:nº°.-]*\s*(\d{1,2}\.?\d{3}\.?\d{3}-?[\dXx]|\d{6,10})\b"
+)
+EMAIL_REGEX = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+PHONE_REGEX = re.compile(
+    r"(?i)(?:\+55\s*\(?\d{2}\)?\s*9?\d{4}[-\s]?\d{4}\b|\(\d{2}\)\s*9?\d{4}[-\s]?\d{4}\b"
+    r"|\b(?:tel(?:efone)?|cel(?:ular)?|whatsapp|fone)\s*[:nº°.-]*\s*(?:\+55\s*)?\(?\d{2}\)?\s*9?\d{4}[-\s]?\d{4}\b"
+    r"|\b\d{2}\s+9\d{4}-\d{4}\b)"
+)
+CEP_REGEX = re.compile(r"(?i)(?:\bCEP\s*[:nº°.-]*\s*\d{2}\.?\d{3}-\d{3}\b|(?<!\d)\b\d{5}-\d{3}\b(?!\.\d))")
+DOC_EXTRA_REGEX = re.compile(
+    r"(?i)\b(?:CNH|CTPS|PIS(?:/PASEP)?|PASEP|Passaporte|T[íi]tulo\s+de\s+Eleitor|Cart[ãa]o\s+(?:do\s+)?SUS|CNS)"
+    r"\s*[:nº°.-]*\s*(?:[A-Z]{2})?\d(?:[\d./-]|\s(?=\d)){4,19}\d\b"
+)
+ADDRESS_REGEX = re.compile(
+    r"(?i)(?:\b(?:residente\s+e\s+domiciliad[oa]\s+(?:na|no|à|em)|domiciliad[oa]\s+(?:na|no|à|em)|endere[çc]o\s*[:.-]+)"
+    r"\s*(?:Rua|Avenida|Av\.|Travessa|Alameda|Pra[çc]a|Rodovia|Estrada|Condom[íi]nio|Loteamento)\s+[^\n\r.;\[]+"
+    r"|\b(?:Rua|Avenida|Av\.|Travessa|Alameda)\s+[A-ZÀ-Ú][A-Za-zÀ-ú0-9\s]{2,45},\s*(?:n[º°.]?\s*)?\d{1,5}"
+    r"(?:\s*,\s*(?:apto\.?|apartamento|bloco|casa|sala)\s*[A-Za-z0-9-]+)?)"
 )
 CNJ_REGEX = re.compile(r"\b\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}\b")
 
@@ -60,21 +88,70 @@ CORPORATE_KEYWORDS = (
     "s.a",
     "s/a",
     "ltda",
+    "me",
+    "epp",
+    "eireli",
     "companhia",
     "cia",
     "banco",
     "unimed",
+    "hapvida",
+    "equatorial",
+    "casal",
+    "telefônica",
+    "telefonica",
+    "vivo",
+    "claro",
+    "tim",
+    "magazine",
+    "mercadolivre",
+    "mercado livre",
     "hospital",
     "clínica",
     "clinica",
     "linhas",
     "aérea",
     "aerea",
+    "transportes",
+    "operadora",
+    "cooperativa",
     "empresa",
     "comércio",
     "comercio",
     "serviços",
     "servicos",
+    "instituição",
+    "instituicao",
+    "financeira",
+    "seguradora",
+    "construtora",
+    "supermercado",
+    "farmácia",
+    "farmacia",
+    "faculdade",
+    "universidade",
+    "instituto",
+    "fundação",
+    "fundacao",
+    "associação",
+    "associacao",
+    "sindicato",
+    "prefeitura",
+    "secretaria",
+    "ministério",
+    "ministerio",
+    "autarquia",
+    "anac",
+    "ans",
+    "anatel",
+    "aneel",
+    "anvisa",
+    "procon",
+    "detran",
+    "nubank",
+    "softwares",
+    "tecnologia",
+    "consultoria",
     "estado",
     "município",
     "municipio",
@@ -92,17 +169,237 @@ CORPORATE_KEYWORDS = (
     "azul",
 )
 
+CORPORATE_REGEX = re.compile(
+    r"(?i)(?:^|[\s,./(-])(?:"
+    + "|".join(re.escape(kw) for kw in CORPORATE_KEYWORDS)
+    + r")(?=$|[\s,.)/-])"
+)
+
+LEGAL_AND_GEO_STOPWORDS = {
+    "código",
+    "codigo",
+    "defesa",
+    "consumidor",
+    "civil",
+    "processo",
+    "processual",
+    "penal",
+    "trabalho",
+    "trabalhista",
+    "tributário",
+    "tributario",
+    "constituição",
+    "constituicao",
+    "federal",
+    "estadual",
+    "municipal",
+    "súmula",
+    "sumula",
+    "tema",
+    "artigo",
+    "lei",
+    "decreto",
+    "resolução",
+    "resolucao",
+    "vara",
+    "cível",
+    "civel",
+    "comarca",
+    "tribunal",
+    "justiça",
+    "justica",
+    "superior",
+    "supremo",
+    "regional",
+    "turma",
+    "câmara",
+    "camara",
+    "seção",
+    "secao",
+    "juizado",
+    "especial",
+    "maceió",
+    "maceio",
+    "arapiraca",
+    "penedo",
+    "alagoas",
+    "brasil",
+    "brasília",
+    "brasilia",
+    "dano",
+    "moral",
+    "material",
+    "indenização",
+    "indenizacao",
+    "reparação",
+    "reparacao",
+    "obrigação",
+    "obrigacao",
+    "tutela",
+    "urgência",
+    "urgencia",
+    "atraso",
+    "voo",
+    "plano",
+    "saúde",
+    "saude",
+    "horas",
+    "extras",
+    "rescisão",
+    "rescisao",
+    "contrato",
+    "ação",
+    "acao",
+    "declaratória",
+    "declaratoria",
+    "inexistência",
+    "inexistencia",
+    "débito",
+    "debito",
+    "procedente",
+    "improcedente",
+    "acordo",
+    "sentença",
+    "sentenca",
+    "acórdão",
+    "acordao",
+    "decisão",
+    "decisao",
+    "julgamento",
+    "síntese",
+    "sintese",
+    "factual",
+    "direito",
+    "juiz",
+    "juíza",
+    "juiza",
+    "magistrado",
+    "magistrada",
+    "desembargador",
+    "desembargadora",
+    "ministro",
+    "ministra",
+    "relator",
+    "relatora",
+    "dr",
+    "dra",
+    "exmo",
+    "exma",
+    "excelentíssimo",
+    "excelentissimo",
+    "senhor",
+    "senhora",
+    "autor",
+    "autora",
+    "requerente",
+    "reclamante",
+    "réu",
+    "reu",
+    "ré",
+    "re",
+    "requerido",
+    "requerida",
+    "reclamado",
+    "reclamada",
+    "executado",
+    "executada",
+    "exequente",
+    "paciente",
+    "impetrante",
+    "testemunha",
+    "vítima",
+    "vitima",
+    "brasileiro",
+    "brasileira",
+    "casado",
+    "casada",
+    "solteiro",
+    "solteira",
+    "divorciado",
+    "divorciada",
+    "viúvo",
+    "viúva",
+    "residente",
+    "domiciliado",
+    "domiciliada",
+    "portador",
+    "portadora",
+    "inscrito",
+    "inscrita",
+}
+
+GEO_PHRASES = (
+    "são paulo",
+    "sao paulo",
+    "rio de janeiro",
+    "rio largo",
+    "belo horizonte",
+    "porto alegre",
+    "santa catarina",
+    "minas gerais",
+    "mato grosso",
+    "espírito santo",
+    "espirito santo",
+    "distrito federal",
+)
+
 
 class AnonimizadorLGPD:
     """
     Motor determinístico local de higienização de Dados Pessoais (PII) em conformidade com a LGPD.
-    Cumpre o invariante RN-01: nenhum CPF, RG ou nome real de pessoa física transpõe esta barreira.
+    Cumpre o invariante RN-01: nenhum CPF, RG, e-mail, telefone, endereço ou nome real de pessoa
+    física transpõe esta barreira.
     """
 
     @staticmethod
     def is_corporate_entity(name: str) -> bool:
-        lower = name.lower()
-        return any(kw in lower for kw in CORPORATE_KEYWORDS)
+        if not name:
+            return False
+        return bool(CORPORATE_REGEX.search(name))
+
+    @classmethod
+    def _clean_candidate_person_name(cls, candidate: str) -> str:
+        """
+        Valida e limpa candidato a nome de pessoa física capturado em prosa jurídica,
+        interrompendo antes de termos jurídicos/geográficos e evitando falsos positivos.
+        """
+        cleaned = " ".join((candidate or "").strip(" ,.;:-").split())
+        if not cleaned or cls.is_corporate_entity(cleaned):
+            return ""
+        lower_full = cleaned.lower()
+        if any(phrase in lower_full for phrase in GEO_PHRASES):
+            return ""
+
+        prepositions = {"de", "da", "do", "das", "dos", "e"}
+        raw_tokens = cleaned.split()
+        kept: list[str] = []
+        for tok in raw_tokens:
+            low = tok.lower().strip(".,;:")
+            if low in LEGAL_AND_GEO_STOPWORDS:
+                break
+            if low in prepositions:
+                kept.append(tok)
+                continue
+            if not re.match(r"^[A-ZÀ-Ú][a-zà-ú'-]{1,}$", tok):
+                break
+            kept.append(tok)
+
+        while kept and kept[-1].lower() in prepositions:
+            kept.pop()
+
+        significant = [t for t in kept if t.lower() not in prepositions]
+        if len(significant) < 2:
+            return ""
+
+        result = " ".join(kept)
+        if cls.is_corporate_entity(result):
+            return ""
+        return result
+
+    @classmethod
+    def _is_followed_by_corporate_suffix(cls, text: str, end_pos: int) -> bool:
+        tail = text[end_pos : end_pos + 30].lstrip(" ,.-")
+        return bool(re.match(r"(?i)^(?:S\.?A\.?|S/A|LTDA\.?|ME|EPP|EIRELI)\b", tail))
 
     @classmethod
     def mask_party_name(cls, raw_name: str) -> Tuple[str, bool]:
@@ -114,6 +411,8 @@ class AnonimizadorLGPD:
         cleaned = " ".join(raw_name.strip().split())
         if not cleaned:
             return "Parte Anonimizada ***", True
+        if cls.is_placeholder_value(cleaned):
+            return cleaned, False
 
         # Se já estiver mascarado, mantém e contabiliza como verificado
         if "***" in cleaned or "[NOME_ANONIMIZADO]" in cleaned:
@@ -139,51 +438,222 @@ class AnonimizadorLGPD:
         return f"{first_name} {second_initial}. ***", True
 
     @classmethod
+    def extract_parties_from_text(cls, raw_text: str) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Extrai Autor e Réu de cabeçalhos explícitos ou de construções em prosa jurídica.
+        Retorna None para a parte não encontrada (nenhum nome é inventado).
+        """
+        autor_match = re.search(
+            r"(?i)\b(?:Autor(?:a)?|Requerente|Reclamante)\s*:\s*([^\n\r,;]{3,60})", raw_text
+        )
+        if autor_match:
+            raw_autor = autor_match.group(1).strip()
+        else:
+            prose_autor = re.search(
+                r"(?i:\b(?:Autor(?:a)?|Requerente|Reclamante|Impetrante|Exequente)\s+"
+                r"|movid[oa]\s+por\s+|ajuizad[oa]\s+por\s+|propost[oa]\s+por\s+|promovid[oa]\s+por\s+)"
+                r"([A-ZÀ-Ú][a-zà-ú]{1,25}(?:\s+(?:de|da|do|das|dos|e)\s+[A-ZÀ-Ú][a-zà-ú]{1,25}|\s+[A-ZÀ-Ú][a-zà-ú]{1,25}){1,4})",
+                raw_text,
+            )
+            cleaned_autor = cls._clean_candidate_person_name(prose_autor.group(1)) if prose_autor else ""
+            raw_autor = cleaned_autor or None
+
+        reu_match = re.search(
+            r"(?i)\b(?:R[ée]u|R[ée]|Requerid[oa]|Reclamad[oa])\s*:\s*([^\n\r,;]{3,60})", raw_text
+        )
+        if reu_match:
+            raw_reu = reu_match.group(1).strip()
+        else:
+            prose_reu = re.search(
+                r"(?i:\bem[ \t]+face[ \t]+de[ \t]+|\bem[ \t]+desfavor[ \t]+de[ \t]+|\bcontra[ \t]+"
+                r"|\bR[ée]u[ \t]+|\bR[ée][ \t]+|\bRequerid[oa][ \t]+|\bReclamad[oa][ \t]+)"
+                r"([A-ZÀ-Ú][A-Za-zÀ-ú0-9.&/-]*(?:[ \t]+(?:de|da|do|das|dos|e|[A-ZÀ-Ú][A-Za-zÀ-ú0-9.&/-]*)){1,5})",
+                raw_text,
+            )
+            if prose_reu:
+                raw_cand_reu = prose_reu.group(1).strip(" ,;:")
+                corp_end = re.search(r"(?i)\b(?:S\.?A\.?|S/A|LTDA\.?|EIRELI)(?:\.|$)", raw_cand_reu)
+                if corp_end:
+                    candidate_reu = raw_cand_reu[: corp_end.end()].strip(" ,;:")
+                else:
+                    candidate_reu = raw_cand_reu.strip(" ,.;:")
+                if cls.is_corporate_entity(candidate_reu) or cls._is_followed_by_corporate_suffix(
+                    raw_text, prose_reu.end()
+                ):
+                    raw_reu = candidate_reu
+                else:
+                    cleaned_reu = cls._clean_candidate_person_name(candidate_reu)
+                    raw_reu = cleaned_reu or None
+            else:
+                raw_reu = None
+
+        return raw_autor, raw_reu
+
+    @staticmethod
+    def is_placeholder_value(value: str) -> bool:
+        """Marcadores de campo vazio ("Não informado pelo DataJud", "Não identificado") não são nomes de pessoas."""
+        return bool(PLACEHOLDER_VALUE_REGEX.match((value or "").strip()))
+
+    @classmethod
     def sanitize_text(cls, raw_text: str, known_natural_names: list[str] | None = None) -> Tuple[str, int, int]:
         """
-        Varre um texto jurídico bruto e substitui CPFs, RGs e nomes de pessoas físicas.
-        Retorna: (texto_higienizado, total_cpfs_rgs_mascarados, total_nomes_mascarados)
+        Varre um texto jurídico bruto e substitui documentos civis (RG, CNH/CTPS/PIS, CPF),
+        e-mails, telefones, CEPs, endereços e nomes de pessoas físicas (em cabeçalhos e prosa).
+        Retorna: (texto_higienizado, total_identificadores_mascarados, total_nomes_mascarados)
         """
         if not raw_text:
             return "", 0, 0
+        if known_natural_names:
+            known_natural_names = [n for n in known_natural_names if n and not cls.is_placeholder_value(n)]
 
-        sanitized, cpf_count = CPF_REGEX.subn("[CPF_ANONIMIZADO]", raw_text)
-        sanitized, rg_count = RG_LABELED_REGEX.subn("RG: [RG_ANONIMIZADO]", sanitized)
+        # Documentos rotulados (RG, CNH, CTPS, PIS, CNS) antes de CPF para evitar colisão de 11 dígitos
+        sanitized, rg_count = RG_LABELED_REGEX.subn("RG: [RG_ANONIMIZADO]", raw_text)
+        sanitized, doc_extra_count = DOC_EXTRA_REGEX.subn("[DOC_ANONIMIZADO]", sanitized)
+        sanitized, cpf_count = CPF_REGEX.subn("[CPF_ANONIMIZADO]", sanitized)
+        sanitized, email_count = EMAIL_REGEX.subn("[EMAIL_ANONIMIZADO]", sanitized)
+        sanitized, phone_count = PHONE_REGEX.subn("[TELEFONE_ANONIMIZADO]", sanitized)
+        sanitized, cep_count = CEP_REGEX.subn("[CEP_ANONIMIZADO]", sanitized)
+        sanitized, address_count = ADDRESS_REGEX.subn("[ENDERECO_ANONIMIZADO]", sanitized)
 
-        names_masked = 0
-        # Mascarar padrões contextuais explícitos como "Autor: Nome Completo" ou "Requerente: Nome Completo"
-        contextual_pattern = re.compile(
-            r"(?i)\b(Autor(?:a)?|Requerente|Reclamante|Paciente)\s*:\s*([A-ZÀ-Ú][a-zà-ú]+(?:\s+(?:de|da|do|das|dos|[A-ZÀ-Ú][a-zà-ú]+)){1,5})"
+        doc_pii_count = (
+            cpf_count
+            + rg_count
+            + doc_extra_count
+            + email_count
+            + phone_count
+            + cep_count
+            + address_count
         )
 
-        def _replace_contextual_name(match: re.Match) -> str:
+        names_masked = 0
+        discovered_names: list[str] = []
+        name_seq = r"([A-ZÀ-Ú][a-zà-ú]{1,25}(?:\s+(?:de|da|do|das|dos|e)\s+[A-ZÀ-Ú][a-zà-ú]{1,25}|\s+[A-ZÀ-Ú][a-zà-ú]{1,25}){1,4})"
+
+        # 1. Papéis processuais com ou sem ":" (Autor, Autora, Réu, Requerente, Testemunha, etc.)
+        role_pattern = re.compile(
+            r"(?i:\b(?:Autor(?:a)?|Requerente|Reclamante|Paciente|Impetrante|Exequente|"
+            r"R[ée]u|R[ée]|Requerid[oa]|Reclamad[oa]|Executad[oa]|Testemunha|V[íi]tima))\s*(?::\s*|\s+)"
+            + name_seq
+        )
+
+        # 2. Locuções processuais em prosa contínua
+        prose_pattern = re.compile(
+            r"(?i:\b(?:movid[oa]\s+por|ajuizad[oa]\s+por|propost[oa]\s+por|promovid[oa]\s+por|"
+            r"impetrad[oa]\s+por|em\s+face\s+de|em\s+desfavor\s+de|contra|prescrit[oa]\s+para|"
+            r"correntista|consumidor(?:a)?|segurad[oa]))\s+"
+            + name_seq
+        )
+
+        for pattern in (role_pattern, prose_pattern):
+            def _replace_labeled_or_prose(match: re.Match, _src=None) -> str:
+                nonlocal names_masked
+                full = match.group(0)
+                raw_cand = match.group(1)
+                prefix = full[: len(full) - len(raw_cand)]
+                if cls._is_followed_by_corporate_suffix(match.string, match.end()):
+                    return full
+                cleaned = cls._clean_candidate_person_name(raw_cand)
+                if not cleaned:
+                    return full
+                discovered_names.append(cleaned)
+                masked, was_masked = cls.mask_party_name(cleaned)
+                if was_masked:
+                    names_masked += 1
+                trailing = raw_cand[len(cleaned) :]
+                return f"{prefix}{masked}{trailing}"
+
+            sanitized = pattern.sub(_replace_labeled_or_prose, sanitized)
+
+        # 3. Qualificação civil clássica antes de vírgula (ex.: "Fulano de Tal, brasileiro, casado, inscrito no CPF...")
+        qualificacao_pattern = re.compile(
+            name_seq
+            + r"(?=,\s*(?i:brasileir[oa]|casad[oa]|solteir[oa]|divorciad[oa]|vi[úu]v[oa]|"
+            r"inscrit[oa]\s+no\s+(?:CPF|\[CPF)|portador(?:a)?\s+d[eo]\s+RG|CPF\b|RG\b|"
+            r"residente\s+e\s+domiciliad[oa]|\[ENDERECO_ANONIMIZADO\]))"
+        )
+
+        def _replace_qualificacao(match: re.Match) -> str:
             nonlocal names_masked
-            role_label = match.group(1)
-            candidate_name = match.group(2).strip()
-            if cls.is_corporate_entity(candidate_name):
+            raw_cand = match.group(1)
+            before = match.string[max(0, match.start() - 25) : match.start()]
+            if re.search(r"(?i)\b(?:Dr\.?|Dra\.?|Ju[íi]z(?:a)?|Magistrad[oa]|Desembargador(?:a)?|Ministr[oa])\s*$", before):
                 return match.group(0)
-            masked, was_masked = cls.mask_party_name(candidate_name)
+            if cls._is_followed_by_corporate_suffix(match.string, match.end()):
+                return match.group(0)
+            cleaned = cls._clean_candidate_person_name(raw_cand)
+            if not cleaned:
+                return match.group(0)
+            discovered_names.append(cleaned)
+            masked, was_masked = cls.mask_party_name(cleaned)
             if was_masked:
                 names_masked += 1
-            return f"{role_label}: {masked}"
+            return masked
 
-        sanitized = contextual_pattern.sub(_replace_contextual_name, sanitized)
+        sanitized = qualificacao_pattern.sub(_replace_qualificacao, sanitized)
 
-        if known_natural_names:
-            for person_name in known_natural_names:
-                clean_person = person_name.strip()
+        # 4. Nomes conhecidos (partes do formulário/CSV ou descobertos na etapa acima) e variações parciais
+        all_known: list[str] = []
+        for candidate_name in (known_natural_names or []) + discovered_names:
+            clean_person = (candidate_name or "").strip()
+            if (
+                clean_person
+                and "***" not in clean_person
+                and not cls.is_corporate_entity(clean_person)
+                and len(clean_person) >= 3
+                and clean_person not in all_known
+            ):
+                all_known.append(clean_person)
+
+        prepositions = {"de", "da", "do", "das", "dos", "e"}
+        for person_name in all_known:
+            masked_person, _ = cls.mask_party_name(person_name)
+            full_re = re.compile(r"\b" + re.escape(person_name) + r"\b")
+            sanitized, count_full = full_re.subn(masked_person, sanitized)
+            if count_full:
+                names_masked += count_full
+
+            sig_tokens = [t for t in person_name.split() if t.lower() not in prepositions]
+            if len(sig_tokens) >= 2:
+                # Prenome composto (ex.: "João Carlos")
+                first_two = f"{sig_tokens[0]} {sig_tokens[1]}"
+                if first_two != person_name and len(first_two) >= 5:
+                    two_re = re.compile(r"\b" + re.escape(first_two) + r"\b")
+                    sanitized, count_two = two_re.subn(masked_person, sanitized)
+                    names_masked += count_two
+
+                last_name = sig_tokens[-1]
                 if (
-                    clean_person
-                    and "***" not in clean_person
-                    and not cls.is_corporate_entity(clean_person)
-                    and len(clean_person) >= 3
+                    len(last_name) >= 5
+                    and last_name.lower() not in LEGAL_AND_GEO_STOPWORDS
+                    and not cls.is_corporate_entity(last_name)
                 ):
-                    masked_person, _ = cls.mask_party_name(clean_person)
-                    if clean_person in sanitized:
-                        sanitized = sanitized.replace(clean_person, masked_person)
-                        names_masked += 1
+                    # Menções com pronome de tratamento + sobrenome (Sr./Sra. Albuquerque)
+                    title_re = re.compile(
+                        r"\b(?:Sr\.?|Sra\.?|Senhor(?:a)?)\s+" + re.escape(last_name) + r"\b"
+                    )
+                    sanitized, count_title = title_re.subn(masked_person, sanitized)
+                    names_masked += count_title
 
-        return sanitized, (cpf_count + rg_count), names_masked
+                    # Menção isolada ao sobrenome (sem título jurídico ou prenome diferente imediatamente antes)
+                    if len(last_name) >= 6:
+                        surname_re = re.compile(r"\b" + re.escape(last_name) + r"\b")
+
+                        def _replace_isolated_surname(m: re.Match) -> str:
+                            nonlocal names_masked
+                            before = m.string[max(0, m.start() - 35) : m.start()]
+                            if re.search(
+                                r"(?i)\b(?:Dr\.?|Dra\.?|Ju[íi]z(?:a)?|Magistrad[oa]|Desembargador(?:a)?)\s+(?:[A-ZÀ-Ú][a-zà-ú]+\s+)*$",
+                                before,
+                            ):
+                                return m.group(0)
+                            if re.search(r"[A-ZÀ-Ú][a-zà-ú]+\s+(?:de\s+|da\s+|do\s+)?$", before):
+                                return m.group(0)
+                            names_masked += 1
+                            return masked_person
+
+                        sanitized = surname_re.sub(_replace_isolated_surname, sanitized)
+
+        return sanitized, doc_pii_count, names_masked
 
 
 class SegmentadorPeticao:
@@ -353,8 +823,49 @@ class SegmentadorPeticao:
 class ExtratorDocumental:
     """
     Serviço determinístico local de validação de integridade e extração textual de PDFs (RF-02 / RN-04).
+    Suporta PDFs padrão via `pypdf`, operadores `Tj`/`TJ` diretos, metadados `/ActualText` e streams `FlateDecode`.
     Implementa fallback de OCR resiliente para PDFs escaneados como imagem (ADR-002 / RNF-05).
     """
+
+    @staticmethod
+    def _unescape_pdf_literal(segment: str) -> str:
+        return (
+            segment.replace(r"\(", "(")
+            .replace(r"\)", ")")
+            .replace(r"\\", "\\")
+            .replace(r"\n", " ")
+            .replace(r"\r", " ")
+            .replace(r"\t", " ")
+        )
+
+    @classmethod
+    def _extract_operators_from_stream_text(cls, stream_text: str) -> list[str]:
+        chunks: list[str] = []
+        op_pattern = re.compile(
+            r"\(([^()\\]*(?:\\.[^()\\]*)*)\)\s*Tj|\[([^\]]+)\]\s*TJ",
+            re.DOTALL,
+        )
+        for match in op_pattern.finditer(stream_text):
+            if match.group(1) is not None:
+                text = cls._unescape_pdf_literal(match.group(1)).strip()
+                if len(text) >= 4:
+                    chunks.append(text)
+            elif match.group(2) is not None:
+                parts = re.findall(r"\(([^()\\]*(?:\\.[^()\\]*)*)\)", match.group(2))
+                joined = "".join(cls._unescape_pdf_literal(p) for p in parts).strip()
+                if len(joined) >= 4:
+                    chunks.append(joined)
+
+        if not chunks:
+            for meta_pat in (
+                r"/ActualText\s*\(([^()\\]*(?:\\.[^()\\]*)*)\)",
+                r"/Contents\s*\(([^()\\]*(?:\\.[^()\\]*)*)\)",
+            ):
+                for raw_meta in re.findall(meta_pat, stream_text):
+                    cleaned = cls._unescape_pdf_literal(raw_meta).strip()
+                    if len(cleaned) >= 4:
+                        chunks.append(cleaned)
+        return chunks
 
     _custom_ocr_provider: Optional[Callable[[bytes], str]] = None
 
@@ -415,7 +926,7 @@ class ExtratorDocumental:
         b64_pdf = base64.b64encode(file_bytes).decode("utf-8")
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{settings.GEMINI_MODEL}:generateContent?key={api_key}"
+            f"{settings.GEMINI_MODEL}:generateContent"
         )
         payload = {
             "contents": [
@@ -436,7 +947,7 @@ class ExtratorDocumental:
 
         try:
             with httpx.Client(timeout=settings.GEMINI_TIMEOUT_SECONDS) as client:
-                res = client.post(url, json=payload)
+                res = client.post(url, headers={"x-goog-api-key": api_key}, json=payload)
                 if res.status_code == 200:
                     data = res.json()
                     candidates = data.get("candidates", [])
@@ -567,6 +1078,34 @@ class ExtratorDocumental:
         return re.sub(r"\[PÁG \d+\]\n?", "", text).strip()
 
     @classmethod
+    def _extract_fallback_chunks(cls, file_bytes: bytes) -> list[str]:
+        """Fallback para PDFs sintéticos: operadores Tj/TJ diretos e streams FlateDecode."""
+        raw_latin = file_bytes.decode("latin-1", errors="ignore")
+        chunks = cls._extract_operators_from_stream_text(raw_latin)
+        if chunks:
+            return chunks
+        for stream_match in re.finditer(
+            rb"stream(?:\r\n|\n)(.*?)(?:\r\n|\n)?endstream", file_bytes, flags=re.DOTALL
+        ):
+            raw_stream = stream_match.group(1)
+            decompressed = b""
+            for attempt in (raw_stream, raw_stream.rstrip(b"\r\n")):
+                for wbits in (zlib.MAX_WBITS, -zlib.MAX_WBITS):
+                    try:
+                        decompressed = zlib.decompress(attempt, wbits)
+                        break
+                    except Exception:
+                        continue
+                if decompressed:
+                    break
+            if decompressed:
+                stream_str = decompressed.decode("utf-8", errors="ignore") or decompressed.decode(
+                    "latin-1", errors="ignore"
+                )
+                chunks.extend(cls._extract_operators_from_stream_text(stream_str))
+        return chunks
+
+    @classmethod
     def extract_text_with_page_markers(cls, file_bytes: bytes) -> Tuple[str, dict[int, str]]:
         """
         Extrai texto do PDF injetando marcadores [PÁG XX] por página (e acionando fallback de OCR se escaneado).
@@ -590,11 +1129,9 @@ class ExtratorDocumental:
             pass
 
         if not pages_dict:
-            # Fallback para PDFs sintéticos enxutos de suítes de teste com operadores Tj diretos
-            raw_latin = file_bytes.decode("latin-1", errors="ignore")
-            literals = re.findall(r"\(([^()]{4,})\)\s*Tj", raw_latin)
-            if literals:
-                pages_dict[1] = "\n".join(literals).strip()
+            chunks = cls._extract_fallback_chunks(file_bytes)
+            if chunks:
+                pages_dict[1] = "\n".join(chunks).strip()
 
         full_text = "\n".join(pages_dict.values()).strip()
 
@@ -609,10 +1146,7 @@ class ExtratorDocumental:
         if not pages_dict or not full_text:
             raise ValueError("Não foi possível extrair texto legível do PDF enviado (FalhaOCR / Documento vazio).")
 
-        full_parts = []
-        for pnum, ptext in pages_dict.items():
-            full_parts.append(f"[PÁG {pnum:02d}]\n{ptext}")
-
+        full_parts = [f"[PÁG {pnum:02d}]\n{ptext}" for pnum, ptext in pages_dict.items()]
         annotated_text = "\n\n".join(full_parts).strip()
         return annotated_text, pages_dict
 
@@ -679,6 +1213,7 @@ class AIGatewayPort(ABC):
         raise NotImplementedError
 
 
+
 class LocalDeterministicFallbackAdapter(AIGatewayPort):
     """
     Adaptador Heurístico e Estatístico Local (`local_heuristic`).
@@ -723,6 +1258,7 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
         # 0. Limpeza e normalização do texto extraído (Card #18): remove marcadores de página,
         #    cabeçalhos/rodapés repetidos e hifenização de quebra de linha.
         raw_text = LimpadorTexto.limpar(request.texto_bruto or "")
+        ctx = request.contexto_historico
 
         # 1 a 3. Identificação das informações processuais e classificação de tema.
         #    Nada é inventado: o que não for encontrado vira "Não identificado" e é listado
@@ -732,6 +1268,20 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
         numero_processo = info.numero_processo
         tema = classificacao.tema
         tese_recomendada = classificacao.tese_recomendada
+        # Segunda leitura do próprio documento (prosa jurídica) para o que os rótulos não revelaram.
+        magistrado_prosa, comarca_prosa = extract_court_and_judge(raw_text)
+        autor_prosa, reu_prosa = AnonimizadorLGPD.extract_parties_from_text(raw_text)
+        complementos = {
+            "magistrado": (info.magistrado == NAO_IDENTIFICADO and magistrado_prosa, "magistrado", magistrado_prosa),
+            "comarca": (info.comarca == NAO_IDENTIFICADA and comarca_prosa, "comarca", comarca_prosa),
+            "autor": (not info.autor and autor_prosa, "autor", autor_prosa),
+            "reu": (not info.reu and reu_prosa, "reu", reu_prosa),
+        }
+        for campo, (aplicar, atributo, valor) in complementos.items():
+            if aplicar:
+                setattr(info, atributo, valor)
+                if campo in info.campos_nao_identificados:
+                    info.campos_nao_identificados.remove(campo)
         magistrado = info.magistrado
         comarca = info.comarca
 
@@ -776,23 +1326,32 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
         resumo_nlp, extra_cpf, _ = AnonimizadorLGPD.sanitize_text(resumo_nlp)
         cpf_rg_count += extra_cpf
 
-        # 6. Cálculo Preditivo Baseado em Evidência Histórica (RF-06 / RN-02)
-        ctx = request.contexto_historico
+        # 6. Cálculo Preditivo Ponderado e Margem de Confiança Estatística de Wilson (RF-06 / RN-02)
         prob = round(min(max(ctx.taxa_favoravel_juiz, 0.15), 0.95), 2)
-        casos_similares = max(ctx.total_casos_similares, 12)
-        tempo_meses = max(ctx.tempo_medio_meses, 6)
-        percentual_juiz = int(round(prob * 100))
-
-        if magistrado == NAO_IDENTIFICADO:
-            tendencia_juiz = (
-                f"Magistrado(a) não identificado(a) no documento. A estimativa considera o histórico "
-                f"geral da base, com {percentual_juiz}% de decisões favoráveis (procedentes/acordos)."
-            )
-        else:
-            tendencia_juiz = (
-                f"O(A) magistrado(a) {magistrado} apresenta histórico de {percentual_juiz}% de decisões "
-                f"favoráveis (procedentes/acordos) em demandas similares de {tema} na base analisada."
-            )
+        casos_similares = max(int(ctx.total_casos_similares), 0)
+        tempo_meses = max(int(ctx.tempo_medio_meses), 1)
+        margem = (
+            round(float(ctx.margem_confianca_calculada), 2)
+            if ctx.margem_confianca_calculada is not None
+            else compute_wilson_margin(prob, casos_similares)
+        )
+        tese_final = (
+            ctx.tese_precedente_similar
+            if (ctx.tese_precedente_similar and casos_similares >= 1)
+            else tese_recomendada
+        )
+        tendencia_juiz = synthesize_local_rag_tendencia(
+            magistrado=(
+                "magistrado(a) não identificado(a) no documento"
+                if magistrado == NAO_IDENTIFICADO
+                else magistrado
+            ),
+            tema=tema,
+            prob=prob,
+            margem=margem,
+            casos_similares=casos_similares,
+            precedentes=ctx.precedentes_similares,
+        )
 
         return InternalAnalyzeResponse(
             metadados_extraidos=MetadadosExtraidosSchema(
@@ -812,10 +1371,10 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
             resumo_nlp=resumo_nlp,
             analise_preditiva=AnalisePreditivaSchema(
                 probabilidade_deferimento=prob,
-                margem_confianca=0.08,
+                margem_confianca=margem,
                 tempo_estimado_sentenca_meses=tempo_meses,
                 casos_similares_encontrados=casos_similares,
-                tese_recomendada=tese_recomendada,
+                tese_recomendada=tese_final,
                 tendencia_juiz=tendencia_juiz,
                 provedor_ia="local_heuristic",
             ),
@@ -1228,37 +1787,77 @@ class LocalDeterministicFallbackAdapter(AIGatewayPort):
 
 class GeminiAIAdapter(AIGatewayPort):
     """
-    Adaptador para a API do Google Gemini (Google AI Studio - Free Tier).
+    Adaptador RAG Jurídico para a API do Google Gemini (Google AI Studio - Free Tier).
     Rastreabilidade:
-    - ADR-002: Adapter pluggável com barreira LGPD obrigatória pré-chamada.
+    - ADR-002: Adapter pluggável com barreira LGPD obrigatória pré-chamada e Cache SHA-256.
     - Termos do Free Tier: Tráfego executado exclusivamente sobre texto higienizado (Art. 12 da LGPD).
     """
 
+    _rag_cache: dict[str, dict] = {}
+    _MAX_CACHE_SIZE: int = 256
+
     def __init__(self) -> None:
         self._fallback = LocalDeterministicFallbackAdapter()
+
+    @classmethod
+    def clear_cache(cls) -> None:
+        """Limpa o cache em memória SHA-256 de respostas do Gemini."""
+        cls._rag_cache.clear()
+
+    @staticmethod
+    def _apply_rag_payload(
+        base_resp: InternalAnalyzeResponse,
+        payload: dict,
+    ) -> InternalAnalyzeResponse:
+        base_resp.resumo_nlp = payload["resumo_nlp"]
+        base_resp.analise_preditiva.probabilidade_deferimento = payload["prob"]
+        base_resp.analise_preditiva.tese_recomendada = payload["tese_recomendada"]
+        base_resp.analise_preditiva.tendencia_juiz = payload["tendencia_juiz"]
+        base_resp.analise_preditiva.provedor_ia = payload["provedor_ia"]
+        base_resp.auditoria_lgpd.total_cpfs_mascarados += payload["extra_cpf"]
+        return base_resp
 
     def analyze_document(self, request: InternalAnalyzeRequest) -> InternalAnalyzeResponse:
         api_key = settings.GEMINI_API_KEY.strip()
         if not api_key:
             return self._fallback.analyze_document(request)
 
-        # 1. Obter o baseline determinístico local
+        # 1. Obter o baseline determinístico local + contexto RAG real do acervo
         base_resp = self._fallback.analyze_document(request)
         sanitized_text, _, _ = AnonimizadorLGPD.sanitize_text(LimpadorTexto.limpar(request.texto_bruto or ""))
+        rag_block_raw = build_rag_precedents_context(
+            request.contexto_historico,
+            base_resp.metadados_extraidos.tema,
+            base_resp.metadados_extraidos.magistrado,
+            base_resp.metadados_extraidos.comarca,
+        )
+        rag_block, _, _ = AnonimizadorLGPD.sanitize_text(rag_block_raw)
 
-        # 2. Montar prompt estruturado estritamente sobre texto desidentificado e seções segmentadas
+        # 2. Verificar Cache SHA-256 (texto higienizado + modelo + contexto RAG de precedentes)
+        cache_key = hashlib.sha256(
+            f"{settings.GEMINI_MODEL}|{sanitized_text[:4000]}|{rag_block}".encode("utf-8")
+        ).hexdigest()
+        cached = self._rag_cache.get(cache_key)
+        if cached is not None:
+            return self._apply_rag_payload(base_resp, cached)
+
+        # 3. Montar prompt estruturado de RAG Jurídico sobre texto desidentificado, segmentado por seções
         secoes_gemini = SegmentadorPeticao.segmentar(sanitized_text)
+        fatos_prompt = secoes_gemini.dos_fatos[:2000] if secoes_gemini.dos_fatos else sanitized_text[:2000]
         prompt = (
-            "Você é um perito jurimétrico especialista em jurisprudência cível e do consumidor do TJAL.\n"
-            "Analise o teor estruturado da petição a seguir (dados pessoais já foram desidentificados sob a LGPD):\n\n"
-            f"--- SEÇÃO: DOS FATOS ---\n{secoes_gemini.dos_fatos[:2000] if secoes_gemini.dos_fatos else sanitized_text[:2000]}\n\n"
+            "Você é um perito jurimétrico especialista em jurisprudência brasileira (TJAL / Tribunais Estaduais).\n"
+            "Analise o teor estruturado da petição abaixo (dados pessoais já desidentificados sob a LGPD) "
+            "cruzando-o obrigatoriamente com os precedentes similares e métricas estatísticas recuperadas do acervo:\n\n"
+            f"--- SEÇÃO: DOS FATOS ---\n{fatos_prompt}\n\n"
             f"--- SEÇÃO: DO DIREITO ---\n{secoes_gemini.do_direito[:1500]}\n\n"
             f"--- SEÇÃO: DOS PEDIDOS ---\n{secoes_gemini.dos_pedidos[:1000]}\n\n"
-            "Com base nas teses e pedidos, responda EXCLUSIVAMENTE em formato JSON com as chaves:\n"
+            f"--- CONTEXTO JURIMÉTRICO E PRECEDENTES SIMILARES DO ACERVO (RAG) ---\n{rag_block}\n"
+            "--- FIM DO CONTEXTO RAG ---\n\n"
+            "Com base nas teses, pedidos e precedentes reais acima, responda EXCLUSIVAMENTE em formato JSON com as chaves:\n"
             "- resumo_nlp: síntese concisa da causa de pedir e pedidos em até 3 parágrafos objetivos.\n"
-            "- tese_recomendada: fundamento legal e precedentes consolidados mais aderentes ao caso.\n"
-            "- probabilidade_ajustada: float entre 0.15 e 0.95 refletindo a força técnica dos argumentos.\n"
-            "- tendencia_juiz: síntese qualitativa sobre o histórico de julgamento em casos similares em Alagoas."
+            "- tese_recomendada: fundamento legal, súmulas e precedentes consolidados mais aderentes ao caso.\n"
+            "- probabilidade_ajustada: float entre 0.15 e 0.95 calibrado pelas evidências do caso e histórico do acervo.\n"
+            "- tendencia_juiz: síntese analítica citando o histórico de julgamento e aderência aos precedentes similares."
         )
 
         url = (
@@ -1287,13 +1886,13 @@ class GeminiAIAdapter(AIGatewayPort):
                                 raw_reply = re.sub(r"^```(?:json)?\s*", "", raw_reply)
                                 raw_reply = re.sub(r"\s*```$", "", raw_reply)
                             parsed_json = json.loads(raw_reply)
-                            clean_resumo, extra_cpf, _ = AnonimizadorLGPD.sanitize_text(
+                            clean_resumo, extra_cpf_resumo, _ = AnonimizadorLGPD.sanitize_text(
                                 parsed_json.get("resumo_nlp", base_resp.resumo_nlp)
                             )
-                            clean_tese, _, _ = AnonimizadorLGPD.sanitize_text(
+                            clean_tese, extra_cpf_tese, _ = AnonimizadorLGPD.sanitize_text(
                                 parsed_json.get("tese_recomendada", base_resp.analise_preditiva.tese_recomendada)
                             )
-                            clean_tendencia, _, _ = AnonimizadorLGPD.sanitize_text(
+                            clean_tendencia, extra_cpf_tend, _ = AnonimizadorLGPD.sanitize_text(
                                 parsed_json.get("tendencia_juiz", base_resp.analise_preditiva.tendencia_juiz)
                             )
                             prob = float(
@@ -1302,15 +1901,23 @@ class GeminiAIAdapter(AIGatewayPort):
                                     base_resp.analise_preditiva.probabilidade_deferimento,
                                 )
                             )
-                            prob = max(min(prob, 0.95), 0.15)
+                            prob = round(max(min(prob, 0.95), 0.15), 2)
+                            extra_cpf = extra_cpf_resumo + extra_cpf_tese + extra_cpf_tend
 
-                            base_resp.resumo_nlp = clean_resumo
-                            base_resp.analise_preditiva.probabilidade_deferimento = prob
-                            base_resp.analise_preditiva.tese_recomendada = clean_tese
-                            base_resp.analise_preditiva.tendencia_juiz = clean_tendencia
-                            base_resp.analise_preditiva.provedor_ia = f"gemini ({settings.GEMINI_MODEL})"
-                            base_resp.auditoria_lgpd.total_cpfs_mascarados += extra_cpf
-                            return base_resp
+                            cached_entry = {
+                                "resumo_nlp": clean_resumo,
+                                "prob": prob,
+                                "tese_recomendada": clean_tese,
+                                "tendencia_juiz": clean_tendencia,
+                                "provedor_ia": f"gemini ({settings.GEMINI_MODEL})",
+                                "extra_cpf": extra_cpf,
+                            }
+                            if len(self._rag_cache) >= self._MAX_CACHE_SIZE:
+                                oldest_key = next(iter(self._rag_cache))
+                                self._rag_cache.pop(oldest_key, None)
+                            self._rag_cache[cache_key] = cached_entry
+
+                            return self._apply_rag_payload(base_resp, cached_entry)
 
                 logger.warning(
                     "Gemini API retornou status %d. Acionando fallback determinístico local.",
@@ -1427,8 +2034,8 @@ class GeminiAIAdapter(AIGatewayPort):
 class ResilientAIGateway(AIGatewayPort):
     """
     Gateway principal da camada Back-end para os provedores de IA (ADR-001 e ADR-002).
-    - Se GEMINI_API_KEY estiver configurada e AI_PROVIDER for gemini ou auto, utiliza Gemini.
-    - Se AI_PROVIDER == 'external', tenta comunicação HTTP com ai_engine.
+    - Se GEMINI_API_KEY estiver configurada e AI_PROVIDER for gemini ou auto, utiliza Gemini RAG.
+    - Se AI_PROVIDER == 'external', tenta comunicação HTTP com o microsserviço ai_engine (:8001).
     - Em caso de timeout, offline ou erro, executa LocalDeterministicFallbackAdapter (RNF-05).
     """
 
@@ -1437,7 +2044,7 @@ class ResilientAIGateway(AIGatewayPort):
         self._gemini = GeminiAIAdapter()
 
     def analyze_document(self, request: InternalAnalyzeRequest) -> InternalAnalyzeResponse:
-        # 1. Se GEMINI_API_KEY estiver configurada e AI_PROVIDER for gemini ou auto, utiliza Gemini
+        # 1. Se GEMINI_API_KEY estiver configurada e AI_PROVIDER for gemini ou auto, utiliza Gemini RAG
         if settings.GEMINI_API_KEY.strip() and settings.AI_PROVIDER in ("gemini", "auto"):
             return self._gemini.analyze_document(request)
 
@@ -1449,13 +2056,23 @@ class ResilientAIGateway(AIGatewayPort):
                     response = client.post(endpoint, json=request.model_dump())
                     if response.status_code == 200:
                         parsed = InternalAnalyzeResponse.model_validate(response.json())
-                        clean_resumo, extra_cpfs, _ = AnonimizadorLGPD.sanitize_text(parsed.resumo_nlp)
+                        clean_resumo, extra_cpfs_r, _ = AnonimizadorLGPD.sanitize_text(parsed.resumo_nlp)
+                        clean_tese, extra_cpfs_t, _ = AnonimizadorLGPD.sanitize_text(
+                            parsed.analise_preditiva.tese_recomendada
+                        )
+                        clean_tendencia, extra_cpfs_td, _ = AnonimizadorLGPD.sanitize_text(
+                            parsed.analise_preditiva.tendencia_juiz
+                        )
                         parsed.resumo_nlp = clean_resumo
-                        parsed.auditoria_lgpd.total_cpfs_mascarados += extra_cpfs
+                        parsed.analise_preditiva.tese_recomendada = clean_tese
+                        parsed.analise_preditiva.tendencia_juiz = clean_tendencia
+                        parsed.auditoria_lgpd.total_cpfs_mascarados += (
+                            extra_cpfs_r + extra_cpfs_t + extra_cpfs_td
+                        )
                         return parsed
             except Exception as exc:
                 logger.info(
-                    "Serviço interno ai_engine (%s) não ativo ou em modo scaffolding (%s). "
+                    "Serviço interno ai_engine (%s) não ativo ou indisponível (%s). "
                     "Executando LocalDeterministicFallbackAdapter (ADR-002 / RNF-05).",
                     endpoint,
                     exc.__class__.__name__,

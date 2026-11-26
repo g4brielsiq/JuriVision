@@ -210,6 +210,92 @@ def test_ct07_dashboard_metricas_jurimetria(client: TestClient):
     assert len(body["volume_por_tema"]) >= 2
 
 
+def test_ct07_dashboard_filtros_e_distribuicao_resultados(client: TestClient):
+    """CT-07b (RF-07): Valida quebra por desfecho, métricas por tema e filtros dinâmicos no dashboard."""
+    resp_full = client.get("/api/v1/dashboard/metricas")
+    assert resp_full.status_code == 200
+    full_body = resp_full.json()
+
+    dist = full_body["distribuicao_resultados"]
+    soma_dist = dist["procedentes"] + dist["acordos"] + dist["improcedentes"] + dist["em_analise"]
+    assert soma_dist == full_body["total_processos_analisados"]
+    assert dist["procedentes"] >= 1
+    assert dist["acordos"] >= 1
+    assert dist["improcedentes"] >= 1
+
+    for tema_item in full_body["volume_por_tema"]:
+        assert tema_item["total"] >= 1
+        assert 0.0 <= tema_item["taxa_favoravel"] <= 100.0
+        assert tema_item["tempo_medio_meses"] >= 1
+
+    # Metodologia: a taxa favorável usa só decisões com desfecho; "Em análise" fica fora do denominador.
+    decididos = dist["procedentes"] + dist["acordos"] + dist["improcedentes"]
+    assert full_body["total_decididos"] == decididos
+    assert full_body["taxa_exito_global"] == pytest.approx(
+        round((dist["procedentes"] + dist["acordos"]) / decididos, 3)
+    )
+    soma_juizes = sum(j["procedentes"] + j["improcedentes"] for j in full_body["decisoes_por_juiz"])
+    assert soma_juizes == decididos
+    for tema_item in full_body["volume_por_tema"]:
+        assert tema_item["favoraveis"] <= tema_item["decididos"] <= tema_item["total"]
+
+    recorte = full_body["recorte"]
+    assert recorte["total_orgaos_julgadores"] >= 1
+    assert 1 <= len(recorte["orgaos_julgadores"]) <= 5
+    assert recorte["ano_inicial"] is None or recorte["ano_inicial"] <= recorte["ano_final"]
+
+    resp_tema = client.get("/api/v1/dashboard/metricas?tema=Dano+Moral")
+    assert resp_tema.status_code == 200
+    tema_body = resp_tema.json()
+    assert 1 <= tema_body["total_processos_analisados"] < full_body["total_processos_analisados"]
+    assert all("Dano Moral" in item["tema"] for item in tema_body["volume_por_tema"])
+
+    resp_juiz = client.get("/api/v1/dashboard/metricas?juiz=Rafael")
+    assert resp_juiz.status_code == 200
+    juiz_body = resp_juiz.json()
+    assert 1 <= juiz_body["total_processos_analisados"] < full_body["total_processos_analisados"]
+    assert all("Rafael" in item["juiz"] for item in juiz_body["decisoes_por_juiz"])
+
+
+def test_ct07c_dashboard_vazio_retorna_recorte_sem_valores_fixos(client: TestClient):
+    """CT-07c: Recorte inexistente não inventa órgão julgador nem período."""
+    resp = client.get("/api/v1/dashboard/metricas?tema=Tema+Inexistente+XYZ")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total_processos_analisados"] == 0
+    assert body["total_decididos"] == 0
+    assert body["recorte"] == {
+        "orgaos_julgadores": [],
+        "total_orgaos_julgadores": 0,
+        "ano_inicial": None,
+        "ano_final": None,
+    }
+
+
+def test_seed_demo_desligado_por_padrao(monkeypatch: pytest.MonkeyPatch):
+    """Dados fictícios são opt-in: sem SEED_DEMO_DATA a base inicia vazia."""
+    import importlib.util
+
+    import dotenv
+
+    import app.core.config as config_mod
+    import app.main as main_mod
+
+    monkeypatch.delenv("SEED_DEMO_DATA", raising=False)
+    monkeypatch.setattr(dotenv, "load_dotenv", lambda *args, **kwargs: False)
+    spec = importlib.util.spec_from_file_location("config_isolado", config_mod.__file__)
+    config_isolado = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(config_isolado)
+    assert config_isolado.Settings().SEED_DEMO_DATA is False
+
+    chamadas = []
+    monkeypatch.setattr(main_mod, "seed_initial_data", lambda db: chamadas.append(db))
+    main_mod.init_db_and_seed()
+    assert chamadas == []
+    main_mod.init_db_and_seed(seed_demo=True)
+    assert len(chamadas) == 1
+
+
 def test_ct08_consulta_e_filtros_base_conhecimento(client: TestClient):
     """CT-08 (RF-08): Valida busca paginada e filtrada por tema e magistrado com partes anonimizadas."""
     resp = client.get("/api/v1/processos?tema=Dano+Moral&juiz=Rafael&pagina=1&limite=5")

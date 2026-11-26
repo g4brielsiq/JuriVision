@@ -10,13 +10,16 @@ import hmac
 import secrets
 from typing import Any, Dict, Optional
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, HTTPException, Query, Request, status
 import jwt
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.models.entities import Usuario
+from app.models.entities import Processo, Usuario
+
+PUBLIC_OWNER_ID = "usr-01"
 
 
 def hash_password(password: str, salt: Optional[str] = None) -> str:
@@ -69,52 +72,116 @@ def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
 
 
 def get_optional_current_user(
-    authorization: Optional[str] = Header(default=None),
+    request: Request,
+    token: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
 ) -> Optional[Usuario]:
     """
-    Valida estritamente o cabeçalho Authorization Bearer quando enviado na requisição.
-    - Sem cabeçalho Authorization: retorna None (preserva leitura inicial da interface e testes de contrato públicos).
-    - Com cabeçalho inválido, malformado ou token expirado/adulterado: rejeita com HTTP 401 Unauthorized.
+    Valida o token JWT (via cabeçalho Authorization Bearer ou query ?token=) quando enviado.
+    Se nenhum token for fornecido, retorna None (contexto de demonstração pública).
+    Se um token inválido, malformado ou expirado for fornecido, retorna HTTP 401.
     """
-    if not authorization or not authorization.strip():
+    auth_header = request.headers.get("Authorization")
+    raw_token: Optional[str] = None
+
+    if auth_header is not None:
+        parts = auth_header.strip().split(" ", 1)
+        if len(parts) != 2 or parts[0].lower() != "bearer" or not parts[1].strip():
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Formato de cabeçalho Authorization inválido. Use 'Bearer <token>'.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        raw_token = parts[1].strip()
+    elif token is not None:
+        if not token.strip():
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token JWT inválido ou vazio.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        raw_token = token.strip()
+    else:
         return None
 
-    parts = authorization.strip().split(None, 1)
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Cabeçalho Authorization inválido. Utilize o formato 'Bearer <token>'.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    claims = decode_access_token(parts[1].strip())
-    subject = claims.get("sub") if claims else None
-    if not subject:
+    payload = decode_access_token(raw_token)
+    if not payload or not payload.get("sub"):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token JWT inválido ou expirado.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    usuario = db.query(Usuario).filter(Usuario.id == str(subject)).first()
+    usuario = db.query(Usuario).filter(Usuario.id == payload.get("sub")).first()
     if not usuario:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Usuário vinculado ao token não encontrado.",
+            detail="Usuário do token não encontrado.",
             headers={"WWW-Authenticate": "Bearer"},
         )
     return usuario
 
 
-def get_current_user(
-    usuario: Optional[Usuario] = Depends(get_optional_current_user),
+def get_current_user_strict(
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
 ) -> Usuario:
-    """Exige obrigatoriamente um token JWT válido, retornando HTTP 401 caso ausente."""
-    if not usuario:
+    """Exige um usuário autenticado com JWT válido; caso contrário retorna HTTP 401."""
+    if current_user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Autenticação obrigatória. Envie um token Bearer válido.",
+            detail="Autenticação JWT obrigatória para acessar este recurso.",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return usuario
+    return current_user
+
+
+def get_effective_user_id(current_user: Optional[Usuario]) -> Optional[str]:
+    """Retorna o ID do advogado autenticado ou None para o acervo público sem depender de usr-01."""
+    return current_user.id if current_user is not None else None
+
+
+def build_processo_visibility_filter(current_user: Optional[Usuario]):
+    """
+    Isolamento multi-usuário:
+    - Visitantes ou conta institucional padrão (usr-01) enxergam apenas o acervo público base.
+    - Advogados autenticados enxergam o acervo público base + seus próprios processos privados.
+    """
+    if current_user is None or current_user.id == PUBLIC_OWNER_ID:
+        return or_(Processo.usuario_id == PUBLIC_OWNER_ID, Processo.usuario_id.is_(None))
+    return or_(
+        Processo.usuario_id == PUBLIC_OWNER_ID,
+        Processo.usuario_id.is_(None),
+        Processo.usuario_id == current_user.id,
+    )
+
+
+def can_read_processo(proc: Processo, current_user: Optional[Usuario]) -> bool:
+    """Verifica se o usuário atual tem permissão para visualizar o processo."""
+    if proc.usuario_id in (None, PUBLIC_OWNER_ID):
+        return True
+    return current_user is not None and proc.usuario_id == current_user.id
+
+
+def ensure_can_modify_processo(proc: Processo, current_user: Optional[Usuario]) -> None:
+    """
+    Garante isolamento em alterações/exclusões:
+    - Se o processo for privado de outro advogado -> HTTP 404 (não vaza existência).
+    - Se for do acervo público base e o usuário for uma conta externa -> HTTP 403 Forbidden.
+    """
+    if not can_read_processo(proc, current_user):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Processo '{proc.id_processo}' não encontrado na base de conhecimento.",
+        )
+    if (
+        current_user is not None
+        and current_user.id != PUBLIC_OWNER_ID
+        and proc.usuario_id in (None, PUBLIC_OWNER_ID)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso negado: o acervo público institucional não pode ser alterado ou excluído por contas externas.",
+        )
+
+
+get_current_user = get_current_user_strict

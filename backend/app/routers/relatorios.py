@@ -5,12 +5,13 @@ Rastreabilidade:
 - MODELING.md: RF-09 (Exportação de Relatório Estratégico em PDF), UC-08, CT-09
 """
 import textwrap
+from typing import Optional
 import unicodedata
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.security import get_optional_current_user
+from app.core.security import can_read_processo, get_optional_current_user
 from app.models.entities import Processo, Usuario
 
 router = APIRouter(prefix="/api/v1/relatorios", tags=["Relatórios Estratégicos PDF (RF-09)"])
@@ -22,35 +23,64 @@ def _normalize_pdf_text(text: str) -> str:
     return normalized.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
+MAX_LINES_PER_PAGE = 45
+
+
 def _build_pdf_document(lines: list[str]) -> bytes:
     """
-    Constrói um documento binário PDF 1.4 válido (ISO 32000-1) contendo os metadados
-    higienizados (LGPD), resumo NLP e parecer preditivo do processo.
+    Constrói um documento binário PDF 1.4 válido (ISO 32000-1) com paginação automática,
+    contendo os metadados higienizados (LGPD), resumo NLP e parecer preditivo do processo.
     """
-    content_ops = ["BT", "/F1 14 Tf", "50 790 Td"]
-    first = True
-    for raw_line in lines:
-        safe_line = _normalize_pdf_text(raw_line)
-        if first:
-            content_ops.append(f"({safe_line}) Tj")
-            content_ops.append("/F1 10 Tf")
-            content_ops.append("0 -22 Td")
-            first = False
-        else:
-            content_ops.append(f"({safe_line}) Tj")
-            content_ops.append("0 -14 Td")
-    content_ops.append("ET")
-    stream_bytes = "\n".join(content_ops).encode("latin-1")
+    chunks = [
+        lines[i : i + MAX_LINES_PER_PAGE]
+        for i in range(0, len(lines), MAX_LINES_PER_PAGE)
+    ] or [[]]
+    total_pages = len(chunks)
+    kids_refs = " ".join(f"{4 + idx * 2} 0 R" for idx in range(total_pages))
 
     objects: list[bytes] = [
         b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
-        b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
-        b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n",
-        b"4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
-        f"5 0 obj\n<< /Length {len(stream_bytes)} >>\nstream\n".encode("latin-1")
-        + stream_bytes
-        + b"\nendstream\nendobj\n",
+        f"2 0 obj\n<< /Type /Pages /Kids [{kids_refs}] /Count {total_pages} >>\nendobj\n".encode("latin-1"),
+        b"3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
     ]
+
+    for idx, page_lines in enumerate(chunks):
+        page_obj_id = 4 + idx * 2
+        stream_obj_id = 5 + idx * 2
+        content_ops = [
+            "BT",
+            "/F1 14 Tf" if idx == 0 else "/F1 10 Tf",
+            "50 790 Td",
+        ]
+        for line_idx, raw_line in enumerate(page_lines):
+            safe_line = _normalize_pdf_text(raw_line)
+            content_ops.append(f"({safe_line}) Tj")
+            if idx == 0 and line_idx == 0:
+                content_ops.append("/F1 10 Tf")
+                content_ops.append("0 -22 Td")
+            else:
+                content_ops.append("0 -14 Td")
+        content_ops.extend(
+            [
+                "ET",
+                "BT",
+                "/F1 8 Tf",
+                "50 32 Td",
+                f"(Pagina {idx + 1} de {total_pages}) Tj",
+                "ET",
+            ]
+        )
+        stream_bytes = "\n".join(content_ops).encode("latin-1")
+
+        objects.append(
+            f"{page_obj_id} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
+            f"/Resources << /Font << /F1 3 0 R >> >> /Contents {stream_obj_id} 0 R >>\nendobj\n".encode("latin-1")
+        )
+        objects.append(
+            f"{stream_obj_id} 0 obj\n<< /Length {len(stream_bytes)} >>\nstream\n".encode("latin-1")
+            + stream_bytes
+            + b"\nendstream\nendobj\n"
+        )
 
     output = bytearray(b"%PDF-1.4\n")
     offsets: list[int] = []
@@ -76,14 +106,14 @@ def _build_pdf_document(lines: list[str]) -> bytes:
 def exportar_relatorio_processo_pdf(
     id_processo: str,
     db: Session = Depends(get_db),
-    _usuario: Usuario | None = Depends(get_optional_current_user),
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
 ) -> Response:
     """
     Gera e exporta o relatório estratégico consolidado em formato PDF (RF-09 / UC-08 / CT-09).
-    Retorna HTTP 404 caso o ID do processo não exista na base.
+    Retorna HTTP 404 caso o ID do processo não exista ou não seja visível ao usuário atual.
     """
     proc = db.query(Processo).filter(Processo.id_processo == id_processo).first()
-    if not proc:
+    if not proc or not can_read_processo(proc, current_user):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Processo '{id_processo}' não encontrado para geração de relatório.",

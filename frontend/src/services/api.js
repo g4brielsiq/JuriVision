@@ -11,6 +11,15 @@ export function getApiBaseUrl() {
     if (typeof window !== "undefined" && window.__JURIVISION_API_URL__) {
         return window.__JURIVISION_API_URL__;
     }
+    if (import.meta?.env?.VITE_API_BASE_URL) {
+        return import.meta.env.VITE_API_BASE_URL;
+    }
+    if (typeof window !== "undefined" && window.location?.origin && window.location.protocol.startsWith("http")) {
+        const port = window.location.port;
+        if (port !== "5173" && port !== "4173") {
+            return window.location.origin;
+        }
+    }
     return DEFAULT_API_BASE;
 }
 
@@ -119,16 +128,32 @@ export async function registerAdvogado(payload) {
     return data;
 }
 
-export async function fetchPerfilAutenticado() {
+export async function fetchUsuarioAtual() {
     const res = await fetch(`${getApiBaseUrl()}/api/v1/auth/me`, {
         headers: { ...getAuthHeader() },
     });
-    if (!res.ok) throw new Error(`Sessão não autenticada (HTTP ${res.status}).`);
+    if (!res.ok) {
+        const err = new Error(`Sessão inválida (HTTP ${res.status})`);
+        err.status = res.status;
+        throw err;
+    }
     return res.json();
 }
 
-export async function fetchDashboardMetricas() {
-    const res = await fetch(`${getApiBaseUrl()}/api/v1/dashboard/metricas`, {
+export function logoutAdvogado() {
+    if (typeof window !== "undefined") {
+        localStorage.removeItem("jurivision_token");
+        sessionStorage.removeItem("jurivision_token");
+    }
+}
+
+export async function fetchDashboardMetricas({ tema = "", juiz = "" } = {}) {
+    const params = new URLSearchParams();
+    if (tema) params.set("tema", tema);
+    if (juiz) params.set("juiz", juiz);
+    const query = params.toString();
+    const url = `${getApiBaseUrl()}/api/v1/dashboard/metricas${query ? `?${query}` : ""}`;
+    const res = await fetch(url, {
         headers: { ...getAuthHeader() },
     });
     if (!res.ok) throw new Error(`Erro ao carregar métricas: HTTP ${res.status}`);
@@ -145,7 +170,9 @@ export async function uploadProcessoPdf(file) {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-        throw new Error(data.detail || `Erro no processamento do PDF (HTTP ${res.status}).`);
+        const err = new Error(data.detail || `Erro no processamento do PDF (HTTP ${res.status}).`);
+        err.status = res.status;
+        throw err;
     }
     return data;
 }
@@ -160,7 +187,34 @@ export async function uploadProcessosCsv(file) {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-        throw new Error(data.detail || `Erro na importação da planilha CSV (HTTP ${res.status}).`);
+        const err = new Error(data.detail || `Erro na importação da planilha CSV (HTTP ${res.status}).`);
+        err.status = res.status;
+        throw err;
+    }
+    return data;
+}
+
+export async function fetchStatusPlano() {
+    const res = await fetch(`${getApiBaseUrl()}/api/v1/auth/plano`, {
+        headers: { ...getAuthHeader() },
+    });
+    if (!res.ok) {
+        throw new Error(`Erro ao consultar plano (HTTP ${res.status}).`);
+    }
+    return res.json();
+}
+
+export async function atualizarPlanoAssinatura(plano = "PRO") {
+    const res = await fetch(`${getApiBaseUrl()}/api/v1/auth/plano/upgrade`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeader() },
+        body: JSON.stringify({ plano }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        const err = new Error(data.detail || `Não foi possível atualizar o plano (HTTP ${res.status}).`);
+        err.status = res.status;
+        throw err;
     }
     return data;
 }
@@ -171,6 +225,8 @@ export async function fetchProcessos({
     comarca = "",
     tribunal = "",
     busca = "",
+    ordenacao = "recentes",
+    ids = null,
     pagina = 1,
     limite = 8,
 } = {}) {
@@ -180,6 +236,8 @@ export async function fetchProcessos({
     if (comarca) params.set("comarca", comarca);
     if (tribunal) params.set("tribunal", tribunal);
     if (busca) params.set("busca", busca);
+    if (ordenacao) params.set("ordenacao", ordenacao);
+    if (ids !== null && ids !== undefined) params.set("ids", String(ids));
     params.set("pagina", String(pagina));
     params.set("limite", String(limite));
 
@@ -199,13 +257,26 @@ export async function fetchProcessosSimilares(idProcesso, limite = 5) {
     return res.json();
 }
 
+export async function fetchFiltrosProcessos() {
+    const res = await fetch(`${getApiBaseUrl()}/api/v1/processos/filtros`, {
+        headers: { ...getAuthHeader() },
+    });
+    if (!res.ok) throw new Error(`Erro ao carregar filtros: HTTP ${res.status}`);
+    return res.json();
+}
+
 export async function excluirProcesso(idProcesso) {
     const res = await fetch(`${getApiBaseUrl()}/api/v1/processos/${encodeURIComponent(idProcesso)}`, {
         method: "DELETE",
         headers: { ...getAuthHeader() },
     });
-    if (res.status === 404) throw new Error("Decisão não encontrada para exclusão.");
-    if (!res.ok) throw new Error(`Não foi possível excluir a decisão (HTTP ${res.status}).`);
+    if (res.status === 404) {
+        throw new Error(`Processo ${idProcesso} não encontrado.`);
+    }
+    if (!res.ok) {
+        throw new Error(`Não foi possível excluir o julgado (HTTP ${res.status}).`);
+    }
+    return true;
 }
 
 export async function fetchProcessoDetalhes(idProcesso) {
@@ -245,7 +316,14 @@ export async function preverAnonimizacao(payload, signal) {
 }
 
 export function getRelatorioPdfUrl(idProcesso) {
-    return `${getApiBaseUrl()}/api/v1/relatorios/processo/${encodeURIComponent(idProcesso)}/pdf`;
+    const base = `${getApiBaseUrl()}/api/v1/relatorios/processo/${encodeURIComponent(idProcesso)}/pdf`;
+    if (typeof window !== "undefined") {
+        const token = localStorage.getItem("jurivision_token") || sessionStorage.getItem("jurivision_token");
+        if (token) {
+            return `${base}?token=${encodeURIComponent(token)}`;
+        }
+    }
+    return base;
 }
 
 export async function consultarProcessoDatajud(numeroProcesso) {

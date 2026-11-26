@@ -63,7 +63,9 @@ def test_rnf09_rnf10_contraste_wcag_e_design_tokens():
     assert "text-slate-400" not in html
     assert "text-green-500" not in html
     assert "text-justify" not in html
-    assert "Source+Serif+4" in html
+    assert "Lora" in html
+    assert "Source+Sans+3" in html
+    assert "IBM+Plex+Mono" in html
     assert "decisions-cards-container" in html
     assert "--color-navy: #20364A" in css
     assert "--bg-ivory: #F6F4EF" in css

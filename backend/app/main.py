@@ -6,14 +6,18 @@ Rastreabilidade:
 """
 from contextlib import asynccontextmanager
 import logging
+from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy import inspect, text
 
 from app.core.config import settings
 from app.core.database import Base, SessionLocal, engine
+from app.core.saneamento_acervo import sanear_acervo
 from app.core.seed import seed_initial_data
 from app.routers import auth, dashboard, processos, relatorios
 
@@ -24,17 +28,38 @@ logging.basicConfig(
 logger = logging.getLogger("jurivision.main")
 
 
-def init_db_and_seed() -> None:
-    """Garante criação de tabelas relacionais e carga idempotente inicial no startup."""
+def _ensure_usuario_freemium_columns() -> None:
+    """Garante colunas do modelo Freemium em bancos SQLite/PostgreSQL já inicializados."""
+    inspector = inspect(engine)
+    if "usuarios" not in inspector.get_table_names():
+        return
+    cols = {c["name"] for c in inspector.get_columns("usuarios")}
+    statements: list[str] = []
+    if "plano" not in cols:
+        statements.append("ALTER TABLE usuarios ADD COLUMN plano VARCHAR(20) NOT NULL DEFAULT 'FREE'")
+    if "analises_realizadas" not in cols:
+        statements.append("ALTER TABLE usuarios ADD COLUMN analises_realizadas INTEGER NOT NULL DEFAULT 0")
+    if statements:
+        with engine.begin() as conn:
+            for stmt in statements:
+                conn.execute(text(stmt))
+
+
+def init_db_and_seed(seed_demo: bool = False) -> None:
+    """Garante criação de tabelas relacionais, migração incremental e, só se pedido, a carga fictícia de demonstração."""
     Base.metadata.create_all(bind=engine)
+    _ensure_usuario_freemium_columns()
     with SessionLocal() as db:
-        seed_initial_data(db)
+        sanear_acervo(db)
+    if seed_demo:
+        with SessionLocal() as db:
+            seed_initial_data(db)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Inicializando JuriVision API Core (%s)...", settings.APP_VERSION)
-    init_db_and_seed()
+    init_db_and_seed(seed_demo=settings.SEED_DEMO_DATA)
     yield
     logger.info("Encerrando JuriVision API Core.")
 
@@ -87,3 +112,8 @@ def health_check():
         "system": "JuriVision",
         "ai_provider_configured": settings.AI_PROVIDER,
     }
+
+
+_DIST_DIR = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+if settings.SERVE_FRONTEND_STATIC and _DIST_DIR.exists():
+    app.mount("/", StaticFiles(directory=str(_DIST_DIR), html=True), name="frontend_static")

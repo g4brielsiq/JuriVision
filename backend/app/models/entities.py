@@ -33,6 +33,8 @@ class Usuario(Base):
     email: Mapped[str] = mapped_column(String(150), unique=True, index=True, nullable=False)
     senha_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     numero_oab: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    plano: Mapped[str] = mapped_column(String(20), nullable=False, default="FREE")
+    analises_realizadas: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     processos: Mapped[List["Processo"]] = relationship(
@@ -58,7 +60,7 @@ class Processo(Base):
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="PROCESSADO")
     tema: Mapped[str] = mapped_column(String(120), index=True, nullable=False)
     magistrado: Mapped[str] = mapped_column(String(150), index=True, nullable=False)
-    comarca: Mapped[str] = mapped_column(String(150), nullable=False, default="1ª Vara Cível de Maceió")
+    comarca: Mapped[str] = mapped_column(String(150), nullable=False, default="Não informado")
     autor_anonimizado: Mapped[str] = mapped_column(String(200), nullable=False)
     reu_anonimizado: Mapped[str] = mapped_column(String(200), nullable=False)
     resumo_nlp: Mapped[str] = mapped_column(Text, nullable=False)

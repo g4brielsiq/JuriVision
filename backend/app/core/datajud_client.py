@@ -5,7 +5,8 @@ Rastreabilidade:
 - MODELING.md: RF-08 (Consulta Jurisprudencial), RNF-05 (Tolerância a Falhas)
 - EAP: 1.4.2 Integração com Base de Conhecimento Jurisprudencial
 """
-from datetime import date, datetime
+import asyncio
+from datetime import datetime
 import logging
 import re
 from typing import Optional
@@ -46,12 +47,30 @@ SIGLA_TO_ALIAS_MAP = {
     "TRF5": "api_publica_trf5",
 }
 
+NAO_INFORMADO = "Não informado pelo DataJud"
 
+# Desfecho pelos códigos de movimento da Tabela Processual Unificada (TPU/CNJ)
+DESFECHO_POR_CODIGO_TPU = {
+    219: "Procedente",  # Procedência
+    221: "Procedente",  # Procedência em Parte
+    220: "Improcedente",  # Improcedência
+    466: "Acordo",  # Homologação de Transação
+}
+
+# Números do antigo "lote de contingência" que gravava processos fictícios quando o DataJud falhava.
+# Servem apenas para removê-los de acervos já afetados (todos têm dígito verificador inválido).
+PREFIXOS_CNJ_CONTINGENCIA_FICTICIA = (
+    "0804110-12.2026.",
+    "0804225-33.2026.",
+    "0804390-81.2026.",
+    "0804512-09.2026.",
+    "0804677-44.2026.",
+)
 
 class DataJudClient:
     """
-    Cliente HTTP assíncrono leve para consultar metadados processuais na API Pública do DataJud.
-    Implementa timeout estrito (3s por padrão) e fallback transparente para a base local do TJAL.
+    Cliente HTTP assíncrono para consultar metadados processuais na API Pública do DataJud.
+    Quando o CNJ não responde, informa a indisponibilidade em vez de preencher dados presumidos.
     """
 
     @classmethod
@@ -84,28 +103,62 @@ class DataJudClient:
             return f"{digits[:7]}-{digits[7:9]}.{digits[9:13]}.{digits[13]}.{digits[14:16]}.{digits[16:]}"
         return raw
 
+    @staticmethod
+    def cnj_digito_verificador_valido(numero_processo: str) -> bool:
+        """Confere o dígito verificador do número CNJ (módulo 97, Resolução CNJ nº 65/2008)."""
+        digits = re.sub(r"\D", "", numero_processo or "")
+        if len(digits) != 20:
+            return False
+        sequencial, dv, restante = digits[:7], digits[7:9], digits[9:]
+        return 98 - int(f"{sequencial}{restante}00") % 97 == int(dv)
+
+    @classmethod
+    def _tribunal_do_numero(cls, numero_processo: str) -> str:
+        alias = cls.resolve_alias_tribunal(numero_processo)
+        return alias.replace("api_publica_", "").upper()
+
+    @classmethod
+    async def _post_search(cls, url: str, payload: dict) -> httpx.Response:
+        """POST na API Pública com uma nova tentativa curta quando o CNJ responde 429 (sobrecarga)."""
+        headers = {
+            "Authorization": f"APIKey {settings.DATAJUD_API_KEY}",
+            "Content-Type": "application/json",
+            "User-Agent": "JuriVision-Client/1.0",
+        }
+        async with httpx.AsyncClient(timeout=settings.DATAJUD_TIMEOUT_SECONDS) as client:
+            response = await client.post(url, json=payload, headers=headers)
+            if response.status_code == 429:
+                await asyncio.sleep(2)
+                response = await client.post(url, json=payload, headers=headers)
+            return response
+
+    @staticmethod
+    def _descrever_falha(status_code: Optional[int], exc: Optional[Exception] = None) -> str:
+        if exc is not None:
+            if isinstance(exc, httpx.TimeoutException):
+                return "A API Pública do DataJud (CNJ) demorou demais para responder."
+            return "Não foi possível conectar à API Pública do DataJud (CNJ)."
+        if status_code in (401, 403):
+            return "A API Pública do DataJud recusou a chave de acesso (DATAJUD_API_KEY desatualizada)."
+        if status_code == 429:
+            return "A API Pública do DataJud (CNJ) está sobrecarregada no momento."
+        return f"A API Pública do DataJud (CNJ) respondeu com erro (HTTP {status_code})."
 
     @classmethod
     async def consultar_processo(
         cls,
         numero_processo: str,
         db: Optional[Session] = None,
+        visibilidade=None,
     ) -> DataJudProcessoResponse:
         """
         Consulta o processo na API Pública do DataJud via Elasticsearch DSL.
-        Se a chamada falhar (timeout, conexão ou 404), aciona o fallback para o acervo local.
+        Se o DataJud não responder, mostra apenas o que já está no acervo visível ao usuário
+        (sem completar campos com valores presumidos) ou informa que a consulta falhou.
         """
         clean_digits = re.sub(r"\D", "", numero_processo)
         alias = cls.resolve_alias_tribunal(numero_processo)
         url = f"{settings.DATAJUD_BASE_URL.rstrip('/')}/{alias}/_search"
-
-        headers = {
-            "Authorization": f"APIKey {settings.DATAJUD_API_KEY}",
-            "Content-Type": "application/json",
-            "User-Agent": f"JuriVision-Academic-Client/1.0 (UFAL-GerenciaDeProjetos)",
-        }
-
-        # Query no formato Elasticsearch DSL oficial da API Pública do CNJ
         payload = {
             "query": {
                 "match": {
@@ -114,75 +167,66 @@ class DataJudClient:
             }
         }
 
+        motivo_falha: Optional[str] = None
         try:
-            async with httpx.AsyncClient(timeout=settings.DATAJUD_TIMEOUT_SECONDS) as client:
-                response = await client.post(url, json=payload, headers=headers)
-                if response.status_code == 200:
-                    data = response.json()
-                    hits = data.get("hits", {}).get("hits", [])
-                    if hits:
-                        source = hits[0].get("_source", {})
-                        return cls._parse_datajud_source(source, numero_processo)
-
-                    logger.info("Processo %s não encontrado no índice DataJud (%s). Acionando fallback local.", numero_processo, alias)
-                else:
-                    logger.warning("DataJud retornou status %d para %s. Acionando fallback local.", response.status_code, numero_processo)
-
+            response = await cls._post_search(url, payload)
+            if response.status_code == 200:
+                hits = response.json().get("hits", {}).get("hits", [])
+                if hits:
+                    return cls._parse_datajud_source(hits[0].get("_source", {}), numero_processo)
+                logger.info("Processo %s não encontrado no índice DataJud (%s).", numero_processo, alias)
+            else:
+                motivo_falha = cls._descrever_falha(response.status_code)
+                logger.warning("DataJud retornou status %d para %s.", response.status_code, numero_processo)
         except Exception as exc:
-            logger.warning(
-                "Falha na comunicação com a API Pública do DataJud (%s): %s. Acionando fallback local.",
-                exc.__class__.__name__,
-                str(exc),
-            )
+            motivo_falha = cls._descrever_falha(None, exc)
+            logger.warning("Falha na comunicação com a API Pública do DataJud (%s).", exc.__class__.__name__)
 
-        # Fallback Graceful: Consulta acervo local ou mock validado do TJAL
-        return cls._buscar_fallback_local(numero_processo, db)
+        return cls._buscar_no_acervo(numero_processo, db, visibilidade, motivo_falha)
 
     @classmethod
     def _parse_datajud_source(cls, source: dict, numero_original: str) -> DataJudProcessoResponse:
-        """Mapeia os dados brutos do Elasticsearch para o schema unificado do JuriVision."""
-        numero_proc = source.get("numeroProcesso", numero_original)
-        tribunal = source.get("tribunal", "TJAL")
+        """Mapeia os dados brutos do Elasticsearch para o schema do JuriVision, sem completar lacunas."""
+        numero_proc = str(source.get("numeroProcesso") or numero_original)
+        tribunal = source.get("tribunal") or cls._tribunal_do_numero(numero_proc)
 
-        # Classe
-        classe_info = source.get("classe", {})
-        classe_nome = classe_info.get("nome", "Procedimento Comum Cível") if isinstance(classe_info, dict) else str(classe_info)
-        classe_cod = classe_info.get("codigo") if isinstance(classe_info, dict) else None
+        classe_info = source.get("classe") or {}
+        if isinstance(classe_info, dict):
+            classe_nome = classe_info.get("nome") or NAO_INFORMADO
+            classe_cod = classe_info.get("codigo")
+        else:
+            classe_nome, classe_cod = str(classe_info), None
 
-        # Assuntos
-        assuntos_raw = source.get("assuntos", [])
-        assuntos_list = []
-        assunto_principal_nome = "Direito do Consumidor / Dano Moral"
-        if isinstance(assuntos_raw, list):
-            for a in assuntos_raw:
-                if isinstance(a, dict):
-                    nome = a.get("nome", "")
-                    cod = a.get("codigo")
-                    is_princ = bool(a.get("principal", False))
-                    assuntos_list.append(DataJudAssuntoSchema(codigo=cod, nome=nome, principal=is_princ))
-                    if is_princ or not assunto_principal_nome:
-                        assunto_principal_nome = nome
+        assuntos_list: list[DataJudAssuntoSchema] = []
+        assunto_principal_nome: Optional[str] = None
+        for a in source.get("assuntos") or []:
+            if not isinstance(a, dict) or not a.get("nome"):
+                continue
+            is_princ = bool(a.get("principal", False))
+            assuntos_list.append(DataJudAssuntoSchema(codigo=a.get("codigo"), nome=a["nome"], principal=is_princ))
+            if is_princ and assunto_principal_nome is None:
+                assunto_principal_nome = a["nome"]
+        if assunto_principal_nome is None and assuntos_list:
+            assunto_principal_nome = assuntos_list[0].nome
 
-        if not assuntos_list:
-            assuntos_list = [DataJudAssuntoSchema(codigo=10433, nome=assunto_principal_nome, principal=True)]
+        orgao = source.get("orgaoJulgador") or {}
+        orgao_nome = (orgao.get("nome") if isinstance(orgao, dict) else str(orgao)) or NAO_INFORMADO
 
-        # Órgão Julgador
-        orgao = source.get("orgaoJulgador", {})
-        orgao_nome = orgao.get("nome", "1ª Vara Cível de Maceió") if isinstance(orgao, dict) else str(orgao)
+        movimentos = [m for m in source.get("movimentos") or [] if isinstance(m, dict)]
+        movimentos.sort(key=lambda m: str(m.get("dataHora") or ""), reverse=True)
+        movimentos_list = [
+            DataJudMovimentoSchema(codigo=m.get("codigo"), nome=m.get("nome") or "Movimentação", data_hora=m.get("dataHora"))
+            for m in movimentos[:5]
+        ]
 
-        # Movimentações Recentes
-        movs_raw = source.get("movimentos", [])
-        movimentos_list = []
-        if isinstance(movs_raw, list):
-            for m in movs_raw[:5]:
-                if isinstance(m, dict):
-                    movimentos_list.append(
-                        DataJudMovimentoSchema(
-                            codigo=m.get("codigo"),
-                            nome=m.get("nome", "Movimentação Processual"),
-                            data_hora=m.get("dataHora"),
-                        )
-                    )
+        # Desfecho: a decisão de mérito mais recente pelos códigos da Tabela Processual Unificada
+        desfecho, data_desfecho = None, None
+        for m in movimentos:
+            codigo = m.get("codigo")
+            if codigo in DESFECHO_POR_CODIGO_TPU:
+                desfecho = DESFECHO_POR_CODIGO_TPU[codigo]
+                data_desfecho = m.get("dataHora")
+                break
 
         return DataJudProcessoResponse(
             numero_processo=numero_proc,
@@ -190,78 +234,70 @@ class DataJudClient:
             classe=classe_nome,
             classe_codigo=classe_cod,
             assuntos=assuntos_list,
-            assunto_principal=assunto_principal_nome,
+            assunto_principal=assunto_principal_nome or NAO_INFORMADO,
             orgao_julgador=orgao_nome,
             data_ajuizamento=source.get("dataAjuizamento"),
-            grau=source.get("grau", "G1"),
+            grau=source.get("grau"),
             movimentos_recentes=movimentos_list,
+            desfecho=desfecho,
+            data_desfecho=data_desfecho,
             fonte="datajud_api",
             sucesso=True,
-            mensagem="Metadados recuperados com sucesso da API Pública do DataJud (CNJ).",
+            mensagem="Metadados recuperados da API Pública do DataJud (CNJ).",
         )
 
     @classmethod
-    def _buscar_fallback_local(cls, numero_processo: str, db: Optional[Session]) -> DataJudProcessoResponse:
-        """Busca o processo no banco relacional local (SQLite/PostgreSQL) ou gera registro de contingência."""
-        if db:
-            clean_num = re.sub(r"\D", "", numero_processo)
-            proc = None
-            if len(clean_num) == 20:
-                masked_cnj = f"{clean_num[:7]}-{clean_num[7:9]}.{clean_num[9:13]}.{clean_num[13]}.{clean_num[14:16]}.{clean_num[16:]}"
-                proc = (
-                    db.query(Processo)
-                    .filter(
-                        (Processo.numero_processo == numero_processo)
-                        | (Processo.numero_processo == masked_cnj)
-                    )
-                    .first()
-                )
-            elif len(clean_num) >= 7:
-                proc = (
-                    db.query(Processo)
-                    .filter(
-                        (Processo.numero_processo == numero_processo)
-                        | (Processo.numero_processo.like(f"%{clean_num}%"))
-                    )
-                    .first()
-                )
-            elif numero_processo.strip():
-                proc = (
-                    db.query(Processo)
-                    .filter(Processo.numero_processo == numero_processo.strip())
-                    .first()
-                )
-            if proc:
-                return DataJudProcessoResponse(
-                    numero_processo=proc.numero_processo,
-                    tribunal="TJAL",
-                    classe="Procedimento Comum Cível",
-                    classe_codigo=7,
-                    assuntos=[DataJudAssuntoSchema(codigo=10433, nome=proc.tema or "Dano Moral", principal=True)],
-                    assunto_principal=proc.tema or "Dano Moral",
-                    orgao_julgador=f"Vara Cível ({proc.comarca or 'Maceió'})",
-                    data_ajuizamento=str(proc.data_julgamento) if proc.data_julgamento else "2023-01-15T00:00:00",
-                    grau="G1",
-                    movimentos_recentes=[
-                        DataJudMovimentoSchema(codigo=60, nome="Expedição de Termo de Julgamento", data_hora="2023-08-20T14:30:00"),
-                        DataJudMovimentoSchema(codigo=123, nome="Conclusos para Despacho/Decisão", data_hora="2023-05-10T10:15:00"),
-                    ],
-                    fonte="local_cache_fallback",
-                    sucesso=True,
-                    mensagem="Consulta externa ao DataJud temporariamente indisponível. Dados carregados do acervo local homologado do TJAL.",
-                )
+    def _buscar_no_acervo(
+        cls,
+        numero_processo: str,
+        db: Optional[Session],
+        visibilidade,
+        motivo_falha: Optional[str],
+    ) -> DataJudProcessoResponse:
+        """Procura o número no acervo visível ao usuário; devolve só os campos que o acervo realmente tem."""
+        numero_fmt = cls.formatar_numero_cnj(numero_processo)
+        tribunal = cls._tribunal_do_numero(numero_processo)
+        proc = None
+        if db is not None and numero_fmt.strip():
+            query = db.query(Processo).filter(
+                (Processo.numero_processo == numero_processo.strip()) | (Processo.numero_processo == numero_fmt)
+            )
+            if visibilidade is not None:
+                query = query.filter(visibilidade)
+            proc = query.first()
 
-        # Se não estiver no banco, gera resposta informativa padronizada (sem erro 500)
+        prefixo = f"{motivo_falha} " if motivo_falha else "Processo não localizado na API Pública do DataJud. "
+        if proc:
+            return DataJudProcessoResponse(
+                numero_processo=proc.numero_processo,
+                tribunal=tribunal,
+                classe=NAO_INFORMADO,
+                assuntos=[DataJudAssuntoSchema(codigo=None, nome=proc.tema, principal=True)] if proc.tema else [],
+                assunto_principal=proc.tema or NAO_INFORMADO,
+                orgao_julgador=proc.comarca or NAO_INFORMADO,
+                data_ajuizamento=None,
+                grau=None,
+                movimentos_recentes=[],
+                desfecho=proc.resultado_historico if proc.resultado_historico != "Em Analise" else None,
+                fonte="acervo_local",
+                sucesso=True,
+                mensagem=prefixo + "Exibindo os dados que já constam no seu acervo.",
+            )
+
         return DataJudProcessoResponse(
-            numero_processo=numero_processo,
-            tribunal="TJAL",
-            classe="Não Identificada",
-            assuntos=[DataJudAssuntoSchema(codigo=0, nome="Processo sob Triagem Inicial", principal=True)],
-            assunto_principal="Processo sob Triagem Inicial",
-            orgao_julgador="Tribunal de Justiça de Alagoas",
-            fonte="local_cache_fallback",
+            numero_processo=numero_fmt,
+            tribunal=tribunal,
+            classe=NAO_INFORMADO,
+            assuntos=[],
+            assunto_principal=NAO_INFORMADO,
+            orgao_julgador=NAO_INFORMADO,
+            fonte="indisponivel" if motivo_falha else "nao_encontrado",
             sucesso=False,
-            mensagem="Processo não localizado na API Pública do DataJud nem no acervo local. Verifique o número digitado.",
+            mensagem=(
+                prefixo + "Tente novamente em alguns minutos."
+                if motivo_falha
+                else prefixo + "Confira o número digitado."
+            ),
         )
 
     @classmethod
@@ -270,308 +306,100 @@ class DataJudClient:
         tribunal: str = "TJAL",
         tema: Optional[str] = None,
         limite: int = 3,
-    ) -> tuple[list[DataJudProcessoResponse], str]:
+    ) -> tuple[list[DataJudProcessoResponse], str, Optional[str]]:
         """
-        Coleta automaticamente um lote de processos e jurisprudências na API Pública do DataJud (CNJ)
-        filtrando por tribunal e opcionalmente por assunto/tema.
-        Caso a API externa esteja indisponível ou retorne lista vazia, aciona o lote homologado de contingência.
+        Coleta na API Pública do DataJud um lote de processos que já têm decisão de mérito ou acordo
+        (códigos TPU 219, 220, 221 e 466), filtrando por tribunal e opcionalmente por assunto.
+
+        Retorna (itens, fonte, motivo_falha). Se o DataJud não responder, a lista vem vazia:
+        nenhum processo é inventado para preencher o acervo.
         """
         sigla = (tribunal or "TJAL").strip().upper()
         alias = cls.resolve_alias_por_sigla(sigla)
         url = f"{settings.DATAJUD_BASE_URL.rstrip('/')}/{alias}/_search"
 
-        headers = {
-            "Authorization": f"APIKey {settings.DATAJUD_API_KEY}",
-            "Content-Type": "application/json",
-            "User-Agent": "JuriVision-Academic-Client/1.0 (UFAL-GerenciaDeProjetos)",
-        }
-
+        filtros: list[dict] = [{"terms": {"movimentos.codigo": sorted(DESFECHO_POR_CODIGO_TPU)}}]
+        consulta: dict = {"bool": {"filter": filtros}}
         if tema and tema.strip():
-            query_block: dict = {"match": {"assuntos.nome": tema.strip()}}
-        else:
-            query_block = {"match_all": {}}
+            consulta["bool"]["must"] = [{"match": {"assuntos.nome": tema.strip()}}]
 
         payload = {
             "size": max(1, min(limite, 20)),
-            "query": query_block,
+            "query": consulta,
             "sort": [{"dataAjuizamento": {"order": "desc"}}],
         }
 
         try:
-            async with httpx.AsyncClient(timeout=settings.DATAJUD_TIMEOUT_SECONDS) as client:
-                response = await client.post(url, json=payload, headers=headers)
-                if response.status_code == 200:
-                    data = response.json()
-                    hits = data.get("hits", {}).get("hits", [])
-                    coletados: list[DataJudProcessoResponse] = []
-                    for hit in hits[:limite]:
-                        source = hit.get("_source", {})
-                        num_raw = source.get("numeroProcesso", "")
-                        num_fmt = cls.formatar_numero_cnj(str(num_raw))
-                        parsed = cls._parse_datajud_source(source, num_fmt)
-                        parsed.numero_processo = cls.formatar_numero_cnj(parsed.numero_processo)
-                        parsed.tribunal = source.get("tribunal", sigla)
-                        coletados.append(parsed)
-                    if coletados:
-                        return coletados, "datajud_api"
-                    logger.info(
-                        "Coleta DataJud (%s) não retornou hits para tema=%s. Acionando lote fallback.",
-                        alias,
-                        tema,
-                    )
-                else:
-                    logger.warning(
-                        "Coleta em lote DataJud retornou status %d (%s). Acionando lote fallback.",
-                        response.status_code,
-                        alias,
-                    )
+            response = await cls._post_search(url, payload)
         except Exception as exc:
-            logger.warning(
-                "Falha na coleta em lote da API Pública do DataJud (%s): %s. Acionando lote fallback.",
-                exc.__class__.__name__,
-                str(exc),
-            )
+            logger.warning("Falha na coleta em lote da API Pública do DataJud (%s).", exc.__class__.__name__)
+            return [], "indisponivel", cls._descrever_falha(None, exc)
 
-        return cls._gerar_lote_fallback_jurisprudencia(sigla, tema, limite), "local_cache_fallback"
+        if response.status_code != 200:
+            logger.warning("Coleta em lote DataJud retornou status %d (%s).", response.status_code, alias)
+            return [], "indisponivel", cls._descrever_falha(response.status_code)
 
-    @classmethod
-    def _gerar_lote_fallback_jurisprudencia(
-        cls,
-        tribunal: str = "TJAL",
-        tema: Optional[str] = None,
-        limite: int = 3,
-    ) -> list[DataJudProcessoResponse]:
-        """Gera lote estruturado de jurisprudências homologadas quando a API externa do CNJ está offline."""
-        sigla = (tribunal or "TJAL").strip().upper()
-        segmento_map = {
-            "TJAL": "8.02",
-            "TJSP": "8.26",
-            "TJRJ": "8.19",
-            "TJMG": "8.13",
-            "TJPE": "8.17",
-            "TJBA": "8.05",
-            "TJSE": "8.25",
-            "TRF5": "4.05",
-        }
-        seg = segmento_map.get(sigla, "8.02")
+        coletados: list[DataJudProcessoResponse] = []
+        for hit in response.json().get("hits", {}).get("hits", [])[:limite]:
+            source = hit.get("_source", {})
+            parsed = cls._parse_datajud_source(source, str(source.get("numeroProcesso", "")))
+            parsed.numero_processo = cls.formatar_numero_cnj(parsed.numero_processo)
+            parsed.tribunal = source.get("tribunal") or sigla
+            coletados.append(parsed)
+        return coletados, "datajud_api", None
 
-        catalogo_base = [
-            {
-                "sufixo_num": f"0804110-12.2026.{seg}.0001",
-                "classe": "Procedimento Comum Cível",
-                "classe_codigo": 7,
-                "assunto": "Dano Moral",
-                "assunto_cod": 10433,
-                "orgao": "1ª Vara Cível de Maceió" if sigla == "TJAL" else f"1ª Vara Cível ({sigla})",
-                "data_ajuizamento": "2026-02-14T10:20:00",
-                "movimentos": [
-                    DataJudMovimentoSchema(
-                        codigo=219,
-                        nome="Julgado Procedente o Pedido — Indenização por Negativação Indevida",
-                        data_hora="2026-09-18T15:40:00",
-                    ),
-                    DataJudMovimentoSchema(
-                        codigo=51,
-                        nome="Conclusos para Julgamento",
-                        data_hora="2026-08-02T09:10:00",
-                    ),
-                ],
-            },
-            {
-                "sufixo_num": f"0804225-33.2026.{seg}.0001",
-                "classe": "Procedimento do Juizado Especial Cível",
-                "classe_codigo": 436,
-                "assunto": "Atraso de Voo",
-                "assunto_cod": 4829,
-                "orgao": "2º Juizado Especial Cível de Maceió" if sigla == "TJAL" else f"2º Juizado Especial Cível ({sigla})",
-                "data_ajuizamento": "2026-03-05T14:00:00",
-                "movimentos": [
-                    DataJudMovimentoSchema(
-                        codigo=219,
-                        nome="Julgado Procedente o Pedido — Falha na Prestação de Transporte Aéreo",
-                        data_hora="2026-10-04T11:15:00",
-                    ),
-                    DataJudMovimentoSchema(
-                        codigo=848,
-                        nome="Trânsito em Julgado Certificado",
-                        data_hora="2026-10-25T16:00:00",
-                    ),
-                ],
-            },
-            {
-                "sufixo_num": f"0804390-81.2026.{seg}.0058",
-                "classe": "Procedimento Comum Cível",
-                "classe_codigo": 7,
-                "assunto": "Plano de Saúde",
-                "assunto_cod": 6233,
-                "orgao": "3ª Vara Cível de Arapiraca" if sigla == "TJAL" else f"3ª Vara Cível ({sigla})",
-                "data_ajuizamento": "2026-01-22T08:45:00",
-                "movimentos": [
-                    DataJudMovimentoSchema(
-                        codigo=219,
-                        nome="Julgado Procedente o Pedido — Cobertura Obrigatória de Tratamento Médico",
-                        data_hora="2026-09-29T17:05:00",
-                    ),
-                ],
-            },
-            {
-                "sufixo_num": f"0804512-09.2026.{seg}.0001",
-                "classe": "Ação Trabalhista - Rito Ordinário",
-                "classe_codigo": 985,
-                "assunto": "Direito Trabalhista",
-                "assunto_cod": 2629,
-                "orgao": "2ª Vara do Trabalho de Maceió" if sigla == "TJAL" else f"2ª Vara Cível ({sigla})",
-                "data_ajuizamento": "2026-04-10T11:30:00",
-                "movimentos": [
-                    DataJudMovimentoSchema(
-                        codigo=385,
-                        nome="Homologado o Acordo Judicial entre as Partes",
-                        data_hora="2026-10-12T14:20:00",
-                    ),
-                ],
-            },
-            {
-                "sufixo_num": f"0804677-44.2026.{seg}.0001",
-                "classe": "Execução Fiscal / Anulatória de Débito",
-                "classe_codigo": 1116,
-                "assunto": "Tributário",
-                "assunto_cod": 5952,
-                "orgao": "1ª Vara Cível de Maceió" if sigla == "TJAL" else f"Vara da Fazenda Pública ({sigla})",
-                "data_ajuizamento": "2026-02-28T09:00:00",
-                "movimentos": [
-                    DataJudMovimentoSchema(
-                        codigo=220,
-                        nome="Julgado Improcedente o Pedido — Manutenção do Lançamento Tributário",
-                        data_hora="2026-10-19T13:50:00",
-                    ),
-                ],
-            },
-        ]
-
-        if tema and tema.strip():
-            termo_lower = tema.strip().lower()
-            filtrados = [
-                item for item in catalogo_base
-                if termo_lower in item["assunto"].lower()
-            ]
-            if not filtrados:
-                # Adapta o primeiro registro para o tema filtrado caso seja um assunto específico
-                adaptado = dict(catalogo_base[0])
-                adaptado["assunto"] = tema.strip()
-                filtrados = [adaptado]
-            selecionados = filtrados[:limite]
-        else:
-            selecionados = catalogo_base[:limite]
-
-        respostas: list[DataJudProcessoResponse] = []
-        for item in selecionados:
-            respostas.append(
-                DataJudProcessoResponse(
-                    numero_processo=item["sufixo_num"],
-                    tribunal=sigla,
-                    classe=item["classe"],
-                    classe_codigo=item["classe_codigo"],
-                    assuntos=[
-                        DataJudAssuntoSchema(
-                            codigo=item["assunto_cod"],
-                            nome=item["assunto"],
-                            principal=True,
-                        )
-                    ],
-                    assunto_principal=item["assunto"],
-                    orgao_julgador=item["orgao"],
-                    data_ajuizamento=item["data_ajuizamento"],
-                    grau="G1",
-                    movimentos_recentes=item["movimentos"],
-                    fonte="local_cache_fallback",
-                    sucesso=True,
-                    mensagem=f"Jurisprudência coletada do lote homologado DataJud ({sigla}).",
-                )
-            )
-        return respostas
+    @staticmethod
+    def _normalizar_tema(assunto: str) -> str:
+        """Agrupa o assunto TPU nos temas usados pelos filtros e pela jurimetria (sem alterar o dado de origem)."""
+        texto = assunto.lower()
+        grupos = (
+            (("voo", "aéreo", "aereo", "transporte aéreo", "bagagem"), "Atraso de Voo"),
+            (("plano de saúde", "plano de saude", "saúde suplementar", "saude suplementar", "tratamento médico"), "Plano de Saúde"),
+            (("trabalh", "rescis", "horas extras", "fgts"), "Direito Trabalhista"),
+            (("tribut", "fiscal", "icms", "iss", "imposto"), "Tributário"),
+            (("dano moral", "consumidor", "negativa", "indébito", "indebito"), "Dano Moral"),
+        )
+        for termos, tema in grupos:
+            if any(t in texto for t in termos):
+                return tema
+        return assunto[:120]
 
     @classmethod
-    def extrair_registro_para_acervo(cls, item: DataJudProcessoResponse) -> dict:
+    def extrair_registro_para_acervo(cls, item: DataJudProcessoResponse) -> Optional[dict]:
         """
-        Converte um DataJudProcessoResponse em dicionário compatível com ProcessoCadastroRequest,
-        inferindo tema padronizado, magistrado responsável, desfecho (resultado) e ementa estruturada.
+        Converte um processo do DataJud em dados de cadastro do acervo usando apenas o que o CNJ publica.
+        A API Pública não divulga partes nem magistrado: esses campos ficam como "Não informado pelo DataJud".
+        Retorna None quando o número CNJ não é válido.
         """
         numero_cnj = cls.formatar_numero_cnj(item.numero_processo)
-        if not re.match(r"^\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}$", numero_cnj):
-            digits = re.sub(r"\D", "", numero_cnj).ljust(20, "0")[:20]
-            numero_cnj = f"{digits[:7]}-{digits[7:9]}.{digits[9:13]}.{digits[13]}.{digits[14:16]}.{digits[16:]}"
+        if not re.fullmatch(r"\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}", numero_cnj):
+            return None
 
-        assunto_raw = (item.assunto_principal or "Dano Moral").strip()
-        assunto_lower = assunto_raw.lower()
-        if any(k in assunto_lower for k in ("voo", "aéreo", "aereo", "transporte", "bagagem")):
-            tema = "Atraso de Voo"
-            reu = "Companhia Aérea Nacional S.A."
-        elif any(k in assunto_lower for k in ("saúde", "saude", "plano", "médico", "medico", "hospital")):
-            tema = "Plano de Saúde"
-            reu = "Operadora de Saúde Suplementar S.A."
-        elif any(k in assunto_lower for k in ("trabalh", "rescis", "horas extras", "fgts")):
-            tema = "Direito Trabalhista"
-            reu = "Empresa Prestadora de Serviços LTDA"
-        elif any(k in assunto_lower for k in ("tribut", "fiscal", "icms", "iss", "imposto")):
-            tema = "Tributário"
-            reu = "Fazenda Pública Estadual"
-        elif any(k in assunto_lower for k in ("dano moral", "consumidor", "negativa", "indébito", "indebito")):
-            tema = "Dano Moral"
-            reu = "Instituição Financeira S.A."
-        else:
-            tema = assunto_raw[:120]
-            reu = "Instituição Demandada S.A."
+        assunto = (item.assunto_principal or "").strip()
+        tema = cls._normalizar_tema(assunto) if assunto and assunto != NAO_INFORMADO else NAO_INFORMADO
 
-        orgao = (item.orgao_julgador or "1ª Vara Cível de Maceió").strip()
-        orgao_lower = orgao.lower()
-        if "2º" in orgao_lower or "2ª" in orgao_lower or "juizado" in orgao_lower:
-            magistrado = "Dra. Maria Silva"
-        elif "3ª" in orgao_lower or "arapiraca" in orgao_lower:
-            magistrado = "Dr. Carlos Souza"
-        else:
-            magistrado = "Dr. Rafael De Amorim"
+        data_julgamento = None
+        if item.desfecho and item.data_desfecho:
+            try:
+                data_julgamento = datetime.strptime(str(item.data_desfecho)[:10], "%Y-%m-%d").date()
+            except ValueError:
+                data_julgamento = None
 
-        movs_texto = "; ".join(m.nome for m in (item.movimentos_recentes or []) if m.nome)
-        movs_lower = movs_texto.lower()
-        if "improcedente" in movs_lower:
-            resultado = "Improcedente"
-        elif "acordo" in movs_lower or "concilia" in movs_lower:
-            resultado = "Acordo"
-        elif "procedente" in movs_lower:
-            resultado = "Procedente"
-        else:
-            resultado = "Procedente"
-
-        dt_julgamento = date.today()
-        Candidatos_data = [
-            *(m.data_hora for m in (item.movimentos_recentes or []) if m.data_hora),
-            item.data_ajuizamento,
-        ]
-        for dt_str in Candidatos_data:
-            if dt_str and len(str(dt_str)) >= 10:
-                try:
-                    dt_julgamento = datetime.strptime(str(dt_str)[:10], "%Y-%m-%d").date()
-                    break
-                except ValueError:
-                    continue
-
-        autor_bruto = "Carlos Eduardo Ferreira"
-        resumo_ementa = (
-            f"Jurisprudência coletada via DataJud ({item.tribunal}) referente à classe '{item.classe}' "
-            f"no órgão '{orgao}'. Matéria principal: {assunto_raw}. "
-            f"Parte autora: {autor_bruto} em face de {reu}. "
-            f"Síntese de movimentações e dispositivo: {movs_texto or 'Julgamento de mérito registrado no tribunal.'}"
+        movimentos = "; ".join(m.nome for m in item.movimentos_recentes if m.nome)
+        resumo = (
+            f"Metadados públicos do DataJud ({item.tribunal}): classe '{item.classe}', "
+            f"órgão julgador '{item.orgao_julgador}', assunto principal '{tema}'. "
+            f"Movimentações recentes: {movimentos or 'não informadas'}."
         )
 
         return {
             "numero_processo": numero_cnj,
             "tema": tema,
-            "magistrado": magistrado,
-            "comarca": orgao,
-            "autor": autor_bruto,
-            "reu": reu,
-            "resumo": resumo_ementa,
-            "resultado": resultado,
-            "data_julgamento": dt_julgamento,
+            "magistrado": NAO_INFORMADO,
+            "comarca": item.orgao_julgador or NAO_INFORMADO,
+            "autor": NAO_INFORMADO,
+            "reu": NAO_INFORMADO,
+            "resumo": resumo,
+            "resultado": item.desfecho or "Em Analise",
+            "data_julgamento": data_julgamento,
         }
-

@@ -33,3 +33,57 @@
   - Refatoração do shell global (`frontend/index.html` e `frontend/src/components/design-tokens.css`): sidebar clara (`236px`), remoção do monograma e estilos *inline*, cabeçalho enxuto (`48px`) e fichas de decisão contínuas sem caixas redundantes.
   - Integração e compatibilização do Guia v2 com os modais de cadastro/edição de julgados e cadastro de advogados da branch `dev` (PR #9).
 - **Status:** Build de produção do frontend aprovado (`npm run build`) e **33 de 33 testes automatizados** aprovados no pytest.
+
+### [2026-11-21] — Etapa 1 (JuriVision-Pro): Filtros/Ordenação no Servidor, Exclusão Integrada e PDF Multi-página
+- **Branch de Atuação:** `dev` (`pro` — `VictorSamyr/JuriVision-Pro`)
+- **Atividades Realizadas:**
+  - Estruturação do Roadmap Mestre (Etapas 1 a 6) em `docs/CHANGELOG_EQUIPE.md`.
+  - Evolução de `GET /api/v1/processos` com ordenação no banco (`recentes`, `antigas`, `assunto`), filtro server-side por `ids` e retorno de `resumo_curto`, além do novo endpoint `GET /api/v1/processos/filtros`.
+  - Evolução de `_build_pdf_document` em `backend/app/routers/relatorios.py` para paginação automática multi-página em PDF 1.4.
+  - Integração completa no front-end (`api.js`, `index.html`, `app.js`), incluindo carregamento dinâmico de filtros e exclusão de julgados (`DELETE /api/v1/processos/{id_processo}`) na folha de leitura.
+  - Criação da suíte `backend/tests/test_etapa1_consistencia_e_filtros.py` com 8 testes exaustivos da Etapa 1.
+- **Status:** Build do frontend (`npm run build`) e **41 de 41 testes automatizados** aprovados no pytest.
+
+### [2026-11-21] — Etapa 2 (JuriVision-Pro): Segurança JWT, Endpoint `/auth/me` e Isolamento Multi-usuário
+- **Branch de Atuação:** `dev` (`pro` — `VictorSamyr/JuriVision-Pro`)
+- **Atividades Realizadas:**
+  - Implementação de `get_optional_current_user`, `get_current_user_strict`, `build_processo_visibility_filter`, `can_read_processo` e `ensure_can_modify_processo` em `backend/app/core/security.py`.
+  - Criação do endpoint `GET /api/v1/auth/me` em `backend/app/routers/auth.py` e aplicação do isolamento multi-tenant em `processos.py`, `dashboard.py` e `relatorios.py`.
+  - Integração no front-end (`api.js`, `index.html`, `app.js`) com restauração de sessão autenticada, propagação de `?token=` para relatórios PDF privados e botão `#btn-logout-account`.
+  - Criação da suíte `backend/tests/test_etapa2_seguranca_e_isolamento.py` com 7 testes exaustivos.
+- **Status:** Build do frontend (`npm run build`) e **48 de 48 testes automatizados** aprovados no pytest.
+
+### [2026-11-21] — Etapa 3 (JuriVision-Pro): Endurecimento da Barreira LGPD (`AnonimizadorLGPD`)
+- **Branch de Atuação:** `dev` (`pro` — `VictorSamyr/JuriVision-Pro`)
+- **Atividades Realizadas:**
+  - Expansão do `AnonimizadorLGPD` em `backend/app/core/ai_gateway.py` para mascarar e-mails, telefones/WhatsApp, CEPs, endereços residenciais, documentos civis (CNH, CTPS, PIS/PASEP, Passaporte, Título de Eleitor, CNS) e nomes em prosa jurídica contínua, qualificação civil e variações parciais (`Sr./Sra.`).
+  - Substituição da correspondência de empresas por `CORPORATE_REGEX` com fronteiras de palavra e introdução de `LEGAL_AND_GEO_STOPWORDS` / `GEO_PHRASES` para eliminar falsos positivos em sobrenomes, magistrados e termos jurídicos.
+  - Criação de `extract_parties_from_text` integrado ao `LocalDeterministicFallbackAdapter` e da suíte `backend/tests/test_etapa3_barreira_lgpd_expandida.py` com 6 testes exaustivos.
+- **Status:** Build do frontend (`npm run build`) e **54 de 54 testes automatizados** aprovados no pytest.
+
+### [2026-11-21] — Etapa 4 (JuriVision-Pro): Motor NLP Local Real (`TF-IDF` / `BM25`) e Intervalo de Wilson
+- **Branch de Atuação:** `dev` (`pro` — `VictorSamyr/JuriVision-Pro`)
+- **Atividades Realizadas:**
+  - Criação de `backend/app/core/nlp_engine.py` com tokenização jurídica, classificação multi-tema ponderada, extração dinâmica de magistrados/varas, sumarização extrativa por centralidade TF-IDF, ranqueamento híbrido Cosseno TF-IDF + Okapi BM25 e margem de confiança estatística via Intervalo de Wilson.
+  - Integração completa em `LocalDeterministicFallbackAdapter` (`ai_gateway.py`), `ContextoHistoricoSchema` (`contracts.py`) e nos fluxos de PDF, CSV e cadastro manual (`processos.py`), removendo o multiplicador artificial `* 7`, a margem fixa `0.08` e o fallback fixo de juiz.
+  - Criação da suíte `backend/tests/test_etapa4_nlp_e_similaridade.py` com 6 testes exaustivos.
+- **Status:** Build do frontend (`npm run build`) e **60 de 60 testes automatizados** aprovados no pytest.
+
+### [2026-11-21] — Etapa 5 (JuriVision-Pro): RAG Jurídico (Gemini + Precedentes Reais), Cache SHA-256, Extrator PDF e Microsserviço `ai_engine:8001`
+- **Branch de Atuação:** `dev` (`pro` — `VictorSamyr/JuriVision-Pro`)
+- **Atividades Realizadas:**
+  - Implementação de `build_rag_precedents_context` e `synthesize_local_rag_tendencia` em `backend/app/core/nlp_engine.py`.
+  - Evolução do `GeminiAIAdapter` em `backend/app/core/ai_gateway.py` com injeção dos Top-5 precedentes similares reais do banco (RAG), métricas estatísticas de Wilson e cache SHA-256, além de expansão de `ExtratorDocumental` (`TJ` arrays e streams `FlateDecode`).
+  - Ativação do servidor FastAPI HTTP em `ai_engine/worker.py` (`GET /health` e `POST /internal/v1/analyze` na porta `8001`) e atualização de `ai_engine/requirements.txt`.
+  - Documentação da expansão planejada multi-provedor (Ollama / OpenAI-API via `AIGatewayPort`) na `ADR-002` de `ARCHITECTURE.md`.
+  - Criação da suíte `backend/tests/test_etapa5_rag_e_ai_engine.py` com 6 testes exaustivos.
+- **Status:** Build do frontend (`npm run build`) e **66 de 66 testes automatizados** aprovados no pytest.
+
+### [2026-11-21] — Etapa 6 (JuriVision-Pro): Modelo Freemium (`FREE`/`PRO`), Controle de Cotas, Paywall CONAD e Deploy Cloud
+- **Branch de Atuação:** `dev` (`pro` — `VictorSamyr/JuriVision-Pro`)
+- **Atividades Realizadas:**
+  - Adição das colunas `plano` e `analises_realizadas` em `Usuario` (`backend/app/models/entities.py`), migração incremental idempotente em `init_db_and_seed()` (`backend/app/main.py`) e garantia do plano `PRO` para `usr-01` em `backend/app/core/seed.py`.
+  - Criação dos contratos `PlanoAssinaturaStatusResponse` e `PlanoUpgradeRequest` (`contracts.py`), rotas `GET /api/v1/auth/plano` e `POST /api/v1/auth/plano/upgrade` (`auth.py`) e enforcement de cotas (`FREE_PLAN_PDF_LIMIT = 3` com `HTTP 402` no 4º PDF e bloqueio de lote CSV no `FREE`) em `processos.py`.
+  - Implementação completa do fluxo Freemium no front-end (`api.js`, `index.html`, `design-tokens.css`, `app.js`) com badge de plano/cota, blur + CTA de desbloqueio sobre a tese estratégica no `FREE`, modal comparativo `#upgrade-modal` (Cortesia CONAD 2026) e resolução dinâmica de API base em produção.
+  - Criação do `Dockerfile` multi-stage unificado e `render.yaml` na raiz, além da suíte `backend/tests/test_etapa6_freemium_e_cloud.py` com 6 testes exaustivos.
+- **Status:** Build do frontend (`npm run build`) e **72 de 72 testes automatizados** aprovados no pytest (6/6 etapas concluídas).
