@@ -27,12 +27,16 @@ def seed_initial_data(db: Session) -> None:
             email="advogado@escritorio.com",
             senha_hash=hash_password("senhaSegura123"),
             numero_oab="12345/AL",
+            plano="PRO",
         )
         db.add(default_user)
         db.flush()
         logger.info("Usuário padrão 'advogado@escritorio.com' (OAB 12345/AL) criado.")
     else:
         default_user = existing_user
+        if (existing_user.plano or "FREE").upper() != "PRO":
+            existing_user.plano = "PRO"
+            db.flush()
 
     if db.query(Processo).count() > 0:
         db.commit()

@@ -166,3 +166,15 @@ def test_ct13_edicao_inexistente_404_e_numero_de_outro_processo_409(client: Test
 
     resp = client.put(f"/api/v1/processos/{segundo['id_processo']}", json=_payload(numero_processo=numero_do_primeiro))
     assert resp.status_code == 409
+
+
+def test_ct14_exclusao_processo_delete_204_e_404(client: TestClient):
+    """CT-14 (RF-08): Valida exclusão de processo judicial (HTTP 204) e retorno 404 após remoção."""
+    criado = client.post("/api/v1/processos", json=_payload()).json()
+    id_proc = criado["id_processo"]
+
+    resp_del = client.delete(f"/api/v1/processos/{id_proc}")
+    assert resp_del.status_code == 204
+
+    assert client.get(f"/api/v1/processos/{id_proc}").status_code == 404
+    assert client.delete(f"/api/v1/processos/{id_proc}").status_code == 404

@@ -85,6 +85,26 @@ class LoginResponse(BaseModel):
     usuario: UsuarioProfileSchema
 
 
+PlanoTipo = Literal["FREE", "PRO"]
+
+
+class PlanoAssinaturaStatusResponse(BaseModel):
+    usuario_id: str
+    nome: str
+    plano: PlanoTipo = "FREE"
+    analises_realizadas: int = Field(default=0, ge=0)
+    limite_analises_free: int = Field(default=3, ge=1)
+    analises_restantes: int = Field(default=3, ge=0)
+    recursos_pro_liberados: bool = False
+    lote_csv_liberado: bool = False
+    tese_aprofundada_liberada: bool = False
+    exportacao_pdf_ilimitada: bool = False
+
+
+class PlanoUpgradeRequest(BaseModel):
+    plano: PlanoTipo = Field(default="PRO")
+
+
 # ==============================================================================
 # 8.2 Métricas de Jurimetria — Dashboard (RF-07)
 # ==============================================================================
@@ -94,17 +114,43 @@ class DecisaoJuizSchema(BaseModel):
     improcedentes: int = Field(..., ge=0)
 
 
+class DistribuicaoResultadosSchema(BaseModel):
+    procedentes: int = Field(default=0, ge=0)
+    acordos: int = Field(default=0, ge=0)
+    improcedentes: int = Field(default=0, ge=0)
+    em_analise: int = Field(default=0, ge=0)
+
+
 class VolumeTemaSchema(BaseModel):
     tema: str
     percentual: float = Field(..., ge=0.0, le=100.0)
+    total: int = Field(default=0, ge=0)
+    favoraveis: int = Field(default=0, ge=0)
+    decididos: int = Field(default=0, ge=0, description="Decisões do tema com desfecho (base da taxa favorável)")
+    taxa_favoravel: float = Field(default=0.0, ge=0.0, le=100.0)
+    tempo_medio_meses: int = Field(default=12, ge=1)
+
+
+class RecorteAcervoSchema(BaseModel):
+    orgaos_julgadores: List[str] = Field(default_factory=list)
+    total_orgaos_julgadores: int = Field(default=0, ge=0)
+    ano_inicial: Optional[int] = None
+    ano_final: Optional[int] = None
 
 
 class DashboardMetricasResponse(BaseModel):
     taxa_exito_global: float = Field(..., ge=0.0, le=1.0)
     tempo_medio_tramitacao_meses: int = Field(..., ge=1)
     total_processos_analisados: int = Field(..., ge=0)
+    total_decididos: int = Field(
+        default=0, ge=0, description="Decisões com desfecho (procedente, acordo, improcedente): denominador da taxa"
+    )
     decisoes_por_juiz: List[DecisaoJuizSchema]
     volume_por_tema: List[VolumeTemaSchema]
+    distribuicao_resultados: DistribuicaoResultadosSchema = Field(
+        default_factory=DistribuicaoResultadosSchema
+    )
+    recorte: RecorteAcervoSchema = Field(default_factory=RecorteAcervoSchema)
 
 
 # ==============================================================================
@@ -115,12 +161,43 @@ class PartesAnonimizadasSchema(BaseModel):
     reu: str
 
 
+class SecoesPeticaoSchema(BaseModel):
+    dos_fatos: str = Field(default="", description="Narrativa fática extraída da petição inicial")
+    do_direito: str = Field(default="", description="Fundamentação jurídica, teses e dispositivos legais")
+    dos_pedidos: str = Field(default="", description="Pedidos e requerimentos finais formulados")
+    preliminares: Optional[str] = Field(default=None, description="Questões preliminares, se identificadas")
+    cabecalho: Optional[str] = Field(default=None, description="Endereçamento e qualificação inicial das partes")
+
+
+class CaracteristicasProcessuaisSchema(BaseModel):
+    """Características processuais identificadas automaticamente no texto da petição (Card #18)."""
+
+    classe_processual: Optional[str] = Field(default=None, description="Ex.: Ação de Indenização por Danos Morais")
+    valor_causa: Optional[float] = Field(default=None, ge=0, description="Valor da causa em reais, se informado")
+    tutela_urgencia: bool = Field(default=False, description="Há pedido de tutela de urgência / liminar")
+    justica_gratuita: bool = Field(default=False, description="Há pedido de gratuidade da justiça")
+    danos_morais: bool = Field(default=False, description="Há pedido de indenização por danos morais")
+    danos_materiais: bool = Field(default=False, description="Há pedido de danos materiais / restituição")
+    inversao_onus_prova: bool = Field(default=False, description="Há pedido de inversão do ônus da prova")
+    prioridade_tramitacao: bool = Field(default=False, description="Há pedido de prioridade de tramitação")
+    pedidos: List[str] = Field(default_factory=list, description="Pedidos enumerados (texto higienizado)")
+
+
 class MetadadosExtraidosSchema(BaseModel):
     numero_processo: str
     tema: str
     magistrado: str
     comarca: str
     partes_anonimizadas: PartesAnonimizadasSchema
+    secoes: Optional[SecoesPeticaoSchema] = None
+    caracteristicas: Optional[CaracteristicasProcessuaisSchema] = None
+    confianca_classificacao: Optional[float] = Field(
+        default=None, ge=0.0, le=1.0, description="Confiança da classificação de tema (0 a 1)"
+    )
+    campos_nao_identificados: List[str] = Field(
+        default_factory=list,
+        description="Campos que não foram encontrados no documento (nenhum valor é inventado)",
+    )
 
 
 class AnalisePreditivaSchema(BaseModel):
@@ -173,12 +250,19 @@ class ProcessoListItemSchema(BaseModel):
     resultado: str
     data_julgamento: Optional[str] = None
     probabilidade_deferimento: Optional[float] = None
+    resumo_curto: Optional[str] = None
 
 
 class ProcessoListResponse(BaseModel):
     total: int = Field(..., ge=0)
     pagina: int = Field(..., ge=1)
     itens: List[ProcessoListItemSchema]
+
+
+class FiltrosDisponiveisResponse(BaseModel):
+    temas: List[str]
+    magistrados: List[str]
+    comarcas: List[str]
 
 
 # ==============================================================================
@@ -222,7 +306,7 @@ class ProcessoCadastroRequest(BaseModel):
     tema: str = Field(..., min_length=2, max_length=120, examples=["Dano Moral"])
     magistrado: str = Field(..., min_length=2, max_length=150, examples=["Dr. Rafael De Amorim"])
     comarca: str = Field(
-        default="1ª Vara Cível de Maceió", min_length=2, max_length=150, examples=["1ª Vara Cível de Maceió"]
+        default="Não informado", min_length=2, max_length=150, examples=["1ª Vara Cível de Maceió"]
     )
     autor: str = Field(..., min_length=2, max_length=200, examples=["Maria Aparecida Santos"])
     reu: str = Field(..., min_length=2, max_length=200, examples=["Banco do Brasil S.A."])
@@ -239,10 +323,25 @@ class ProcessoCadastroRequest(BaseModel):
 # ==============================================================================
 # 8.7 Contrato Interno Back-end <-> AI Engine (ADR-001 / ADR-002)
 # ==============================================================================
+class PrecedenteSimilarSchema(BaseModel):
+    id_processo: str
+    numero_processo: str
+    tema: str
+    magistrado: str
+    resultado: str
+    similaridade: float
+    prazo_meses: int = 12
+    tese: str = ""
+
+
 class ContextoHistoricoSchema(BaseModel):
     total_casos_similares: int = 42
     taxa_favoravel_juiz: float = 0.72
     tempo_medio_meses: int = 9
+    margem_confianca_calculada: Optional[float] = None
+    tese_precedente_similar: Optional[str] = None
+    magistrado_inferido: Optional[str] = None
+    precedentes_similares: List[PrecedenteSimilarSchema] = []
 
 
 class InternalAnalyzeRequest(BaseModel):
@@ -284,6 +383,43 @@ class DataJudProcessoResponse(BaseModel):
     data_ajuizamento: Optional[str] = None
     grau: Optional[str] = None
     movimentos_recentes: List[DataJudMovimentoSchema] = []
-    fonte: str = "datajud_api"  # "datajud_api" | "local_cache_fallback"
+    # Desfecho identificado pelos códigos TPU de decisão (None quando ainda não há decisão de mérito/acordo)
+    desfecho: Optional[ResultadoProcesso] = None
+    data_desfecho: Optional[str] = None
+    fonte: str = "datajud_api"  # "datajud_api" | "acervo_local" | "nao_encontrado" | "indisponivel"
     sucesso: bool = True
     mensagem: str = "Metadados recuperados com sucesso da API Pública do DataJud."
+
+
+class DataJudSincronizacaoRequest(BaseModel):
+    tribunal: str = Field(
+        default="TJAL",
+        min_length=2,
+        max_length=20,
+        description="Sigla do tribunal para coleta automática (ex.: TJAL, TJSP, TJRJ, TJPE, TRF5)",
+        examples=["TJAL"],
+    )
+    tema: Optional[str] = Field(
+        default=None,
+        max_length=120,
+        description="Filtro opcional de assunto/matéria jurisprudencial para coleta direcionada",
+        examples=["Dano Moral"],
+    )
+    limite: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        description="Quantidade máxima de processos e jurisprudências a coletar no lote",
+    )
+
+
+class DataJudSincronizacaoResponse(BaseModel):
+    tribunal: str
+    fonte: str = "datajud_api"  # "datajud_api" (a sincronização nunca grava dados presumidos)
+    total_coletados: int = Field(..., ge=0)
+    novos_inseridos: int = Field(..., ge=0)
+    atualizados: int = Field(..., ge=0)
+    total_entidades_anonimizadas_lgpd: int = Field(default=0, ge=0)
+    mensagem: str
+    itens: List[ProcessoListItemSchema] = []
+

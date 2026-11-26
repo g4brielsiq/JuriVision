@@ -5,25 +5,47 @@ Rastreabilidade:
 - MODELING.md: RF-02, RF-03, RF-04, RF-05, RF-06, RF-08, RN-01 a RN-04, UC-02 a UC-07
 """
 import csv
+from collections import Counter
 from datetime import date, datetime
 import hashlib
 import io
+import re
 from typing import Optional
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.ai_gateway import AnonimizadorLGPD, ExtratorDocumental, ai_gateway
+from app.core.config import settings
 from app.core.datajud_client import DataJudClient
 from app.core.database import get_db
-from app.models.entities import AnalisePreditiva, LogAuditoriaLGPD, Processo
+from app.core.nlp_engine import (
+    classify_legal_theme,
+    compute_jurimetria_prediction,
+    extract_court_and_judge,
+    rank_similar_precedents,
+)
+from app.core.security import (
+    PUBLIC_OWNER_ID,
+    build_processo_visibility_filter,
+    can_read_processo,
+    ensure_can_modify_processo,
+    get_effective_user_id,
+    get_optional_current_user,
+)
+from app.models.entities import AnalisePreditiva, LogAuditoriaLGPD, Processo, Usuario
+from app.schemas.comparacao import ResultadoComparacaoPecas
 from app.schemas.contracts import (
     AnalisePreditivaSchema,
     AuditoriaLGPDSchema,
     ContextoHistoricoSchema,
     CSVUploadResponse,
+    DataJudProcessoResponse,
+    DataJudSincronizacaoRequest,
+    DataJudSincronizacaoResponse,
+    FiltrosDisponiveisResponse,
     InternalAnalyzeRequest,
     MetadadosExtraidosSchema,
     PartesAnonimizadasSchema,
@@ -34,7 +56,6 @@ from app.schemas.contracts import (
     ProcessoListItemSchema,
     ProcessoListResponse,
     ProcessoUploadResponse,
-    DataJudProcessoResponse,
 )
 
 router = APIRouter(prefix="/api/v1/processos", tags=["Processos e Base de Conhecimento (RF-02 a RF-08)"])
@@ -53,65 +74,59 @@ REQUIRED_CSV_COLUMNS = {
 
 MAX_PDF_SIZE_BYTES = 15 * 1024 * 1024  # 15 MB (RN-04 / SEC-05)
 MAX_CSV_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB (RN-04 / SEC-05)
+MIN_JULGADOS_POR_TEMA = 5
 
 
-def _compute_historical_context(db: Session, raw_text: str) -> ContextoHistoricoSchema:
+def _compute_historical_context(
+    db: Session,
+    raw_text: str,
+    current_user: Optional[Usuario] = None,
+) -> ContextoHistoricoSchema:
     """
-    Consulta o histórico relacional (RN-02) para fornecer parâmetros estatísticos reais
-    ao motor preditivo sobre o magistrado e tema correlatos.
+    Consulta os processos visíveis ao usuário (RN-02) e executa ranqueamento real por
+    similaridade textual (TF-IDF + BM25) + Intervalo de Confiança de Wilson.
     """
-    lower = raw_text.lower()
-    if "maria silva" in lower:
-        target_juiz = "Dra. Maria Silva"
-    elif "carlos souza" in lower:
-        target_juiz = "Dr. Carlos Souza"
-    else:
-        target_juiz = "Dr. Rafael De Amorim"
+    sanitized_query, _, _ = AnonimizadorLGPD.sanitize_text(raw_text or "")
+    tema_detectado, _, _ = classify_legal_theme(sanitized_query)
+    magistrado_detectado, _ = extract_court_and_judge(raw_text or "")
 
-    query = db.query(Processo).filter(Processo.magistrado == target_juiz).all()
-    if not query:
-        query = db.query(Processo).all()
+    vis_filter = build_processo_visibility_filter(current_user)
+    processes = db.query(Processo).filter(vis_filter).all()
 
-    if not query:
-        return ContextoHistoricoSchema(
-            total_casos_similares=42,
-            taxa_favoravel_juiz=0.75,
-            tempo_medio_meses=9,
-        )
-
-    favoraveis = sum(
-        1
-        for p in query
-        if (p.resultado_historico or "").lower() in ("procedente", "acordo")
-        or (p.analise_preditiva and p.analise_preditiva.probabilidade_deferimento >= 0.5)
+    pred_ctx = compute_jurimetria_prediction(
+        query_text=sanitized_query,
+        processes=processes,
+        target_tema=tema_detectado,
+        target_magistrado=magistrado_detectado,
+        top_k=15,
     )
-    taxa = round(favoraveis / len(query), 2)
-    # Escala estatística representativa da vara + registros persistidos
-    casos_similares = max(len(query) * 7, 15)
-    prazos = [
-        p.analise_preditiva.tempo_estimado_sentenca_meses
-        for p in query
-        if p.analise_preditiva is not None
-    ]
-    tempo_medio = int(round(sum(prazos) / len(prazos))) if prazos else 10
-
-    return ContextoHistoricoSchema(
-        total_casos_similares=casos_similares,
-        taxa_favoravel_juiz=max(min(taxa, 0.92), 0.25),
-        tempo_medio_meses=tempo_medio,
-    )
+    return ContextoHistoricoSchema(**pred_ctx)
 
 
 @router.post("/upload-pdf", response_model=ProcessoUploadResponse, status_code=status.HTTP_200_OK)
 async def upload_processo_pdf(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
 ) -> ProcessoUploadResponse:
     """
     Recebe uma petição inicial em PDF (RF-02), valida sua integridade binária (RN-04),
-    aciona o pipeline isolado de IA com barreira LGPD obrigatória (RF-04, RF-05, RF-06)
-    e persiste o processo higienizado no banco de dados (ADR-003).
+    aplica controle de cotas Freemium (FREE vs PRO), aciona o pipeline isolado de IA com
+    barreira LGPD obrigatória (RF-04, RF-05, RF-06) e persiste o processo higienizado (ADR-003).
     """
+    if current_user is not None:
+        plano_atual = (current_user.plano or "FREE").upper()
+        usadas = int(current_user.analises_realizadas or 0)
+        if plano_atual == "FREE" and usadas >= settings.FREE_PLAN_PDF_LIMIT:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail=(
+                    f"LimitePlanoFree: Você atingiu o limite gratuito de {settings.FREE_PLAN_PDF_LIMIT} "
+                    "análises de petições em PDF no plano FREE. Faça upgrade para o plano JuriVision PRO "
+                    "para análises ilimitadas."
+                ),
+            )
+
     filename = file.filename or "peticao_inicial.pdf"
     if not filename.lower().endswith(".pdf"):
         raise HTTPException(
@@ -133,7 +148,7 @@ async def upload_processo_pdf(
             detail=f"ErroProcessamento (RN-04): {str(exc)}",
         ) from exc
 
-    contexto = _compute_historical_context(db, raw_text)
+    contexto = _compute_historical_context(db, raw_text, current_user=current_user)
     ai_result = ai_gateway.analyze_document(
         InternalAnalyzeRequest(
             arquivo_nome=filename,
@@ -145,10 +160,16 @@ async def upload_processo_pdf(
     meta = ai_result.metadados_extraidos
     pred = ai_result.analise_preditiva
     lgpd = ai_result.auditoria_lgpd
+    owner_id = get_effective_user_id(current_user)
 
-    # Verifica se já existe processo com o mesmo número CNJ para operação idempotente
+    # Verifica se já existe processo com o mesmo número CNJ para operação idempotente e respeita isolamento
     existing = db.query(Processo).filter(Processo.numero_processo == meta.numero_processo).first()
     if existing:
+        if existing.usuario_id not in (None, PUBLIC_OWNER_ID, owner_id):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Já existe um processo privado registrado com este número CNJ por outro usuário.",
+            )
         proc_id = existing.id_processo
         existing.arquivo_nome = filename
         existing.status = "PROCESSADO"
@@ -171,7 +192,7 @@ async def upload_processo_pdf(
         proc_id = f"proc-{short_hash}"
         novo_proc = Processo(
             id_processo=proc_id,
-            usuario_id="usr-01",
+            usuario_id=owner_id,
             numero_processo=meta.numero_processo,
             arquivo_nome=filename,
             origem_ingestao="PDF",
@@ -182,8 +203,10 @@ async def upload_processo_pdf(
             autor_anonimizado=meta.partes_anonimizadas.autor,
             reu_anonimizado=meta.partes_anonimizadas.reu,
             resumo_nlp=ai_result.resumo_nlp,
-            resultado_historico="Procedente" if pred.probabilidade_deferimento >= 0.6 else "Em Analise",
-            data_julgamento=date.today(),
+            # Petição recém-analisada ainda não tem decisão: a previsão fica em analise_preditiva,
+            # nunca no desfecho histórico usado pela jurimetria.
+            resultado_historico="Em Analise",
+            data_julgamento=None,
         )
         db.add(novo_proc)
         db.flush()
@@ -207,6 +230,8 @@ async def upload_processo_pdf(
         texto_higienizado_verificado=lgpd.texto_higienizado_verificado,
     )
     db.add(novo_log)
+    if current_user is not None:
+        current_user.analises_realizadas = int(current_user.analises_realizadas or 0) + 1
     db.commit()
 
     return ProcessoUploadResponse(
@@ -224,11 +249,23 @@ async def upload_processo_pdf(
 async def upload_processos_csv(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
 ) -> CSVUploadResponse:
     """
     Importa em lote registros estruturados via planilha CSV (RF-03),
     aplicando higienização determinística local LGPD em 100% das linhas antes da persistência (RF-04 / RN-01).
+    Recurso exclusivo do plano PRO quando autenticado.
     """
+    if current_user is not None and (current_user.plano or "FREE").upper() == "FREE":
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=(
+                "RecursoExclusivoPro: A importação em lote via planilha CSV é exclusiva "
+                "para assinantes do plano JuriVision PRO."
+            ),
+        )
+
+    owner_id = get_effective_user_id(current_user)
     filename = file.filename or "lote_processos.csv"
     if not filename.lower().endswith(".csv"):
         raise HTTPException(
@@ -271,6 +308,7 @@ async def upload_processos_csv(
     lidos = 0
     importados = 0
     anonimizados = 0
+    visible_processes = db.query(Processo).filter(build_processo_visibility_filter(current_user)).all()
 
     for row in reader:
         lidos += 1
@@ -295,20 +333,42 @@ async def upload_processos_csv(
         try:
             dt_julg = datetime.strptime(norm_row.get("data_julgamento", ""), "%Y-%m-%d").date()
         except ValueError:
-            dt_julg = date.today()
+            dt_julg = None
 
-        resultado = norm_row.get("resultado") or "Procedente"
-        prob = 0.76 if resultado.lower() in ("procedente", "acordo") else 0.38
+        resultado = norm_row.get("resultado") or "Em Analise"
+        tema_row = norm_row.get("tema") or "Não informado"
+        mag_row = norm_row.get("magistrado") or "Não informado"
+        comarca_row = norm_row.get("comarca") or "Não informado"
+        resumo_row = clean_resumo or "Resumo importado via lote CSV e higienizado."
+
+        pred_ctx = compute_jurimetria_prediction(
+            query_text=f"{tema_row} {mag_row} {comarca_row} {resumo_row}",
+            processes=visible_processes,
+            target_tema=tema_row,
+            target_magistrado=mag_row,
+            top_k=15,
+        )
+        if resultado.lower() in ("procedente", "acordo"):
+            prob = 0.76
+        elif resultado.lower() == "improcedente":
+            prob = 0.38
+        else:
+            prob = pred_ctx["taxa_favoravel_juiz"]
 
         existing = db.query(Processo).filter(Processo.numero_processo == num_proc).first()
         if existing:
+            if existing.usuario_id not in (None, PUBLIC_OWNER_ID, owner_id):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"O processo '{num_proc}' pertence de forma privada a outro usuário.",
+                )
             proc_id = existing.id_processo
-            existing.tema = norm_row.get("tema") or "Dano Moral"
-            existing.magistrado = norm_row.get("magistrado") or "Dr. Rafael De Amorim"
-            existing.comarca = norm_row.get("comarca") or "1ª Vara Cível de Maceió"
+            existing.tema = tema_row
+            existing.magistrado = mag_row
+            existing.comarca = comarca_row
             existing.autor_anonimizado = autor_anon
             existing.reu_anonimizado = reu_anon
-            existing.resumo_nlp = clean_resumo or "Resumo importado via lote CSV e higienizado."
+            existing.resumo_nlp = resumo_row
             existing.resultado_historico = resultado
             existing.data_julgamento = dt_julg
         else:
@@ -316,35 +376,45 @@ async def upload_processos_csv(
             proc_id = f"proc-{short_hash}"
             proc_obj = Processo(
                 id_processo=proc_id,
-                usuario_id="usr-01",
+                usuario_id=owner_id,
                 numero_processo=num_proc,
                 arquivo_nome=filename,
                 origem_ingestao="CSV",
                 status="PROCESSADO",
-                tema=norm_row.get("tema") or "Dano Moral",
-                magistrado=norm_row.get("magistrado") or "Dr. Rafael De Amorim",
-                comarca=norm_row.get("comarca") or "1ª Vara Cível de Maceió",
+                tema=tema_row,
+                magistrado=mag_row,
+                comarca=comarca_row,
                 autor_anonimizado=autor_anon,
                 reu_anonimizado=reu_anon,
-                resumo_nlp=clean_resumo or "Resumo importado via lote CSV e higienizado.",
+                resumo_nlp=resumo_row,
                 resultado_historico=resultado,
                 data_julgamento=dt_julg,
             )
             db.add(proc_obj)
             db.flush()
 
+            _, default_tese, _ = classify_legal_theme(f"{tema_row} {resumo_row}")
+            tese_csv = pred_ctx["tese_precedente_similar"] or default_tese
+            sim_count = pred_ctx["total_casos_similares"]
+            margem_csv = pred_ctx["margem_confianca_calculada"]
+            prazo_csv = pred_ctx["tempo_medio_meses"]
+
             db.add(
                 AnalisePreditiva(
                     id_processo=proc_id,
                     probabilidade_deferimento=prob,
-                    margem_confianca=0.08,
-                    tempo_estimado_sentenca_meses=11,
-                    casos_similares_encontrados=35,
-                    tese_recomendada="Jurisprudência dominante aplicável ao tema importado em lote.",
-                    tendencia_juiz=f"Histórico consolidado para {proc_obj.magistrado}.",
+                    margem_confianca=margem_csv,
+                    tempo_estimado_sentenca_meses=prazo_csv,
+                    casos_similares_encontrados=sim_count,
+                    tese_recomendada=tese_csv,
+                    tendencia_juiz=(
+                        f"Comparação estatística com {sim_count} precedente(s) similar(es) para "
+                        f"{proc_obj.magistrado} (margem ±{int(round(margem_csv * 100))}%)."
+                    ),
                     provedor_ia_utilizado="local_heuristic",
                 )
             )
+            visible_processes.append(proc_obj)
 
         db.add(
             LogAuditoriaLGPD(
@@ -373,24 +443,87 @@ async def upload_processos_csv(
     )
 
 
+_TRIBUNAL_CNJ_CODES = {
+    "TJAL": ".8.02.",
+    "TJPE": ".8.17.",
+    "TJRJ": ".8.19.",
+    "TJSP": ".8.26.",
+    "TRT19": ".5.19.",
+}
+
+
+def _converter_para_list_item(p: Processo) -> ProcessoListItemSchema:
+    return ProcessoListItemSchema(
+        id_processo=p.id_processo,
+        numero_processo=p.numero_processo,
+        tema=p.tema,
+        magistrado=p.magistrado,
+        comarca=p.comarca,
+        partes_anonimizadas=f"{p.autor_anonimizado} vs {p.reu_anonimizado}",
+        resultado=p.resultado_historico,
+        data_julgamento=p.data_julgamento.isoformat() if p.data_julgamento else None,
+        probabilidade_deferimento=(
+            p.analise_preditiva.probabilidade_deferimento if p.analise_preditiva else None
+        ),
+        resumo_curto=p.resumo_nlp,
+    )
+
+
 @router.get("", response_model=ProcessoListResponse, status_code=status.HTTP_200_OK)
 def listar_processos(
     tema: Optional[str] = Query(default=None, description="Filtrar por tema jurídico"),
     juiz: Optional[str] = Query(default=None, description="Filtrar por nome do magistrado"),
-    busca: Optional[str] = Query(default=None, description="Busca textual livre (CNJ, tema, juiz ou partes)"),
+    comarca: Optional[str] = Query(default=None, description="Filtrar por comarca ou órgão julgador"),
+    tribunal: Optional[str] = Query(default=None, description="Filtrar por sigla ou código CNJ do tribunal (ex: TJAL)"),
+    busca: Optional[str] = Query(default=None, description="Busca textual livre (CNJ, tema, juiz, comarca ou partes)"),
+    ordenacao: Optional[str] = Query(
+        default="recentes", description="Ordenação no servidor: recentes | antigas | assunto"
+    ),
+    ids: Optional[str] = Query(
+        default=None, description="Filtro opcional de IDs separados por vírgula (ex: proc-1001,proc-1004)"
+    ),
     pagina: int = Query(default=1, ge=1, description="Página atual"),
     limite: int = Query(default=10, ge=1, le=100, description="Itens por página"),
     db: Session = Depends(get_db),
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
 ) -> ProcessoListResponse:
     """
-    Lista e filtra processos higienizados na Base de Conhecimento com paginação (RF-08 / UC-06 / UC-07).
+    Lista e filtra processos higienizados visíveis na Base de Conhecimento com paginação (RF-08 / UC-06 / UC-07).
     """
-    query = db.query(Processo)
+    query = db.query(Processo).filter(build_processo_visibility_filter(current_user))
+
+    if ids is not None:
+        id_list = [item.strip() for item in ids.split(",") if item.strip()]
+        if not id_list:
+            query = query.filter(Processo.id_processo == "__nenhum__")
+        else:
+            query = query.filter(Processo.id_processo.in_(id_list))
 
     if tema and tema.strip():
         query = query.filter(Processo.tema.ilike(f"%{tema.strip()}%"))
     if juiz and juiz.strip():
         query = query.filter(Processo.magistrado.ilike(f"%{juiz.strip()}%"))
+    if comarca and comarca.strip():
+        query = query.filter(Processo.comarca.ilike(f"%{comarca.strip()}%"))
+    if tribunal and tribunal.strip():
+        trib = tribunal.strip().upper()
+        cnj_code = _TRIBUNAL_CNJ_CODES.get(trib, trib)
+        if trib in ("TJAL", "8.02", ".8.02."):
+            query = query.filter(
+                or_(
+                    Processo.numero_processo.ilike("%.8.02.%"),
+                    Processo.comarca.ilike("%Maceió%"),
+                    Processo.comarca.ilike("%Arapiraca%"),
+                    Processo.comarca.ilike("%TJAL%"),
+                )
+            )
+        else:
+            query = query.filter(
+                or_(
+                    Processo.numero_processo.ilike(f"%{cnj_code}%"),
+                    Processo.comarca.ilike(f"%{trib}%"),
+                )
+            )
     if busca and busca.strip():
         term = f"%{busca.strip()}%"
         query = query.filter(
@@ -399,6 +532,7 @@ def listar_processos(
                 Processo.id_processo.ilike(term),
                 Processo.tema.ilike(term),
                 Processo.magistrado.ilike(term),
+                Processo.comarca.ilike(term),
                 Processo.autor_anonimizado.ilike(term),
                 Processo.reu_anonimizado.ilike(term),
                 Processo.resumo_nlp.ilike(term),
@@ -407,30 +541,39 @@ def listar_processos(
 
     total = query.count()
     offset = (pagina - 1) * limite
-    registros = query.order_by(Processo.criado_em.desc()).offset(offset).limit(limite).all()
-
-    itens = [
-        ProcessoListItemSchema(
-            id_processo=p.id_processo,
-            numero_processo=p.numero_processo,
-            tema=p.tema,
-            magistrado=p.magistrado,
-            comarca=p.comarca,
-            partes_anonimizadas=f"{p.autor_anonimizado} vs {p.reu_anonimizado}",
-            resultado=p.resultado_historico,
-            data_julgamento=p.data_julgamento.isoformat() if p.data_julgamento else None,
-            probabilidade_deferimento=(
-                p.analise_preditiva.probabilidade_deferimento if p.analise_preditiva else None
-            ),
+    if ordenacao == "antigas":
+        ordered_query = query.order_by(Processo.data_julgamento.asc(), Processo.criado_em.asc())
+    elif ordenacao == "assunto":
+        ordered_query = query.order_by(
+            Processo.tema.asc(), Processo.data_julgamento.desc(), Processo.criado_em.desc()
         )
-        for p in registros
-    ]
+    else:
+        ordered_query = query.order_by(Processo.data_julgamento.desc(), Processo.criado_em.desc())
+
+    registros = ordered_query.offset(offset).limit(limite).all()
+
+    itens = [_converter_para_list_item(p) for p in registros]
 
     return ProcessoListResponse(
         total=total,
         pagina=pagina,
         itens=itens,
     )
+
+
+@router.get("/filtros", response_model=FiltrosDisponiveisResponse, status_code=status.HTTP_200_OK)
+def obter_filtros_disponiveis(
+    db: Session = Depends(get_db),
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
+) -> FiltrosDisponiveisResponse:
+    """Retorna as listas distintas e ordenadas de temas, magistrados e comarcas visíveis ao usuário."""
+    vis_filter = build_processo_visibility_filter(current_user)
+    temas = sorted({r[0] for r in db.query(Processo.tema).filter(vis_filter).distinct().all() if r[0]})
+    magistrados = sorted(
+        {r[0] for r in db.query(Processo.magistrado).filter(vis_filter).distinct().all() if r[0]}
+    )
+    comarcas = sorted({r[0] for r in db.query(Processo.comarca).filter(vis_filter).distinct().all() if r[0]})
+    return FiltrosDisponiveisResponse(temas=temas, magistrados=magistrados, comarcas=comarcas)
 
 
 
@@ -441,46 +584,56 @@ def listar_processos(
 RESULTADOS_FAVORAVEIS = ("procedente", "acordo")
 
 
-def _estimar_analise_preditiva(db: Session, payload: ProcessoCadastroRequest, ignorar_id: Optional[str] = None) -> dict:
+def _estimar_analise_preditiva(
+    db: Session,
+    payload: ProcessoCadastroRequest,
+    ignorar_id: Optional[str] = None,
+    current_user: Optional[Usuario] = None,
+) -> dict:
     """
-    Estima os campos de AnalisePreditiva para um processo cadastrado manualmente, usando apenas
-    dados reais da base: processos do mesmo tema e do mesmo magistrado já persistidos.
-    Não há modelo treinado aqui: os valores são heurísticos e o provedor é registrado como 'local_heuristic'.
+    Estima os campos de AnalisePreditiva para um processo cadastrado manualmente, usando
+    similaridade textual real (TF-IDF + BM25) e Intervalo de Confiança de Wilson sobre o acervo visível.
     """
-    base = db.query(Processo)
+    base = db.query(Processo).filter(build_processo_visibility_filter(current_user))
     if ignorar_id:
         base = base.filter(Processo.id_processo != ignorar_id)
 
-    mesmo_tema = base.filter(func.lower(Processo.tema) == payload.tema.lower()).all()
-    mesmo_juiz = base.filter(func.lower(Processo.magistrado) == payload.magistrado.lower()).all()
+    candidatos = base.all()
+    sanitized_resumo, _, _ = AnonimizadorLGPD.sanitize_text(payload.resumo)
+    query_txt = f"{payload.tema} {payload.magistrado} {payload.comarca} {sanitized_resumo}"
+    pred_ctx = compute_jurimetria_prediction(
+        query_text=query_txt,
+        processes=candidatos,
+        target_tema=payload.tema,
+        target_magistrado=payload.magistrado,
+        top_k=15,
+    )
 
     resultado = payload.resultado.lower()
     if resultado in RESULTADOS_FAVORAVEIS:
-        probabilidade = 0.76  # mesma convenção da importação CSV para processos já decididos
+        probabilidade = 0.76
     elif resultado == "improcedente":
         probabilidade = 0.38
     else:
-        decididos = [
-            p for p in (mesmo_juiz or mesmo_tema)
-            if (p.resultado_historico or "").lower() in RESULTADOS_FAVORAVEIS + ("improcedente",)
-        ]
-        if decididos:
-            favoraveis = sum(1 for p in decididos if p.resultado_historico.lower() in RESULTADOS_FAVORAVEIS)
-            probabilidade = round(favoraveis / len(decididos), 2)
-        else:
-            probabilidade = 0.5
-        probabilidade = max(min(probabilidade, 0.92), 0.08)
+        probabilidade = pred_ctx["taxa_favoravel_juiz"]
 
-    prazos = [p.analise_preditiva.tempo_estimado_sentenca_meses for p in mesmo_tema if p.analise_preditiva]
-    tempo = int(round(sum(prazos) / len(prazos))) if prazos else 12
+    similares = pred_ctx["total_casos_similares"]
+    margem = pred_ctx["margem_confianca_calculada"]
+    tempo = pred_ctx["tempo_medio_meses"]
+    tese = pred_ctx["tese_precedente_similar"] or (
+        f"Análise comparativa baseada em {similares} precedente(s) similar(es) ao tema '{payload.tema}' no acervo."
+    )
 
     return {
         "probabilidade_deferimento": probabilidade,
-        "margem_confianca": 0.08,
+        "margem_confianca": margem,
         "tempo_estimado_sentenca_meses": max(tempo, 1),
-        "casos_similares_encontrados": len(mesmo_tema),
-        "tese_recomendada": f"Estimativa heurística a partir de {len(mesmo_tema)} processo(s) do tema '{payload.tema}' na base.",
-        "tendencia_juiz": f"Baseado em {len(mesmo_juiz)} processo(s) de {payload.magistrado} na base.",
+        "casos_similares_encontrados": similares,
+        "tese_recomendada": tese,
+        "tendencia_juiz": (
+            f"Baseado em {similares} precedente(s) similar(es) (margem ±{int(round(margem * 100))}% "
+            f"para {payload.magistrado})."
+        ),
         "provedor_ia_utilizado": "local_heuristic",
     }
 
@@ -507,7 +660,12 @@ def prever_anonimizacao(payload: ProcessoAnonimizacaoRequest) -> ProcessoAnonimi
     return _anonimizar_cadastro(payload.autor.strip(), payload.reu.strip(), payload.resumo.strip())
 
 
-def _aplicar_cadastro(db: Session, proc: Processo, payload: ProcessoCadastroRequest) -> None:
+def _aplicar_cadastro(
+    db: Session,
+    proc: Processo,
+    payload: ProcessoCadastroRequest,
+    current_user: Optional[Usuario] = None,
+) -> None:
     """Aplica os campos do payload ao processo, passando partes e resumo pela barreira LGPD (RN-01)."""
     anonimizacao = _anonimizar_cadastro(payload.autor, payload.reu, payload.resumo)
     proc.numero_processo = payload.numero_processo
@@ -523,7 +681,9 @@ def _aplicar_cadastro(db: Session, proc: Processo, payload: ProcessoCadastroRequ
 
     # no_autoflush: evita gravar o processo ainda incompleto enquanto a base é consultada
     with db.no_autoflush:
-        estimativa = _estimar_analise_preditiva(db, payload, ignorar_id=proc.id_processo)
+        estimativa = _estimar_analise_preditiva(
+            db, payload, ignorar_id=proc.id_processo, current_user=current_user
+        )
     if proc.analise_preditiva:
         for campo, valor in estimativa.items():
             setattr(proc.analise_preditiva, campo, valor)
@@ -553,6 +713,7 @@ def _garantir_numero_unico(db: Session, numero_processo: str, ignorar_id: Option
 def cadastrar_processo(
     payload: ProcessoCadastroRequest,
     db: Session = Depends(get_db),
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
 ) -> ProcessoDetalhesResponse:
     """
     Cadastra manualmente um processo na Base de Conhecimento (RF-08).
@@ -563,16 +724,16 @@ def cadastrar_processo(
     short_hash = hashlib.sha1(f"{payload.numero_processo}-{uuid.uuid4()}".encode("utf-8")).hexdigest()[:5]
     proc = Processo(
         id_processo=f"proc-{short_hash}",
-        usuario_id="usr-01",
+        usuario_id=get_effective_user_id(current_user),
         numero_processo=payload.numero_processo,
         arquivo_nome="cadastro_manual",
         origem_ingestao="MANUAL",
     )
     db.add(proc)
-    _aplicar_cadastro(db, proc, payload)
+    _aplicar_cadastro(db, proc, payload, current_user=current_user)
     db.commit()
 
-    return obter_detalhes_processo(proc.id_processo, db)
+    return obter_detalhes_processo(proc.id_processo, db, current_user)
 
 
 @router.put("/{id_processo}", response_model=ProcessoDetalhesResponse, status_code=status.HTTP_200_OK)
@@ -580,11 +741,12 @@ def editar_processo(
     id_processo: str,
     payload: ProcessoCadastroRequest,
     db: Session = Depends(get_db),
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
 ) -> ProcessoDetalhesResponse:
     """
     Edita (substituição completa dos campos editáveis) um processo existente (RF-08).
     Nomes já mascarados (com '***') são preservados; novos nomes passam pela barreira LGPD (RN-01).
-    Retorna 404 se o processo não existir e 409 se o novo número CNJ pertencer a outro processo.
+    Retorna 404 se o processo não existir/não for visível, 403 se for acervo público externo e 409 se CNJ duplicado.
     """
     proc = db.query(Processo).filter(Processo.id_processo == id_processo).first()
     if not proc:
@@ -592,34 +754,224 @@ def editar_processo(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Processo '{id_processo}' não encontrado na base de conhecimento.",
         )
+    ensure_can_modify_processo(proc, current_user)
     _garantir_numero_unico(db, payload.numero_processo, ignorar_id=id_processo)
 
-    _aplicar_cadastro(db, proc, payload)
+    _aplicar_cadastro(db, proc, payload, current_user=current_user)
     db.commit()
 
-    return obter_detalhes_processo(proc.id_processo, db)
+    return obter_detalhes_processo(proc.id_processo, db, current_user)
+
+
+@router.delete(
+    "/{id_processo}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    summary="Excluir processo judicial",
+    description=(
+        "Remove definitivamente um processo da base de conhecimento pelo seu ID. "
+        "As entidades associadas (análise preditiva e logs de auditoria LGPD) são excluídas "
+        "automaticamente em cascata. Retorna HTTP 204 em caso de sucesso, HTTP 403 para acervo público "
+        "por conta externa ou HTTP 404 se não encontrado."
+    ),
+    responses={
+        status.HTTP_204_NO_CONTENT: {
+            "description": "Processo e registros vinculados excluídos com sucesso.",
+        },
+        status.HTTP_403_FORBIDDEN: {
+            "description": "Acervo público protegido contra exclusão por contas externas.",
+        },
+        status.HTTP_404_NOT_FOUND: {
+            "description": "Processo não encontrado na base de conhecimento.",
+        },
+    },
+)
+def excluir_processo(
+    id_processo: str,
+    db: Session = Depends(get_db),
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
+) -> Response:
+    """
+    Exclui um processo judicial da Base de Conhecimento (RF-08).
+    Aproveita a remoção em cascata (cascade='all, delete-orphan') para apagar a análise preditiva e logs LGPD.
+    """
+    proc = db.query(Processo).filter(Processo.id_processo == id_processo).first()
+    if not proc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Processo '{id_processo}' não encontrado na base de conhecimento.",
+        )
+    ensure_can_modify_processo(proc, current_user)
+
+    db.delete(proc)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/datajud/sincronizar",
+    response_model=DataJudSincronizacaoResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Coletar e sincronizar lote de processos e jurisprudências via DataJud (CNJ)",
+)
+async def sincronizar_lote_datajud(
+    payload: DataJudSincronizacaoRequest = DataJudSincronizacaoRequest(),
+    db: Session = Depends(get_db),
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
+) -> DataJudSincronizacaoResponse:
+    """
+    Executa a coleta automática em lote de processos e jurisprudências na API Pública do DataJud (CNJ)
+    (apenas processos com decisão de mérito ou acordo) e atualiza a base histórica visível de forma
+    idempotente (Card #27 / RF-08 / RN-01). Se o CNJ não responder, retorna 503 e não grava nada.
+    Todos os registros passam pelo AnonimizadorLGPD e pelo motor TF-IDF/BM25 antes da persistência.
+    """
+    tribunal_sigla = (payload.tribunal or "TJAL").strip().upper()
+    coletados, fonte, motivo_falha = await DataJudClient.coletar_lote_jurisprudencia(
+        tribunal=tribunal_sigla,
+        tema=payload.tema,
+        limite=payload.limite,
+    )
+    if motivo_falha:
+        # Sem resposta do CNJ nada é gravado: o acervo só recebe dados reais.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"{motivo_falha} Nenhum processo foi gravado. Tente novamente em alguns minutos.",
+        )
+
+    owner_id = get_effective_user_id(current_user)
+    novos_inseridos = 0
+    atualizados = 0
+    total_lgpd = 0
+    itens_sincronizados: list[ProcessoListItemSchema] = []
+
+    for item in coletados:
+        dados_cadastro = DataJudClient.extrair_registro_para_acervo(item)
+        if dados_cadastro is None:
+            continue
+        req_cadastro = ProcessoCadastroRequest(**dados_cadastro)
+
+        existing = db.query(Processo).filter(Processo.numero_processo == req_cadastro.numero_processo).first()
+        if existing:
+            if existing.usuario_id not in (None, PUBLIC_OWNER_ID, owner_id):
+                continue
+            if (
+                current_user is not None
+                and current_user.id != PUBLIC_OWNER_ID
+                and existing.usuario_id in (None, PUBLIC_OWNER_ID)
+            ):
+                continue
+            proc = existing
+            atualizados += 1
+        else:
+            short_hash = hashlib.sha1(
+                f"{req_cadastro.numero_processo}-{uuid.uuid4()}".encode("utf-8")
+            ).hexdigest()[:5]
+            proc = Processo(
+                id_processo=f"proc-{short_hash}",
+                usuario_id=owner_id,
+                numero_processo=req_cadastro.numero_processo,
+                arquivo_nome=f"datajud_{tribunal_sigla.lower()}_sync",
+                origem_ingestao="DATAJUD",
+            )
+            db.add(proc)
+            novos_inseridos += 1
+
+        _aplicar_cadastro(db, proc, req_cadastro, current_user=current_user)
+        db.flush()
+
+        ultimo_log = proc.logs_lgpd[-1] if proc.logs_lgpd else None
+        if ultimo_log:
+            total_lgpd += (ultimo_log.total_cpfs_mascarados or 0) + (ultimo_log.total_nomes_mascarados or 0)
+
+        itens_sincronizados.append(_converter_para_list_item(proc))
+
+    db.commit()
+
+    return DataJudSincronizacaoResponse(
+        tribunal=tribunal_sigla,
+        fonte=fonte,
+        total_coletados=len(coletados),
+        novos_inseridos=novos_inseridos,
+        atualizados=atualizados,
+        total_entidades_anonimizadas_lgpd=total_lgpd,
+        mensagem=(
+            f"Sincronização DataJud ({tribunal_sigla}) concluída: "
+            f"{novos_inseridos} novo(s) processo(s) inserido(s) e {atualizados} atualizado(s)."
+            if coletados
+            else f"O DataJud ({tribunal_sigla}) não retornou processos julgados para esse filtro. Nada foi gravado."
+        ),
+        itens=itens_sincronizados,
+    )
 
 
 @router.get("/datajud/{numero_processo}", response_model=DataJudProcessoResponse, status_code=status.HTTP_200_OK)
 async def consultar_processo_datajud(
     numero_processo: str,
     db: Session = Depends(get_db),
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
 ) -> DataJudProcessoResponse:
     """
-    Consulta metadados processuais na API Pública do DataJud (CNJ) com fallback local (TJAL).
+    Consulta metadados processuais na API Pública do DataJud (CNJ). Se o CNJ não responder,
+    exibe apenas o que já existe no acervo visível ao usuário.
     Rastreabilidade: EAP 1.4.2 / RF-08 / ADR-002
     """
-    return await DataJudClient.consultar_processo(numero_processo=numero_processo, db=db)
+    return await DataJudClient.consultar_processo(
+        numero_processo=numero_processo,
+        db=db,
+        visibilidade=build_processo_visibility_filter(current_user),
+    )
+
+
+@router.get("/{id_processo}/similares", response_model=ProcessoListResponse, status_code=status.HTTP_200_OK)
+def listar_processos_similares(
+    id_processo: str,
+    limite: int = Query(default=5, ge=1, le=50, description="Quantidade máxima de precedentes similares"),
+    db: Session = Depends(get_db),
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
+) -> ProcessoListResponse:
+    """
+    Localiza e retorna os precedentes reais mais semelhantes ao processo informado (RF-06 / Card #35),
+    ranqueados por Similaridade de Cosseno TF-IDF + Okapi BM25 dentro do acervo visível ao usuário.
+    """
+    proc = db.query(Processo).filter(Processo.id_processo == id_processo).first()
+    if not proc or not can_read_processo(proc, current_user):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Processo '{id_processo}' não encontrado na base de conhecimento.",
+        )
+
+    candidatos = (
+        db.query(Processo)
+        .filter(build_processo_visibility_filter(current_user), Processo.id_processo != proc.id_processo)
+        .all()
+    )
+    ranked = rank_similar_precedents(
+        query_text=f"{proc.tema} {proc.comarca} {proc.magistrado} {proc.resumo_nlp}",
+        processes=candidatos,
+        target_tema=proc.tema,
+        target_magistrado=proc.magistrado,
+        top_k=len(candidatos) or 1,
+        min_similarity=0.05,
+    )
+    by_id = {p.id_processo: p for p in candidatos}
+    similares_ordenados = [by_id[item["id_processo"]] for item in ranked if item["id_processo"] in by_id]
+
+    return ProcessoListResponse(
+        total=len(similares_ordenados),
+        pagina=1,
+        itens=[_converter_para_list_item(p) for p in similares_ordenados[:limite]],
+    )
 
 
 @router.get("/{id_processo}", response_model=ProcessoDetalhesResponse, status_code=status.HTTP_200_OK)
 def obter_detalhes_processo(
     id_processo: str,
     db: Session = Depends(get_db),
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
 ) -> ProcessoDetalhesResponse:
     """Retorna os metadados higienizados, resumo NLP e parecer preditivo de um processo específico."""
     proc = db.query(Processo).filter(Processo.id_processo == id_processo).first()
-    if not proc:
+    if not proc or not can_read_processo(proc, current_user):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Processo '{id_processo}' não encontrado na base de conhecimento.",
@@ -660,3 +1012,128 @@ def obter_detalhes_processo(
             texto_higienizado_verificado=True,
         ),
     )
+
+
+def _aplicar_jurimetria_granular(
+    db: Session,
+    resultado: ResultadoComparacaoPecas,
+    current_user: Optional[Usuario] = None,
+) -> ResultadoComparacaoPecas:
+    """Estima a procedência com base em desfechos históricos do mesmo tema (respeitando o isolamento multi-usuário)."""
+    if not resultado.teses:
+        resultado.score_geral_favorabilidade_autor_pct = None
+        return resultado
+
+    desfecho = func.lower(func.trim(Processo.resultado_historico))
+    # O upload de PDF e a importação CSV podem atribuir "Procedente" automaticamente.
+    historico = db.query(Processo.tema, desfecho, func.count()).filter(
+        Processo.origem_ingestao == "MANUAL",
+        desfecho.in_(("procedente", "improcedente")),
+        Processo.numero_processo != resultado.numero_processo,
+        build_processo_visibility_filter(current_user),
+    ).group_by(Processo.tema, desfecho).all()
+
+    total_por_tema: Counter[str] = Counter()
+    procedentes_por_tema: Counter[str] = Counter()
+    for tema, decisao, quantidade in historico:
+        chave = " ".join(tema.casefold().split())
+        total_por_tema[chave] += quantidade
+        if decisao == "procedente":
+            procedentes_por_tema[chave] += quantidade
+
+    estimativas: list[float] = []
+    for tese in resultado.teses:
+        chave = " ".join(tese.tema.casefold().split())
+        total = total_por_tema[chave]
+        if total < MIN_JULGADOS_POR_TEMA:
+            tese.probabilidade_procedencia_pct = None
+            tese.fundamentacao_preditiva = (
+                f"Histórico insuficiente: {total} de {MIN_JULGADOS_POR_TEMA} julgados necessários no mesmo tema."
+            )
+            continue
+
+        procedentes = procedentes_por_tema[chave]
+        # A suavização de Laplace evita certeza artificial quando todos os desfechos coincidem.
+        estimativa = round(100 * (procedentes + 1) / (total + 2), 1)
+        tese.probabilidade_procedencia_pct = estimativa
+        tese.fundamentacao_preditiva = (
+            f"Referência histórica do tema: {procedentes} de {total} julgados procedentes, "
+            "com suavização estatística."
+        )
+        estimativas.append(estimativa)
+
+    resultado.score_geral_favorabilidade_autor_pct = (
+        round(sum(estimativas) / len(estimativas), 1)
+        if len(estimativas) == len(resultado.teses)
+        else None
+    )
+    return resultado
+
+
+@router.post("/comparar-pecas", response_model=ResultadoComparacaoPecas, status_code=status.HTTP_200_OK)
+async def comparar_pecas_processuais(
+    peticao_inicial: UploadFile = File(...),
+    contestacao: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
+) -> ResultadoComparacaoPecas:
+    """
+    Realiza o saneamento e confronto analítico de duas peças processuais (Petição Inicial vs. Contestação).
+    Rastreabilidade:
+    - Art. 357 do CPC (Decisão de Saneamento e Organização do Processo)
+    - Art. 341 do CPC (Ônus da Impugnação Específica)
+    - Art. 350 do CPC (Fato Impeditivo, Modificativo ou Extintivo)
+    - RN-01: Barreira LGPD Obrigatória pré-processamento
+    - RN-02: Jurimetria Granular por Tese Controvertida
+    """
+    nome_inicial = peticao_inicial.filename or "peticao_inicial.pdf"
+    nome_contestacao = contestacao.filename or "contestacao.pdf"
+
+    if not nome_inicial.lower().endswith(".pdf") or not nome_contestacao.lower().endswith(".pdf"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="ErroProcessamento (RN-04): Formato inválido. Ambas as peças devem ser arquivos com extensão .pdf.",
+        )
+
+    bytes_inicial = await peticao_inicial.read()
+    bytes_contestacao = await contestacao.read()
+
+    if len(bytes_inicial) > MAX_PDF_SIZE_BYTES or len(bytes_contestacao) > MAX_PDF_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="ErroProcessamento (RN-04 / SEC-05): Um dos arquivos excede o limite máximo permitido de 15MB.",
+        )
+
+    try:
+        texto_inicial, _ = ExtratorDocumental.extract_text_with_page_markers(bytes_inicial)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"ErroProcessamento (RN-04) na Petição Inicial: {str(exc)}",
+        ) from exc
+
+    try:
+        texto_contestacao, _ = ExtratorDocumental.extract_text_with_page_markers(bytes_contestacao)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"ErroProcessamento (RN-04) na Contestação: {str(exc)}",
+        ) from exc
+
+    # Invariante RN-01: Higienização prévia estrita sob a LGPD
+    sanitized_inicial, cpfs_init, _ = AnonimizadorLGPD.sanitize_text(texto_inicial)
+    sanitized_contestacao, cpfs_cont, _ = AnonimizadorLGPD.sanitize_text(texto_contestacao)
+
+    # Identificação de CNJ se presente
+    cnj_match = re.search(r"\b\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}\b", sanitized_inicial)
+    numero_proc = cnj_match.group(0) if cnj_match else None
+
+    # Confronto analítico bidirecional via AIProviderAdapter (Gemini com fallback determinístico local)
+    resultado = ai_gateway.comparar_pecas(
+        texto_inicial=sanitized_inicial,
+        texto_contestacao=sanitized_contestacao,
+        numero_processo=numero_proc,
+    )
+
+    # RN-02: Calibragem Jurimétrica Granular por Tese Controvertida
+    return _aplicar_jurimetria_granular(db, resultado, current_user)

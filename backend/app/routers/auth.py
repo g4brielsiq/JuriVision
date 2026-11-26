@@ -4,16 +4,31 @@ Rastreabilidade:
 - ARCHITECTURE.md: Seção 8.1 (POST /api/v1/auth/login)
 - MODELING.md: RF-01 (Autenticação de Profissional do Direito), UC-01, CT-01
 """
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db
-from app.core.security import create_access_token, hash_password, verify_password
+from app.core.security import (
+    create_access_token,
+    get_current_user_strict,
+    get_optional_current_user,
+    hash_password,
+    verify_password,
+)
 from app.models.entities import Usuario
 from app.schemas.contracts import (
-    LoginRequest, LoginResponse, RegisterRequest, RegisterResponse, UsuarioProfileSchema,
+    LoginRequest,
+    LoginResponse,
+    PlanoAssinaturaStatusResponse,
+    PlanoUpgradeRequest,
+    RegisterRequest,
+    RegisterResponse,
+    UsuarioProfileSchema,
 )
 
 router = APIRouter(prefix="/api/v1/auth", tags=["Autenticação (RF-01)"])
@@ -84,3 +99,70 @@ def register_advogado(payload: RegisterRequest, db: Session = Depends(get_db)) -
         raise
 
     return response
+
+
+@router.get("/me", response_model=RegisterResponse, status_code=status.HTTP_200_OK)
+def obter_perfil_autenticado(current_user: Usuario = Depends(get_current_user_strict)) -> RegisterResponse:
+    """Retorna os dados do advogado autenticado a partir do token Bearer JWT."""
+    return RegisterResponse(
+        id=current_user.id,
+        nome=current_user.nome,
+        email=current_user.email,
+        oab=current_user.numero_oab,
+    )
+
+
+def build_plano_status(usuario: Optional[Usuario]) -> PlanoAssinaturaStatusResponse:
+    """Calcula o estado da assinatura Freemium e cotas disponíveis para o usuário."""
+    limite = settings.FREE_PLAN_PDF_LIMIT
+    if usuario is None:
+        return PlanoAssinaturaStatusResponse(
+            usuario_id="usr-01",
+            nome="Visitante (Demo)",
+            plano="PRO",
+            analises_realizadas=0,
+            limite_analises_free=limite,
+            analises_restantes=999999,
+            recursos_pro_liberados=True,
+            lote_csv_liberado=True,
+            tese_aprofundada_liberada=True,
+            exportacao_pdf_ilimitada=True,
+        )
+
+    plano = "PRO" if (usuario.plano or "FREE").upper() == "PRO" else "FREE"
+    usadas = max(int(usuario.analises_realizadas or 0), 0)
+    is_pro = plano == "PRO"
+    restantes = 999999 if is_pro else max(0, limite - usadas)
+    return PlanoAssinaturaStatusResponse(
+        usuario_id=usuario.id,
+        nome=usuario.nome,
+        plano=plano,
+        analises_realizadas=usadas,
+        limite_analises_free=limite,
+        analises_restantes=restantes,
+        recursos_pro_liberados=is_pro,
+        lote_csv_liberado=is_pro,
+        tese_aprofundada_liberada=is_pro,
+        exportacao_pdf_ilimitada=is_pro,
+    )
+
+
+@router.get("/plano", response_model=PlanoAssinaturaStatusResponse, status_code=status.HTTP_200_OK)
+def obter_status_plano(
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
+) -> PlanoAssinaturaStatusResponse:
+    """Retorna plano ativo (FREE/PRO), cota restante e permissões do usuário atual."""
+    return build_plano_status(current_user)
+
+
+@router.post("/plano/upgrade", response_model=PlanoAssinaturaStatusResponse, status_code=status.HTTP_200_OK)
+def atualizar_plano_assinatura(
+    payload: PlanoUpgradeRequest,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user_strict),
+) -> PlanoAssinaturaStatusResponse:
+    """Atualiza o plano da assinatura do advogado autenticado (FREE <-> PRO)."""
+    current_user.plano = payload.plano
+    db.commit()
+    db.refresh(current_user)
+    return build_plano_status(current_user)

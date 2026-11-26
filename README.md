@@ -33,9 +33,9 @@ O sistema é estruturado em 4 serviços orquestrados via Docker Compose:
 
 | Serviço / Diretório | Tecnologia Principal | Porta | Responsabilidade |
 | :--- | :--- | :---: | :--- |
-| **[`frontend/`](./frontend)** | HTML5 Semântico (`WAI-ARIA 1.2`), Design System CSS (`WCAG 2.2 AA`), ES Modules, Chart.js | `5173` | Interface web *Legal Editorial + Legal Intelligence* (Pesquisa Jurisprudencial, Cartões Documentais, Leitura de Decisão, Análise Jurimétrica e Estudo Comparativo de Petições PDF/CSV). |
-| **[`backend/`](./backend)** | Python 3.11+, FastAPI, Pydantic v2, SQLAlchemy 2.0, `pdfplumber` | `8000` | API Core & Gateway REST, autenticação JWT, barreira local de anonimização LGPD (`AnonimizadorLGPD`), orquestração via `AIProviderAdapter`, persistência relacional e geração de relatórios em PDF. |
-| **[`ai_engine/`](./ai_engine)** | Python 3.11+, Motor Estatístico/Heurístico Local, `AIProviderAdapter` | `8001` *(interna)* | Microsserviço isolado de inteligência híbrida (Modelo Estatístico/Heurístico Local com suporte plugável a APIs externas de LLM como Gemini / OpenAI GPT). |
+| **[`frontend/`](./frontend)** | HTML5 Semântico (`WAI-ARIA 1.2`), Design System CSS (`WCAG 2.2 AA`), ES Modules, Chart.js | `5173` | Interface web (Landing Page, Pesquisa de Precedentes + DataJud, Leitura Documental, Análise Jurimétrica, Análise de Petição PDF/CSV, Comparador de Peças e fluxo Freemium `FREE`/`PRO`). |
+| **[`backend/`](./backend)** | Python 3.11+, FastAPI, Pydantic v2, SQLAlchemy 2.0, `pdfplumber` | `8000` | API Core & Gateway REST, autenticação JWT multiusuário, barreira local LGPD (`AnonimizadorLGPD`), motor NLP/RAG (`TF-IDF` + `Okapi BM25`), integração DataJud (CNJ), Comparador de Peças e relatórios PDF. |
+| **[`ai_engine/`](./ai_engine)** | Python 3.11+, Motor Estatístico/Heurístico Local, `AIProviderAdapter` | `8001` *(interna)* | Microsserviço isolado de inteligência híbrida (opcional via `AI_PROVIDER=external`; por padrão o back-end opera com o motor determinístico local ou com Google Gemini via `AI_PROVIDER=auto`). |
 | **`postgres`** | PostgreSQL 16 Alpine | `5432` | Persistência relacional de usuários, processos higienizados, análises preditivas e logs de auditoria LGPD. |
 
 ---
@@ -52,7 +52,7 @@ Para executar o projeto em ambiente local de desenvolvimento, são necessários:
 
 ### 3.2 Execução Local Direta (Recomendada / Sem Docker)
 
-Esta modalidade executa o **Back-end** e o **Front-end** diretamente no seu sistema operacional. O Back-end possui mecanismo de resiliência e portabilidade (*ADR-003*): se o PostgreSQL não estiver ativo, ele aciona automaticamente o fallback em banco relacional local **SQLite** (`jurivision_local.sqlite3`) e popula os dados iniciais (*seed*) automaticamente.
+Esta modalidade executa o **Back-end** e o **Front-end** diretamente no seu sistema operacional. O Back-end possui mecanismo de resiliência e portabilidade (*ADR-003*): se o PostgreSQL não estiver ativo, ele aciona automaticamente o fallback em banco relacional local **SQLite** (`jurivision_local.sqlite3`) e inicia com a base limpa (`SEED_DEMO_DATA=false` por padrão), pronta para receber dados reais via **DataJud (CNJ)**, cadastro manual, CSV ou upload de PDFs. Caso deseje iniciar um ambiente vazio com os dados demonstrativos, defina `SEED_DEMO_DATA=true` no arquivo `.env`.
 
 #### Passo 1: Instalar as Dependências
 
@@ -111,9 +111,11 @@ Caso possua o Docker e Docker Compose instalados e deseje subir o ecossistema co
 
 ---
 
-### 3.4 Credenciais de Acesso Padrão (Ambiente de Teste / Seed)
+### 3.4 Credenciais de Acesso e Modo Demonstração (`SEED_DEMO_DATA`)
 
-O banco de dados é inicializado automaticamente com um usuário advogado pré-cadastrado para autenticação JWT (*RF-01*):
+Por padrão (`SEED_DEMO_DATA=false`), a plataforma inicia sem usuários pré-cadastrados para que cada advogado crie sua própria conta em **Criar conta** (iniciando no plano `FREE` com 3 análises gratuitas de PDF, podendo alternar para `PRO` no modal de assinatura) ou navegue livremente como visitante.
+
+Caso habilite `SEED_DEMO_DATA=true` no `.env` em um banco vazio, o startup cria 10 julgados demonstrativos e a seguinte conta institucional de teste (plano `PRO`):
 
 | Campo | Valor Padrão |
 | :--- | :--- |
@@ -126,15 +128,15 @@ O banco de dados é inicializado automaticamente com um usuário advogado pré-c
 
 ### 3.5 Verificação e Testes Automatizados (`pytest` — ISO/IEC/IEEE 29119)
 
-Para rodar os 11 casos de teste automatizados (contratos de API REST, barreira de anonimização LGPD, predições heurísticas e conformidade WCAG 2.2 AA / WAI-ARIA):
+Para rodar os **150 casos de teste automatizados** (contratos de API REST, saneamento de dados presumidos, integração DataJud/Gemini, segurança JWT multiusuário, barreira LGPD expandida, motor NLP/BM25, RAG, Freemium/Cloud, Comparador de Peças, OCR/seções e conformidade WCAG 2.2 AA / WAI-ARIA — executados em SQLite temporário isolado pelo `conftest.py`):
 
 * **No Windows (PowerShell):**
   ```powershell
-  $env:PYTHONPATH="backend"; pytest backend/tests/ -v
+  cd backend ; python -m pytest -v
   ```
 * **No Linux / macOS (Bash):**
   ```bash
-  PYTHONPATH=backend pytest backend/tests/ -v
+  cd backend && pytest -v
   ```
 
 ---

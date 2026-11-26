@@ -25,6 +25,8 @@ def test_rnf09_wai_aria_landmarks_e_tab_pattern():
     assert 'aria-controls="panel-dashboard"' in html
     assert 'aria-controls="panel-upload"' in html
     assert 'aria-controls="panel-historico"' in html
+    assert 'aria-controls="panel-comparador"' in html
+    assert 'id="panel-comparador"' in html
     assert 'aria-live="polite"' in html
     assert 'role="alert"' in html
     assert 'href="#main-content"' in html
@@ -61,7 +63,9 @@ def test_rnf09_rnf10_contraste_wcag_e_design_tokens():
     assert "text-slate-400" not in html
     assert "text-green-500" not in html
     assert "text-justify" not in html
-    assert "Source+Serif+4" in html
+    assert "Lora" in html
+    assert "Source+Sans+3" in html
+    assert "IBM+Plex+Mono" in html
     assert "decisions-cards-container" in html
     assert "--color-navy: #20364A" in css
     assert "--bg-ivory: #F6F4EF" in css
@@ -81,6 +85,8 @@ def test_rnf04_integracao_completa_contratos_api():
     assert "/api/v1/processos/upload-pdf" in api_code
     assert "/api/v1/processos/upload-csv" in api_code
     assert "/api/v1/processos" in api_code
+    assert "/api/v1/processos/comparar-pecas" in api_code
     assert "/api/v1/relatorios/processo/" in api_code
     assert "resetarFluxoUpload" in app_code
+    assert "setupComparadorInteractions" in app_code
     assert "getAuthHeader" in api_code
