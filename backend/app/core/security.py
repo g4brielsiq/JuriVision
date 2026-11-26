@@ -135,9 +135,9 @@ def get_current_user_strict(
     return current_user
 
 
-def get_effective_user_id(current_user: Optional[Usuario]) -> str:
-    """Retorna o ID do advogado autenticado ou o ID institucional público padrão."""
-    return current_user.id if current_user is not None else PUBLIC_OWNER_ID
+def get_effective_user_id(current_user: Optional[Usuario]) -> Optional[str]:
+    """Retorna o ID do advogado autenticado ou None para o acervo público sem depender de usr-01."""
+    return current_user.id if current_user is not None else None
 
 
 def build_processo_visibility_filter(current_user: Optional[Usuario]):

@@ -295,3 +295,128 @@ def test_etapa2_integracao_frontend_sessao_e_logout():
     assert "restaurarSessaoAutenticada" in app_js
     assert "logoutAdvogado" in app_js
     assert 'id="btn-logout-account"' in index_html
+
+
+def test_etapa2_escrita_anonima_sem_seed_respeita_foreign_keys_ativas(monkeypatch):
+    """
+    Com SEED_DEMO_DATA=false (usr-01 inexistente) e integridade referencial ativa (FK ON),
+    visitantes anônimos gravam processos com usuario_id=None sem violar FK em POST/PDF/CSV/DataJud.
+    """
+    from dataclasses import replace
+
+    from sqlalchemy import create_engine, event
+    from sqlalchemy.pool import StaticPool
+
+    import app.core.database as db_mod
+    import app.core.datajud_client as datajud_mod
+    import app.main as main_mod
+    from app.schemas.contracts import DataJudAssuntoSchema, DataJudProcessoResponse
+
+    monkeypatch.setattr(main_mod, "settings", replace(settings, SEED_DEMO_DATA=False))
+
+    fk_engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+
+    @event.listens_for(fk_engine, "connect")
+    def _enable_fk(dbapi_conn, _connection_record):
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    original_db_engine = db_mod.engine
+    original_main_engine = main_mod.engine
+    monkeypatch.setattr(db_mod, "engine", fk_engine)
+    monkeypatch.setattr(main_mod, "engine", fk_engine)
+    SessionLocal.configure(bind=fk_engine)
+
+    async def _fake_coletar_lote(*, tribunal="TJAL", tema=None, limite=3):
+        item = DataJudProcessoResponse(
+            numero_processo=_numero_cnj_unico(),
+            tribunal=tribunal,
+            classe="Procedimento Comum Cível",
+            assuntos=[DataJudAssuntoSchema(codigo=10433, nome="Dano Moral", principal=True)],
+            assunto_principal="Dano Moral",
+            orgao_julgador="1ª Vara Cível de Maceió",
+            data_ajuizamento="2025-02-10T10:00:00.000Z",
+            grau="G1",
+            movimentos_recentes=[],
+            desfecho="Procedente",
+            fonte="datajud_api",
+            sucesso=True,
+            mensagem="Coleta mockada.",
+        )
+        return [item], "datajud_api", None
+
+    monkeypatch.setattr(datajud_mod.DataJudClient, "coletar_lote_jurisprudencia", _fake_coletar_lote)
+
+    try:
+        init_db_and_seed(seed_demo=False)
+        with SessionLocal() as db:
+            assert db.query(Usuario).count() == 0
+
+        with TestClient(app) as anon_client:
+            manual = anon_client.post("/api/v1/processos", json=_payload_processo())
+            assert manual.status_code == 201, manual.text
+            manual_id = manual.json()["id_processo"]
+
+            cnj_pdf = _numero_cnj_unico()
+            pdf_bytes = _build_pdf_document(
+                [
+                    "1a VARA CIVEL DE MACEIO",
+                    f"Processo: {cnj_pdf}",
+                    "Autor: Helena Lima Costa, CPF 111.222.333-44.",
+                    "Reu: Empresa Aerea S.A.",
+                    "Atraso de voo internacional sem assistencia material.",
+                ]
+            )
+            pdf_resp = anon_client.post(
+                "/api/v1/processos/upload-pdf",
+                files={"file": ("peticao_anon.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+            )
+            assert pdf_resp.status_code == 200, pdf_resp.text
+            pdf_id = pdf_resp.json()["id_processo"]
+
+            cnj_csv = _numero_cnj_unico()
+            csv_bytes = (
+                "numero_processo,tema,magistrado,comarca,autor,reu,texto_resumo,resultado,data_julgamento\n"
+                f"{cnj_csv},Dano Moral,Dr. Teste,1a Vara,Maria Souza,Banco X S.A.,Resumo valido importado,Procedente,2026-08-10\n"
+            ).encode("utf-8")
+            csv_resp = anon_client.post(
+                "/api/v1/processos/upload-csv",
+                files={"file": ("lote_anon.csv", io.BytesIO(csv_bytes), "text/csv")},
+            )
+            assert csv_resp.status_code == 200, csv_resp.text
+
+            sync_resp = anon_client.post(
+                "/api/v1/processos/datajud/sincronizar",
+                json={"tribunal": "TJAL", "limite": 1},
+            )
+            assert sync_resp.status_code == 200, sync_resp.text
+            assert sync_resp.json()["novos_inseridos"] == 1
+
+            list_resp = anon_client.get("/api/v1/processos")
+            assert list_resp.status_code == 200
+            assert list_resp.json()["total"] == 4
+
+            with SessionLocal() as db:
+                for pid in (manual_id, pdf_id):
+                    row = db.query(Processo).filter(Processo.id_processo == pid).first()
+                    assert row is not None and row.usuario_id is None
+                csv_row = db.query(Processo).filter(Processo.numero_processo == cnj_csv).first()
+                assert csv_row is not None and csv_row.usuario_id is None
+
+            # Conta externa autenticada lê o processo público (usuario_id=None), mas não pode alterá-lo
+            _, token_ext = _registrar_e_logar(anon_client, "ExternoSemSeed")
+            del_ext = anon_client.delete(
+                f"/api/v1/processos/{manual_id}",
+                headers={"Authorization": f"Bearer {token_ext}"},
+            )
+            assert del_ext.status_code == 403
+    finally:
+        fk_engine.dispose()
+        monkeypatch.setattr(db_mod, "engine", original_db_engine)
+        monkeypatch.setattr(main_mod, "engine", original_main_engine)
+        SessionLocal.configure(bind=original_db_engine)
