@@ -23,6 +23,8 @@ import {
     fetchProcessos,
     fetchStatusPlano,
     fetchUsuarioAtual,
+    getApiBaseUrl,
+    getAuthHeader,
     getRelatorioPdfUrl,
     loginAdvogado,
     logoutAdvogado,
@@ -530,6 +532,41 @@ function normalizarTemasMetricas(metricas) {
     });
 }
 
+function formatarRotuloEixoY(texto, maxCharsLinha = 26, maxLinhas = 2) {
+    const limpo = String(texto || "").replace(/\s+/g, " ").trim();
+    if (!limpo) return "";
+    if (limpo.length <= maxCharsLinha) return limpo;
+
+    const palavras = limpo.split(" ");
+    const linhas = [];
+    let atual = "";
+
+    for (let i = 0; i < palavras.length; i += 1) {
+        let palavra = palavras[i];
+        if (palavra.length > maxCharsLinha) {
+            palavra = `${palavra.slice(0, maxCharsLinha - 1)}…`;
+        }
+        const candidata = atual ? `${atual} ${palavra}` : palavra;
+        if (candidata.length <= maxCharsLinha) {
+            atual = candidata;
+        } else {
+            linhas.push(atual);
+            atual = palavra;
+            if (linhas.length === maxLinhas - 1) {
+                const restante = [atual, ...palavras.slice(i + 1)].join(" ");
+                linhas.push(
+                    restante.length > maxCharsLinha
+                        ? `${restante.slice(0, maxCharsLinha - 1).trimEnd()}…`
+                        : restante
+                );
+                return linhas;
+            }
+        }
+    }
+    if (atual) linhas.push(atual);
+    return linhas.length === 1 ? linhas[0] : linhas.slice(0, maxLinhas);
+}
+
 function renderizarGraficos(metricas) {
     if (!metricas) return;
 
@@ -656,6 +693,9 @@ function renderizarGraficos(metricas) {
     if (canvasJuizes) {
         if (state.chartJuizesInstance) state.chartJuizesInstance.destroy();
         const juizesLista = metricas.decisoes_por_juiz || [];
+        if (canvasJuizes.parentElement) {
+            canvasJuizes.parentElement.style.height = `${Math.max(260, juizesLista.length * 46 + 68)}px`;
+        }
         const isPct = state.juizChartMode === "pct";
 
         const dadosFav = juizesLista.map((d) => {
@@ -672,7 +712,7 @@ function renderizarGraficos(metricas) {
         state.chartJuizesInstance = new window.Chart(canvasJuizes, {
             type: "bar",
             data: {
-                labels: juizesLista.map((d) => d.juiz),
+                labels: juizesLista.map((d) => formatarRotuloEixoY(d.juiz, 26, 2)),
                 datasets: [
                     {
                         label: isPct ? "Favoráveis (%)" : "Favoráveis (Procedentes / Acordos)",
@@ -694,6 +734,9 @@ function renderizarGraficos(metricas) {
                 indexAxis: "y",
                 responsive: true,
                 maintainAspectRatio: false,
+                layout: {
+                    padding: { left: 6, right: 12, top: 4, bottom: 4 },
+                },
                 animation: prefersReducedMotion ? false : { duration: 380 },
                 onHover(event, elements) {
                     if (event?.native?.target) {
@@ -762,6 +805,8 @@ function renderizarGraficos(metricas) {
                         grid: { display: false },
                         border: { display: false },
                         ticks: {
+                            autoSkip: false,
+                            padding: 8,
                             color: "#142233",
                             font: { size: 12, family: "Source Sans 3", weight: "600" },
                         },
@@ -775,12 +820,15 @@ function renderizarGraficos(metricas) {
     if (canvasTemas) {
         if (state.chartTemasInstance) state.chartTemasInstance.destroy();
         const temasLista = normalizarTemasMetricas(metricas);
+        if (canvasTemas.parentElement) {
+            canvasTemas.parentElement.style.height = `${Math.max(240, temasLista.length * 48 + 64)}px`;
+        }
         const isTaxa = state.temaChartMode === "taxa";
 
         state.chartTemasInstance = new window.Chart(canvasTemas, {
             type: "bar",
             data: {
-                labels: temasLista.map((t) => t.tema),
+                labels: temasLista.map((t) => formatarRotuloEixoY(t.tema, 30, 2)),
                 datasets: [
                     {
                         label: isTaxa ? "Taxa favorável (%)" : "Julgados no acervo",
@@ -795,6 +843,9 @@ function renderizarGraficos(metricas) {
                 indexAxis: "y",
                 responsive: true,
                 maintainAspectRatio: false,
+                layout: {
+                    padding: { left: 8, right: 16, top: 4, bottom: 4 },
+                },
                 animation: prefersReducedMotion ? false : { duration: 380 },
                 onHover(event, elements) {
                     if (event?.native?.target) {
@@ -812,6 +863,10 @@ function renderizarGraficos(metricas) {
                     tooltip: {
                         ...v1Tooltip,
                         callbacks: {
+                            title(items) {
+                                const idx = items[0]?.dataIndex;
+                                return temasLista[idx]?.tema || "";
+                            },
                             label(ctx) {
                                 const t = temasLista[ctx.dataIndex];
                                 if (!t) return "";
@@ -845,6 +900,8 @@ function renderizarGraficos(metricas) {
                         grid: { display: false },
                         border: { display: false },
                         ticks: {
+                            autoSkip: false,
+                            padding: 10,
                             color: "#142233",
                             font: { size: 12, family: "Source Sans 3", weight: "600" },
                         },
@@ -1675,15 +1732,45 @@ export function renderizarResultadoPredicaoPdf(payload) {
 /* ==========================================================================
    7. Exportação de Relatório Analítico em PDF (RF-09)
    ========================================================================== */
-export function exportarRelatorioPdfProcesso(idProcesso = null) {
+export async function exportarRelatorioPdfProcesso(idProcesso = null) {
     const targetId = idProcesso || state.lastAnalyzedProcessId;
     if (!targetId) {
         showToast("Analise uma petição ou selecione uma decisão para exportar o relatório em PDF.");
         return;
     }
-    const url = getRelatorioPdfUrl(targetId);
+    const baseUrl = `${getApiBaseUrl()}/api/v1/relatorios/processo/${encodeURIComponent(targetId)}/pdf`;
     showToast(`Preparando relatório analítico em PDF (${targetId})...`);
-    window.open(url, "_blank", "noopener,noreferrer");
+    try {
+        const res = await fetch(baseUrl, {
+            method: "GET",
+            headers: { ...getAuthHeader() },
+        });
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.detail || `Erro ao gerar PDF (HTTP ${res.status}).`);
+        }
+        const blob = await res.blob();
+        const disposition = res.headers.get("Content-Disposition") || "";
+        const match = disposition.match(/filename="?([^";]+)"?/i);
+        const filename = match?.[1] || `relatorio_${targetId}.pdf`;
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = blobUrl;
+        link.download = filename;
+        link.style.display = "none";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1500);
+        showToast(`Relatório PDF (${targetId}) baixado.`);
+    } catch (err) {
+        const fallbackUrl = getRelatorioPdfUrl(targetId);
+        if (err instanceof TypeError) {
+            window.open(fallbackUrl, "_blank", "noopener,noreferrer");
+            return;
+        }
+        showToast(err.message || "Não foi possível baixar o relatório em PDF.");
+    }
 }
 
 /* ==========================================================================

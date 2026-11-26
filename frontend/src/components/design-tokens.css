@@ -240,14 +240,14 @@ a {
 }
 
 .site-header-inner {
-    max-width: 1280px;
+    max-width: 1360px;
     margin: 0 auto;
     min-height: 64px;
-    padding: 0 var(--space-6);
+    padding: 0 var(--space-5);
     display: flex;
     align-items: stretch;
     justify-content: space-between;
-    gap: var(--space-6);
+    gap: var(--space-4);
 }
 
 .brand-lockup {
@@ -284,7 +284,14 @@ a {
     display: flex;
     align-items: stretch;
     gap: var(--space-1);
+    flex: 1 1 auto;
     min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.primary-tabs::-webkit-scrollbar {
+    display: none;
 }
 
 .primary-tab-btn {
@@ -292,10 +299,11 @@ a {
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
+    flex-shrink: 0;
     min-height: 64px;
-    padding: 0 var(--space-4);
+    padding: 0 var(--space-3);
     font-family: var(--font-sans);
-    font-size: 14.5px;
+    font-size: 14px;
     font-weight: 500;
     color: var(--text-secondary);
     transition: color var(--motion-fast), background-color var(--motion-fast);
@@ -368,11 +376,16 @@ a {
     align-items: center;
     gap: var(--space-2);
     font-size: 13px;
+    min-width: 0;
 }
 
 .account-profile-info strong {
     color: var(--text-primary);
     font-weight: 600;
+    max-width: 145px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .lawyer-oab-tag {
@@ -2589,6 +2602,8 @@ textarea.control-input {
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    flex-shrink: 0;
+    white-space: nowrap;
     min-height: 32px;
     padding: 3px 10px;
     border-radius: var(--radius-xs);
@@ -2690,15 +2705,23 @@ textarea.control-input {
     }
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 1260px) {
+    .brand-divider,
+    .brand-descriptor {
+        display: none;
+    }
+}
+
+@media (max-width: 1140px) {
     .site-header-inner {
         flex-wrap: wrap;
-        padding: var(--space-3) var(--space-4);
-        gap: var(--space-3);
+        padding: var(--space-2) var(--space-4);
+        gap: var(--space-2);
     }
 
     .primary-tabs {
         order: 3;
+        flex: 1 0 100%;
         width: 100%;
         border-top: 1px solid var(--border-default);
         overflow-x: auto;
